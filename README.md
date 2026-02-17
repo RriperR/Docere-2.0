@@ -1,10 +1,21 @@
-# Docere
+﻿# Docere
 
-Backend quality gate with `uv`, `pre-commit`, `ruff`, `mypy`, and `pytest` for a DDD + Clean Architecture layout.
+Сервис с backend на FastAPI и frontend на React.
+В backend используется единый Quality Gate: `ruff`, `mypy`, `pytest`, `pre-commit`, `pre-push`, `Makefile`, `uv`.
 
-## Project Structure
+## Структура репозитория
 
+```text
+.
+├─ src/app/            # Backend (DDD + Clean Architecture)
+├─ tests/              # Backend tests
+├─ frontend/           # Frontend (Vite + React + TypeScript)
+└─ конфиги качества    # pyproject.toml, Makefile, pre-commit, mypy, ruff
 ```
+
+### Backend-слои
+
+```text
 src/app/
   domain/
   application/
@@ -12,44 +23,55 @@ src/app/
   presentation/
 ```
 
-Dependency direction:
+Направление зависимостей:
 
-- `domain` does not depend on other layers.
-- `application` depends only on `domain`.
-- `infrastructure` depends on `application` and `domain`.
-- `presentation` depends on `application` and integrates infra via composition/DI.
+- `domain` ни от кого не зависит
+- `application` зависит только от `domain`
+- `infrastructure` зависит от `application` и `domain`
+- `presentation` зависит от `application`; инфраструктура подключается через композицию/DI
 
-## Installation
+## Требования
 
-Python: `3.12+`
+- Python `3.12+`
+- `uv`
+- Node.js `18+` и `npm` (для frontend)
+
+## Быстрый старт (backend)
 
 ```bash
 uv sync --all-groups
+uv run pre-commit install --hook-type pre-commit --hook-type pre-push
+make dev
 ```
 
-## Git Hooks
+## Запуск frontend
 
 ```bash
-uv run pre-commit install --hook-type pre-commit --hook-type pre-push
+cd frontend
+npm install
+npm run dev
 ```
 
-## Checks
+## Основные команды проверки
 
 ```bash
 make lint
+make format-check
 make type-check
 make test
 make project-check
 ```
 
-## Development Run
+## Установка групп зависимостей backend
 
 ```bash
-make dev
+uv sync                  # базовые зависимости
+uv sync --group dev      # dev-инструменты
+uv sync --group lint     # линт/типизация
+uv sync --group test     # тесты
+uv sync --all-groups     # все группы
 ```
 
-Equivalent command:
+## Для участников разработки
 
-```bash
-PYTHONPATH=src uv run uvicorn app.presentation.main:app --reload
-```
+Правила ветвления, коммитов, Merge Request и обязательных проверок: `CONTRIBUTING.md`.
