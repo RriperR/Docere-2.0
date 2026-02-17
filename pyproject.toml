@@ -1,0 +1,40 @@
+[project]
+name = 'docere-service'
+version = '0.1.0'
+description = 'FastAPI service with DDD + Clean Architecture'
+readme = 'README.md'
+requires-python = '>=3.12'
+dependencies = [
+  'fastapi==0.116.0',
+  'uvicorn==0.35.0',
+  'pydantic[email]==2.11.7',
+  'pydantic-settings==2.10.1',
+  'structlog==25.4.0',
+  'httpx==0.28.1',
+]
+
+[dependency-groups]
+dev = [
+  'pre-commit==4.1.0',
+  'commitizen==4.2.1',
+  'rich==13.9.4',
+]
+lint = [
+  'ruff==0.12.2',
+  'mypy==1.16.1',
+  'types-requests',
+]
+test = [
+  'pytest==8.4.1',
+  'pytest-asyncio==1.0.0',
+  'pytest-cov==6.2.1',
+  'pytest-mock==3.14.1',
+  'respx==0.22.0',
+]
+benchmark = [
+  'pandas==2.3.1',
+  'openpyxl==3.1.5',
+]
+
+[tool.uv]
+package = false

@@ -1,0 +1,14 @@
+target-version = 'py312'
+line-length = 120
+src = ['src', 'tests']
+
+[lint]
+select = ['E', 'F', 'I', 'B', 'UP', 'N', 'S', 'SIM']
+ignore = []
+
+[format]
+quote-style = 'single'
+
+[lint.per-file-ignores]
+'tests/**/*.py' = ['S101', 'ANN201']
+'**/__init__.py' = ['F401']
