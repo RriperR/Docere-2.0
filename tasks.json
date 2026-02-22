@@ -1,0 +1,819 @@
+﻿{
+  "agent_instructions": {
+    "before_start": [
+      "Прочитай этот файл и git log --oneline -20",
+      "Выбери ОДНУ задачу со статусом pending и наивысшим приоритетом",
+      "Проверь, что все dependencies этой задачи имеют статус done"
+    ],
+    "during_work": [
+      "Работай только над выбранной задачей",
+      "Делай коммиты после каждого логического изменения",
+      "Не трогай код, не связанный с текущей задачей"
+    ],
+    "before_finish": [
+      "Выполни ВСЕ test_steps из задачи",
+      "Меняй status на done ТОЛЬКО после успешного прохождения всех тестов",
+      "Напиши summary в progress.md",
+      "ЗАПРЕЩЕНО удалять или редактировать задачи — только менять status"
+    ]
+  },
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "category": "infrastructure",
+      "priority": "critical",
+      "description": "Создать централизованный модуль конфигурации приложения (DB, auth, storage, queue) через переменные окружения с валидацией через Pydantic Settings.",
+      "acceptance_criteria": [
+        "Все обязательные env-переменные задокументированы в примере конфигурации",
+        "Приложение не стартует при отсутствии критичных переменных и выводит понятную ошибку",
+        "Конфигурация доступна единым объектом во всех слоях приложения",
+        "Валидация конфигурации выполняется через Pydantic Settings"
+      ],
+      "test_steps": [
+        "Шаг 1: Запустить приложение с полным набором env-переменных",
+        "Шаг 2: Удалить обязательную переменную (например, DB URL) и перезапустить",
+        "Шаг 3: Убедиться, что старт блокируется с валидной диагностикой"
+      ],
+      "dependencies": [
+        "TASK-034"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-034",
+      "category": "infrastructure",
+      "priority": "critical",
+      "description": "Создать архитектурный каркас backend в стиле DDD + Clean Architecture (domain, application, infrastructure, presentation).",
+      "acceptance_criteria": [
+        "Слои domain, application, infrastructure, presentation физически разделены по модулям",
+        "Domain слой не содержит зависимостей на web framework и ORM",
+        "Есть шаблон use case с явными портами для инфраструктурных адаптеров"
+      ],
+      "test_steps": [
+        "Шаг 1: Проверить структуру каталогов и импортов слоев",
+        "Шаг 2: Убедиться, что domain не импортирует infrastructure и presentation",
+        "Шаг 3: Запустить базовый сценарий use case через интерфейсный слой"
+      ],
+      "dependencies": [],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-035",
+      "category": "infrastructure",
+      "priority": "critical",
+      "description": "Подготовить docker compose окружение для разработки: api, PostgreSQL 16, Redis, Celery worker.",
+      "acceptance_criteria": [
+        "В docker compose подняты сервисы api, postgres16, redis, celery-worker",
+        "API контейнер успешно подключается к PostgreSQL 16",
+        "Celery worker стартует и имеет подключение к инфраструктуре очередей"
+      ],
+      "test_steps": [
+        "Шаг 1: Запустить docker compose up",
+        "Шаг 2: Проверить health/status всех контейнеров",
+        "Шаг 3: Проверить подключение API к БД и запуск worker без ошибок"
+      ],
+      "dependencies": [
+        "TASK-034"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-036",
+      "category": "infrastructure",
+      "priority": "critical",
+      "description": "Настроить Alembic как единственный механизм миграций для PostgreSQL 16.",
+      "acceptance_criteria": [
+        "Alembic инициализирован и настроен на PostgreSQL 16",
+        "Команды upgrade/downgrade работают в локальном docker окружении",
+        "Есть baseline ревизия, от которой строятся дальнейшие миграции"
+      ],
+      "test_steps": [
+        "Шаг 1: Выполнить alembic upgrade head",
+        "Шаг 2: Выполнить alembic downgrade -1 и обратный upgrade",
+        "Шаг 3: Убедиться, что схема БД консистентна после повторного применения"
+      ],
+      "dependencies": [
+        "TASK-035"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-037",
+      "category": "infrastructure",
+      "priority": "high",
+      "description": "Собрать рабочий pipeline обработки ImportJob на Celery + Redis.",
+      "acceptance_criteria": [
+        "ImportJob публикуется в очередь и обрабатывается worker",
+        "Redis используется как брокер очередей для Celery",
+        "Статусы ImportJob обновляются от queued до completed или failed"
+      ],
+      "test_steps": [
+        "Шаг 1: Создать ImportJob через API",
+        "Шаг 2: Проверить доставку события и обработку worker",
+        "Шаг 3: Проверить корректное обновление финального статуса job"
+      ],
+      "dependencies": [
+        "TASK-035"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-038",
+      "category": "infrastructure",
+      "priority": "high",
+      "description": "Внедрить Pydantic-схемы для API контрактов и валидируемой конфигурации.",
+      "acceptance_criteria": [
+        "Все входные и выходные DTO API описаны Pydantic моделями",
+        "Конфигурация приложения валидируется через Pydantic Settings",
+        "Невалидные payload и env-значения отклоняются с предсказуемыми ошибками"
+      ],
+      "test_steps": [
+        "Шаг 1: Отправить валидный и невалидный payload в ключевые endpoint",
+        "Шаг 2: Проверить формат ошибок валидации API",
+        "Шаг 3: Запустить приложение с некорректной env-переменной и проверить отказ старта"
+      ],
+      "dependencies": [
+        "TASK-034"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-002",
+      "category": "infrastructure",
+      "priority": "critical",
+      "description": "Создать базовую миграцию БД через Alembic под PostgreSQL 16 с таблицами User, Patient, MedicalRecord, RecordShare, UserPatientAccess, FileAttachment, ImportJob, AuditEvent.",
+      "acceptance_criteria": [
+        "Все сущности из PRD представлены таблицами с корректными типами",
+        "Внешние ключи соответствуют описанным связям",
+        "Миграция выполняется up/down без ошибок",
+        "Миграции запускаются через Alembic и проверены на PostgreSQL 16"
+      ],
+      "test_steps": [
+        "Шаг 1: Применить миграции на пустой БД",
+        "Шаг 2: Проверить наличие всех таблиц и основных FK",
+        "Шаг 3: Выполнить rollback и повторный apply"
+      ],
+      "dependencies": [
+        "TASK-001",
+        "TASK-036"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-003",
+      "category": "infrastructure",
+      "priority": "high",
+      "description": "Добавить индексы и ограничения целостности для критичных полей (email, patient_id, event_date, статусы share, уникальность доступа user+patient).",
+      "acceptance_criteria": [
+        "Уникальность User.email обеспечена на уровне БД",
+        "Индексы созданы для Patient/MedicalRecord/RecordShare выборок по PRD",
+        "Дублирующая связь UserPatientAccess (user_id, patient_id) блокируется"
+      ],
+      "test_steps": [
+        "Шаг 1: Применить миграцию с индексами и ограничениями",
+        "Шаг 2: Попытаться вставить дубликат email и дубликат user+patient access",
+        "Шаг 3: Убедиться, что БД отклоняет дубликаты и индексы существуют"
+      ],
+      "dependencies": [
+        "TASK-002"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-004",
+      "category": "infrastructure",
+      "priority": "high",
+      "description": "Поднять инфраструктуру фоновых задач для обработки ImportJob на Celery + Redis.",
+      "acceptance_criteria": [
+        "Очередь и воркер запускаются отдельными процессами",
+        "ImportJob может быть поставлен в очередь из API",
+        "Статусы job меняются queued -> running -> completed/failed",
+        "Используется связка Celery worker + Redis"
+      ],
+      "test_steps": [
+        "Шаг 1: Запустить API и воркер",
+        "Шаг 2: Создать тестовый ImportJob через API",
+        "Шаг 3: Проверить изменение статусов job до завершения"
+      ],
+      "dependencies": [
+        "TASK-001",
+        "TASK-002",
+        "TASK-037"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-005",
+      "category": "infrastructure",
+      "priority": "high",
+      "description": "Реализовать абстракцию файлового хранилища для вложений записей (upload и сохранение metadata).",
+      "acceptance_criteria": [
+        "Загрузка файла возвращает уникальный storage_key",
+        "Метаданные вложения сохраняются в FileAttachment",
+        "Слой хранилища не зависит от конкретного провайдера"
+      ],
+      "test_steps": [
+        "Шаг 1: Загрузить тестовый файл через API",
+        "Шаг 2: Проверить запись в FileAttachment и наличие storage_key",
+        "Шаг 3: Проверить, что файл физически доступен в configured storage"
+      ],
+      "dependencies": [
+        "TASK-001",
+        "TASK-002"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-006",
+      "category": "infrastructure",
+      "priority": "medium",
+      "description": "Добавить структурированное логирование и request_id для трассировки пользовательских действий.",
+      "acceptance_criteria": [
+        "Каждый HTTP-запрос получает request_id",
+        "request_id прокидывается в логи прикладного уровня",
+        "Формат логов пригоден для последующей агрегации"
+      ],
+      "test_steps": [
+        "Шаг 1: Выполнить несколько запросов к API",
+        "Шаг 2: Проверить, что в ответе и логах присутствует request_id",
+        "Шаг 3: Убедиться, что request_id одинаков в рамках одного запроса"
+      ],
+      "dependencies": [
+        "TASK-001"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-007",
+      "category": "security",
+      "priority": "critical",
+      "description": "Реализовать безопасную аутентификацию: hash паролей и выдача токенов/сессии для защищенных endpoint.",
+      "acceptance_criteria": [
+        "Пароли сохраняются только в hash-формате",
+        "Защищенные endpoint требуют валидный токен/сессию",
+        "Невалидный токен возвращает корректный отказ доступа"
+      ],
+      "test_steps": [
+        "Шаг 1: Зарегистрировать пользователя и проверить формат хранения пароля в БД",
+        "Шаг 2: Выполнить логин и получить токен/сессию",
+        "Шаг 3: Запросить защищенный endpoint с валидным и невалидным токеном"
+      ],
+      "dependencies": [
+        "TASK-001",
+        "TASK-002"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-008",
+      "category": "security",
+      "priority": "high",
+      "description": "Внедрить проверку ролей (patient/doctor/lab_technician/admin) на сервере для всех чувствительных endpoint.",
+      "acceptance_criteria": [
+        "Ролевые ограничения применяются централизованно",
+        "Админские операции недоступны не-админам",
+        "Ошибки авторизации возвращаются в едином формате"
+      ],
+      "test_steps": [
+        "Шаг 1: Выполнить админский endpoint под ролью admin",
+        "Шаг 2: Повторить тот же endpoint под ролью doctor/patient",
+        "Шаг 3: Убедиться, что доступ корректно разрешается или запрещается"
+      ],
+      "dependencies": [
+        "TASK-007"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-009",
+      "category": "security",
+      "priority": "high",
+      "description": "Реализовать сервис server-side проверки доступа к записи и истории пациента (ACL по creator/share/accepted).",
+      "acceptance_criteria": [
+        "Доступ к записи проверяется на сервере перед каждым чтением",
+        "Запись доступна только создателю или получателю с accepted share",
+        "История пациента возвращает только доступные записи"
+      ],
+      "test_steps": [
+        "Шаг 1: Создать запись пользователем A",
+        "Шаг 2: Запросить запись пользователем B без share и после accepted share",
+        "Шаг 3: Проверить, что история пациента у B включает запись только после accept"
+      ],
+      "dependencies": [
+        "TASK-008",
+        "TASK-002"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-010",
+      "category": "security",
+      "priority": "medium",
+      "description": "Добавить rate limiting для auth endpoint (регистрация/вход).",
+      "acceptance_criteria": [
+        "Для login/register действует лимит запросов",
+        "При превышении лимита возвращается 429",
+        "Лимит сбрасывается по истечении окна"
+      ],
+      "test_steps": [
+        "Шаг 1: Выполнить серию быстрых запросов на login/register",
+        "Шаг 2: Достигнуть лимита и получить 429",
+        "Шаг 3: Дождаться конца окна и убедиться, что запрос снова проходит"
+      ],
+      "dependencies": [
+        "TASK-007"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-011",
+      "category": "security",
+      "priority": "critical",
+      "description": "Зафиксировать неизменяемость и неудаляемость MedicalRecord на уровне API и домена.",
+      "acceptance_criteria": [
+        "Редактирование созданной записи запрещено",
+        "Удаление записи запрещено",
+        "Нарушающие операции возвращают предсказуемую ошибку"
+      ],
+      "test_steps": [
+        "Шаг 1: Создать запись",
+        "Шаг 2: Попытаться изменить и удалить запись через API",
+        "Шаг 3: Убедиться, что обе операции отклоняются"
+      ],
+      "dependencies": [
+        "TASK-009"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-012",
+      "category": "functional",
+      "priority": "critical",
+      "description": "Реализовать endpoint саморегистрации пациента.",
+      "acceptance_criteria": [
+        "Создается User с ролью patient",
+        "Поля fio/email/phone/password обязательны",
+        "Повторная регистрация по существующему email отклоняется"
+      ],
+      "test_steps": [
+        "Шаг 1: Отправить валидный запрос регистрации",
+        "Шаг 2: Проверить создание пользователя и роль patient",
+        "Шаг 3: Повторить регистрацию с тем же email и получить ошибку"
+      ],
+      "dependencies": [
+        "TASK-007",
+        "TASK-002"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-013",
+      "category": "functional",
+      "priority": "high",
+      "description": "Реализовать endpoint входа пользователя и выдачи сессии или токена.",
+      "acceptance_criteria": [
+        "Вход работает по email+password",
+        "Неверные креды возвращают безопасную ошибку без утечки деталей",
+        "Успешный вход фиксируется в аудит-событии"
+      ],
+      "test_steps": [
+        "Шаг 1: Выполнить вход с валидными данными",
+        "Шаг 2: Выполнить вход с неверным паролем",
+        "Шаг 3: Проверить запись события логина в AuditEvent"
+      ],
+      "dependencies": [
+        "TASK-007",
+        "TASK-012"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-014",
+      "category": "functional",
+      "priority": "high",
+      "description": "Реализовать админские endpoint для создания врачей, лаборантов и админов.",
+      "acceptance_criteria": [
+        "Админ может создать пользователя ролей doctor/lab_technician/admin",
+        "Для создания обязательны fio/email/phone/password",
+        "Не-админ не может выполнять эту операцию"
+      ],
+      "test_steps": [
+        "Шаг 1: Создать staff-аккаунт под админом",
+        "Шаг 2: Проверить корректную роль и сохраненные данные",
+        "Шаг 3: Повторить создание под не-админом и получить запрет"
+      ],
+      "dependencies": [
+        "TASK-008",
+        "TASK-013"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-015",
+      "category": "functional",
+      "priority": "critical",
+      "description": "Реализовать API поиска и создания сущности Patient для сотрудников.",
+      "acceptance_criteria": [
+        "Поиск поддерживает fio/date_of_birth/email/phone",
+        "Создание нового Patient выполняется при отсутствии совпадений",
+        "created_by_user_id заполняется автором создания"
+      ],
+      "test_steps": [
+        "Шаг 1: Выполнить поиск пациента по комбинации полей",
+        "Шаг 2: Создать нового пациента при отсутствии результатов",
+        "Шаг 3: Убедиться, что поле created_by_user_id заполнено корректно"
+      ],
+      "dependencies": [
+        "TASK-008",
+        "TASK-002"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-016",
+      "category": "functional",
+      "priority": "high",
+      "description": "Реализовать поток привязки Patient к аккаунту пользователя (запрос пациента и подтверждение админом).",
+      "acceptance_criteria": [
+        "Пациент может создать запрос на link существующего Patient",
+        "Админ может подтвердить запрос и установить linked_user_id",
+        "Повторная привязка уже связанного Patient отклоняется"
+      ],
+      "test_steps": [
+        "Шаг 1: Создать link-запрос от пользователя patient",
+        "Шаг 2: Подтвердить запрос админом",
+        "Шаг 3: Проверить, что linked_user_id установлен и повторный link невозможен"
+      ],
+      "dependencies": [
+        "TASK-015",
+        "TASK-014"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-017",
+      "category": "functional",
+      "priority": "critical",
+      "description": "Реализовать создание MedicalRecord с обязательными полями creator_user_id, patient_id, event_date.",
+      "acceptance_criteria": [
+        "Создание доступно ролям doctor/lab_technician/patient",
+        "При отсутствии обязательных полей API возвращает валидационную ошибку",
+        "created_at устанавливается сервером"
+      ],
+      "test_steps": [
+        "Шаг 1: Создать запись валидным запросом",
+        "Шаг 2: Повторить запрос без event_date и получить ошибку",
+        "Шаг 3: Проверить сохраненные creator_user_id и patient_id в БД"
+      ],
+      "dependencies": [
+        "TASK-009",
+        "TASK-002"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-018",
+      "category": "functional",
+      "priority": "high",
+      "description": "Реализовать endpoint переходов статуса записи (draft/unconfirmed/confirmed/rejected) по разрешенной схеме.",
+      "acceptance_criteria": [
+        "Разрешены только валидные переходы статусов",
+        "Переход в confirmed отражается в записи",
+        "Невалидные переходы отклоняются с понятной ошибкой"
+      ],
+      "test_steps": [
+        "Шаг 1: Перевести запись по валидному сценарию статусов",
+        "Шаг 2: Попробовать невалидный переход",
+        "Шаг 3: Проверить фактический статус в БД"
+      ],
+      "dependencies": [
+        "TASK-017"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-019",
+      "category": "functional",
+      "priority": "critical",
+      "description": "Реализовать создание RecordShare со статусом pending для выбранной записи и получателя.",
+      "acceptance_criteria": [
+        "Создается запись share со статусом pending",
+        "Заполняются granted_by_user_id и granted_to_user_id",
+        "Отправка share без доступа к записи у отправителя блокируется"
+      ],
+      "test_steps": [
+        "Шаг 1: Создать share для доступной записи",
+        "Шаг 2: Проверить, что статус pending и поля отправителя и получателя заполнены",
+        "Шаг 3: Попробовать шарить недоступную запись и убедиться в отказе"
+      ],
+      "dependencies": [
+        "TASK-017",
+        "TASK-009"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-020",
+      "category": "functional",
+      "priority": "critical",
+      "description": "Реализовать endpoint accept/reject для RecordShare только получателем.",
+      "acceptance_criteria": [
+        "Только granted_to_user_id может менять статус share",
+        "Статус меняется только из pending в accepted/rejected",
+        "responded_at заполняется при решении"
+      ],
+      "test_steps": [
+        "Шаг 1: Принять pending share получателем",
+        "Шаг 2: Отклонить другой pending share получателем",
+        "Шаг 3: Попробовать изменить статус не-получателем и получить отказ"
+      ],
+      "dependencies": [
+        "TASK-019",
+        "TASK-009"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-021",
+      "category": "functional",
+      "priority": "high",
+      "description": "Автоматически создавать UserPatientAccess при accepted share (если связи user-patient еще нет).",
+      "acceptance_criteria": [
+        "При первом accepted share создается UserPatientAccess со source=share_accepted",
+        "source_record_share_id ссылается на исходный RecordShare",
+        "Повторные accepted share для той же пары user и patient не создают дубль"
+      ],
+      "test_steps": [
+        "Шаг 1: Принять share для пациента, которого нет у пользователя",
+        "Шаг 2: Проверить появление UserPatientAccess",
+        "Шаг 3: Принять вторую запись того же пациента и убедиться, что дубль связи не создан"
+      ],
+      "dependencies": [
+        "TASK-020",
+        "TASK-003"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-022",
+      "category": "functional",
+      "priority": "critical",
+      "description": "Реализовать endpoint истории пациента с фильтрацией по доступу и сортировкой event_date DESC, created_at DESC.",
+      "acceptance_criteria": [
+        "В выдаче только записи, доступные текущему пользователю",
+        "Сортировка соответствует PRD",
+        "В ответе есть creator, record_type, event_date, created_at"
+      ],
+      "test_steps": [
+        "Шаг 1: Подготовить набор записей с разными датами события и создания",
+        "Шаг 2: Запросить timeline под разными пользователями",
+        "Шаг 3: Проверить корректность порядка и состава записей"
+      ],
+      "dependencies": [
+        "TASK-017",
+        "TASK-021",
+        "TASK-009"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-023",
+      "category": "functional",
+      "priority": "medium",
+      "description": "Реализовать endpoint списка пациентов пользователя на основе UserPatientAccess и собственных созданных записей.",
+      "acceptance_criteria": [
+        "Пациент попадает в список после first accepted share",
+        "Пациент попадает в список после первой собственной записи пользователя по patient_id",
+        "Список не содержит дублей"
+      ],
+      "test_steps": [
+        "Шаг 1: Создать сценарии own-record и accepted-share",
+        "Шаг 2: Запросить список пациентов для пользователя",
+        "Шаг 3: Проверить наличие нужных пациентов без дублей"
+      ],
+      "dependencies": [
+        "TASK-021",
+        "TASK-015"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-024",
+      "category": "functional",
+      "priority": "medium",
+      "description": "Реализовать загрузку вложений для записи и сохранение связи FileAttachment -> MedicalRecord.",
+      "acceptance_criteria": [
+        "API принимает файл и возвращает метаданные вложения",
+        "Вложение привязано к конкретной записи",
+        "Без доступа к записи загрузка запрещена"
+      ],
+      "test_steps": [
+        "Шаг 1: Загрузить файл к доступной записи",
+        "Шаг 2: Проверить FileAttachment в БД",
+        "Шаг 3: Попробовать загрузку к чужой записи и получить отказ"
+      ],
+      "dependencies": [
+        "TASK-005",
+        "TASK-017",
+        "TASK-009"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-025",
+      "category": "functional",
+      "priority": "medium",
+      "description": "Реализовать создание ImportJob и endpoint просмотра статуса выполнения.",
+      "acceptance_criteria": [
+        "Создание ImportJob возвращает id и статус queued",
+        "Воркер обновляет статус в процессе выполнения",
+        "Endpoint статуса возвращает report_json и финальный статус"
+      ],
+      "test_steps": [
+        "Шаг 1: Создать ImportJob через API",
+        "Шаг 2: Запустить обработку воркером",
+        "Шаг 3: Проверить endpoint статуса до и после завершения"
+      ],
+      "dependencies": [
+        "TASK-004",
+        "TASK-002",
+        "TASK-008"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-026",
+      "category": "functional",
+      "priority": "high",
+      "description": "Реализовать централизованную запись AuditEvent для действий create/share/accept/reject/login/import.",
+      "acceptance_criteria": [
+        "Для каждого целевого действия создается AuditEvent",
+        "Поля actor/event_type/entity_type/entity_id/created_at заполняются",
+        "Ошибки записи аудита не ломают основной бизнес-флоу"
+      ],
+      "test_steps": [
+        "Шаг 1: Выполнить ключевые действия (login, create record, share, accept)",
+        "Шаг 2: Проверить соответствующие записи в AuditEvent",
+        "Шаг 3: Убедиться, что события содержат корректные ссылки на сущности"
+      ],
+      "dependencies": [
+        "TASK-002",
+        "TASK-006",
+        "TASK-013",
+        "TASK-017",
+        "TASK-019",
+        "TASK-020",
+        "TASK-025"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-027",
+      "category": "integration",
+      "priority": "high",
+      "description": "Интегрировать frontend auth-поток с backend API (register/login/logout/protected routes).",
+      "acceptance_criteria": [
+        "Формы регистрации и входа работают с backend endpoint",
+        "Токен или сессия используются для защищенных запросов",
+        "При 401 пользователь корректно возвращается на вход"
+      ],
+      "test_steps": [
+        "Шаг 1: Выполнить регистрацию и вход через UI",
+        "Шаг 2: Открыть защищенные разделы после входа",
+        "Шаг 3: Имитировать 401 и проверить автоматический переход на страницу логина"
+      ],
+      "dependencies": [
+        "TASK-012",
+        "TASK-013"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-028",
+      "category": "integration",
+      "priority": "high",
+      "description": "Интегрировать frontend-флоу share: отправка запроса, входящие pending, accept/reject.",
+      "acceptance_criteria": [
+        "Из UI можно отправить share по записи",
+        "Входящие запросы отображают pending элементы",
+        "Accept/reject в UI изменяет серверный статус и локальное состояние"
+      ],
+      "test_steps": [
+        "Шаг 1: Отправить share из аккаунта A в аккаунт B",
+        "Шаг 2: Открыть входящие у B и принять или отклонить запрос",
+        "Шаг 3: Проверить, что статус в UI и на backend совпадает"
+      ],
+      "dependencies": [
+        "TASK-019",
+        "TASK-020"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-029",
+      "category": "integration",
+      "priority": "high",
+      "description": "Интегрировать UI истории пациента и списка пациентов пользователя с backend timeline и patient list endpoint.",
+      "acceptance_criteria": [
+        "Список пациентов пользователя загружается из API",
+        "После первого accepted share пациент появляется в списке без ручного обновления страницы",
+        "Timeline отображает записи в требуемом порядке"
+      ],
+      "test_steps": [
+        "Шаг 1: Принять share по новому пациенту",
+        "Шаг 2: Проверить появление пациента в списке через UI",
+        "Шаг 3: Открыть timeline и проверить сортировку по event_date"
+      ],
+      "dependencies": [
+        "TASK-022",
+        "TASK-023",
+        "TASK-021"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-030",
+      "category": "integration",
+      "priority": "medium",
+      "description": "Добавить API-интеграционный тест e2e сценария врач A -> пациент -> врач B с проверкой доступности записи.",
+      "acceptance_criteria": [
+        "Тест покрывает полный share-chain из PRD",
+        "После каждого accept запись появляется в истории правильного получателя",
+        "creator_user_id записи остается исходным на всем пути"
+      ],
+      "test_steps": [
+        "Шаг 1: Запустить интеграционный тест share-chain",
+        "Шаг 2: Проверить этапы доступности записи после каждого accept",
+        "Шаг 3: Убедиться, что тест валидирует неизменность creator_user_id"
+      ],
+      "dependencies": [
+        "TASK-020",
+        "TASK-021",
+        "TASK-022"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-031",
+      "category": "ui",
+      "priority": "high",
+      "description": "Реализовать экран входящих share-запросов с карточками pending и действиями accept/reject.",
+      "acceptance_criteria": [
+        "Показываются все pending share текущего пользователя",
+        "Для каждого запроса видны ключевые метаданные записи и отправитель",
+        "Кнопки accept/reject доступны прямо в списке"
+      ],
+      "test_steps": [
+        "Шаг 1: Создать несколько pending share на пользователя",
+        "Шаг 2: Открыть экран входящих и проверить отображение карточек",
+        "Шаг 3: Принять и отклонить запросы, проверив обновление списка"
+      ],
+      "dependencies": [
+        "TASK-028"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-032",
+      "category": "ui",
+      "priority": "high",
+      "description": "Реализовать экран истории пациента с сортировкой по event_date и отображением метаданных записи.",
+      "acceptance_criteria": [
+        "Лента отображает записи выбранного пациента",
+        "Сортировка соответствует event_date DESC, затем created_at DESC",
+        "Отображаются creator, record_type, event_date, created_at"
+      ],
+      "test_steps": [
+        "Шаг 1: Открыть историю пациента с несколькими записями разных дат",
+        "Шаг 2: Проверить визуальный порядок записей",
+        "Шаг 3: Проверить наличие всех обязательных метаданных в каждой строке"
+      ],
+      "dependencies": [
+        "TASK-029"
+      ],
+      "status": "pending"
+    },
+    {
+      "id": "TASK-033",
+      "category": "ui",
+      "priority": "medium",
+      "description": "Реализовать форму создания записи и модальное окно отправки share с выбором получателя.",
+      "acceptance_criteria": [
+        "Форма требует event_date и базовые поля записи",
+        "После успешного создания запись сразу доступна для share",
+        "Модал share поддерживает поиск получателя по email или FIO"
+      ],
+      "test_steps": [
+        "Шаг 1: Создать запись через UI с валидным event_date",
+        "Шаг 2: Открыть модал share для созданной записи",
+        "Шаг 3: Найти получателя и отправить pending share"
+      ],
+      "dependencies": [
+        "TASK-017",
+        "TASK-019",
+        "TASK-015"
+      ],
+      "status": "pending"
+    }
+  ]
+}
