@@ -1,24 +1,37 @@
-// src/stores/authStore.ts
 import { create } from 'zustand';
 import api from '../api/api';
-import axios from 'axios';
+
+export type UserRole = 'doctor' | 'patient' | 'lab_technician' | 'admin';
 
 interface TokenData {
-  access: string;
-  refresh: string;
+  access_token: string;
+  token_type: string;
+}
+
+interface BackendAuthUser {
+  id: string;
+  fio: string;
+  email: string;
+  phone: string;
+  date_of_birth: string | null;
+  role: UserRole;
+  status: string;
 }
 
 interface UserData {
-  id: number;
-  username: string;
+  id: string;
+  fio: string;
+  email: string;
+  phone: string;
+  date_of_birth: string | null;
+  role: UserRole;
+  status: string;
   first_name: string;
   last_name: string;
   middle_name: string | null;
-  email: string;
-  phone: string | null;
   birthday: string | null;
   photo: string | null;
-  role: 'doctor' | 'patient' | 'admin';
+  username: string;
 }
 
 interface AuthState {
@@ -27,12 +40,7 @@ interface AuthState {
   isLoading: boolean;
   error: string | null;
   isAuthenticated: boolean;
-
-  /** Сохранить пару токенов */
   setTokens: (tokens: TokenData) => void;
-  /** Обновить access из refresh */
-  refreshAccessToken: () => Promise<string>;
-
   register: (
     firstName: string,
     lastName: string,
@@ -42,11 +50,9 @@ interface AuthState {
     birthday: string | null,
     password: string
   ) => Promise<void>;
-
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
   restoreSession: () => void;
-
   updateProfile: (updates: {
     first_name?: string;
     last_name?: string;
@@ -57,80 +63,144 @@ interface AuthState {
   }) => Promise<void>;
 }
 
+type ValidationDetailItem = {
+  loc?: unknown;
+  msg?: unknown;
+};
+
+const toFio = (firstName: string, lastName: string, middleName: string | null): string => {
+  return [lastName, firstName, middleName ?? '']
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0)
+    .join(' ');
+};
+
+const splitFio = (fio: string): { first_name: string; last_name: string; middle_name: string | null } => {
+  const parts = fio
+    .trim()
+    .split(/\s+/)
+    .filter((part) => part.length > 0);
+
+  const [lastName = '', firstName = '', ...rest] = parts;
+  return {
+    first_name: firstName,
+    last_name: lastName,
+    middle_name: rest.length > 0 ? rest.join(' ') : null,
+  };
+};
+
+const toUserData = (payload: BackendAuthUser): UserData => {
+  const fioParts = splitFio(payload.fio);
+  return {
+    id: payload.id,
+    fio: payload.fio,
+    email: payload.email,
+    phone: payload.phone,
+    date_of_birth: payload.date_of_birth,
+    role: payload.role,
+    status: payload.status,
+    first_name: fioParts.first_name,
+    last_name: fioParts.last_name,
+    middle_name: fioParts.middle_name,
+    birthday: payload.date_of_birth,
+    photo: null,
+    username: payload.email,
+  };
+};
+
+const parseStoredJson = <T,>(key: string): T | null => {
+  const value = localStorage.getItem(key);
+  if (!value) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    localStorage.removeItem(key);
+    return null;
+  }
+};
+
+const formatValidationDetailItem = (item: ValidationDetailItem): string | null => {
+  const msg = typeof item.msg === 'string' ? item.msg : null;
+  if (!msg) {
+    return null;
+  }
+
+  if (Array.isArray(item.loc) && item.loc.length > 0) {
+    const path = item.loc
+      .map((segment) => String(segment))
+      .join('.');
+    return `${path}: ${msg}`;
+  }
+
+  return msg;
+};
+
+const normalizeApiErrorMessage = (error: unknown, fallback: string): string => {
+  const maybeError = error as {
+    response?: { data?: { detail?: unknown } };
+    message?: unknown;
+  };
+
+  const detail = maybeError?.response?.data?.detail;
+
+  if (typeof detail === 'string' && detail.trim().length > 0) {
+    return detail;
+  }
+
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((item) => {
+        if (typeof item === 'string') {
+          return item;
+        }
+        if (item && typeof item === 'object') {
+          return formatValidationDetailItem(item as ValidationDetailItem);
+        }
+        return null;
+      })
+      .filter((message): message is string => Boolean(message));
+
+    if (messages.length > 0) {
+      return messages.join('; ');
+    }
+  }
+
+  if (typeof maybeError?.message === 'string' && maybeError.message.trim().length > 0) {
+    return maybeError.message;
+  }
+
+  return fallback;
+};
+
 export const useAuthStore = create<AuthState>((set, get) => ({
-  tokens: JSON.parse(localStorage.getItem('authTokens') || 'null'),
-  user: JSON.parse(localStorage.getItem('authUserData') || 'null'),
+  tokens: parseStoredJson<TokenData>('authTokens'),
+  user: parseStoredJson<UserData>('authUserData'),
   isLoading: false,
   error: null,
-  isAuthenticated: !!localStorage.getItem('authTokens'),
+  isAuthenticated: !!parseStoredJson<TokenData>('authTokens')?.access_token,
 
   setTokens: (tokens) => {
     localStorage.setItem('authTokens', JSON.stringify(tokens));
     set({ tokens, isAuthenticated: true });
   },
 
-  refreshAccessToken: async () => {
-    const tokens = get().tokens;
-    if (!tokens?.refresh) {
-      throw new Error('No refresh token available');
-    }
-    // POST /token/refresh/ возвращает { access: string }
-    const { data } = await axios.post<{ access: string }>(
-      `${import.meta.env.VITE_API_BASE_URL}/token/refresh/`,
-      { refresh: tokens.refresh }
-    );
-
-    // Собираем новый объект, сохранив старый refresh
-    const newTokens: TokenData = {
-      access: data.access,
-      refresh: tokens.refresh,
-    };
-
-    // Сохраняем и в Zustand, и в localStorage
-    set({ tokens: newTokens });
-    localStorage.setItem('authTokens', JSON.stringify(newTokens));
-
-    return data.access;
-  },
-
-  register: async (
-    firstName,
-    lastName,
-    middleName,
-    email,
-    phone,
-    birthday,
-    password
-  ) => {
+  register: async (firstName, lastName, middleName, email, phone, birthday, password) => {
     set({ isLoading: true, error: null });
     try {
-      // 1) Регистрация
-      await api.post('/user/register/', {
-        first_name:  firstName,
-        last_name:   lastName,
-        middle_name: middleName,
+      await api.post('/auth/register', {
+        fio: toFio(firstName, lastName, middleName),
         email,
-        phone,
-        birthday,
+        phone: phone ?? '',
         password,
+        date_of_birth: birthday,
       });
-
-      // 2) Получаем токены
-      const { data: tokens } = await api.post<TokenData>('/token/', {
-        username: email,
-        password,
-      });
-
-      // 3) Сохраняем токены
-      get().setTokens(tokens);
-
-      // 4) Запрашиваем профиль (интерцептор axios подставит access)
-      const { data: user } = await api.get<UserData>('/user/me/');
-      localStorage.setItem('authUserData', JSON.stringify(user));
-      set({ user, isLoading: false });
+      await get().login(email, password);
     } catch (err: any) {
       set({
-        error: err.response?.data?.detail || 'Registration failed',
+        error: normalizeApiErrorMessage(err, 'Registration failed'),
         isLoading: false,
       });
       throw err;
@@ -140,22 +210,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   login: async (email, password) => {
     set({ isLoading: true, error: null });
     try {
-      // 1) Получаем токены
-      const { data: tokens } = await api.post<TokenData>('/token/', {
-        username: email,
+      const { data: tokenData } = await api.post<TokenData>('/auth/login', {
+        email,
         password,
       });
 
-      // 2) Сохраняем токены
-      get().setTokens(tokens);
+      get().setTokens(tokenData);
 
-      // 3) Запрашиваем профиль
-      const { data: user } = await api.get<UserData>('/user/me/');
+      const { data: backendUser } = await api.get<BackendAuthUser>('/auth/me');
+      const user = toUserData(backendUser);
       localStorage.setItem('authUserData', JSON.stringify(user));
-      set({ user, isLoading: false });
+      set({ user, isLoading: false, isAuthenticated: true });
     } catch (err: any) {
       set({
-        error: err.response?.data?.detail || 'Login failed',
+        error: normalizeApiErrorMessage(err, 'Login failed'),
         isLoading: false,
       });
       throw err;
@@ -165,27 +233,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   logout: () => {
     localStorage.removeItem('authTokens');
     localStorage.removeItem('authUserData');
-    set({ tokens: null, user: null, isAuthenticated: false });
+    set({ tokens: null, user: null, isAuthenticated: false, error: null, isLoading: false });
   },
 
   restoreSession: () => {
-    const tokens = JSON.parse(localStorage.getItem('authTokens') || 'null');
-    const user   = JSON.parse(localStorage.getItem('authUserData') || 'null');
-    set({ tokens, user, isAuthenticated: !!tokens });
+    const tokens = parseStoredJson<TokenData>('authTokens');
+    const user = parseStoredJson<UserData>('authUserData');
+    set({
+      tokens,
+      user,
+      isAuthenticated: !!tokens?.access_token,
+    });
   },
 
-  updateProfile: async (updates) => {
-    set({ isLoading: true, error: null });
-    try {
-      const { data: updated } = await api.put<UserData>('/user/me/', updates);
-      localStorage.setItem('authUserData', JSON.stringify(updated));
-      set({ user: updated, isLoading: false });
-    } catch (err: any) {
-      set({
-        error: err.response?.data ? JSON.stringify(err.response.data) : 'Update failed',
-        isLoading: false,
-      });
-      throw err;
-    }
+  updateProfile: async () => {
+    const message = 'Profile update endpoint is not implemented on backend yet';
+    set({ error: message, isLoading: false });
+    throw new Error(message);
   },
 }));

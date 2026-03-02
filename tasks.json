@@ -37,7 +37,7 @@
       "dependencies": [
         "TASK-034"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-034",
@@ -55,7 +55,7 @@
         "Шаг 3: Запустить базовый сценарий use case через интерфейсный слой"
       ],
       "dependencies": [],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-035",
@@ -75,7 +75,7 @@
       "dependencies": [
         "TASK-034"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-036",
@@ -95,7 +95,7 @@
       "dependencies": [
         "TASK-035"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-037",
@@ -157,7 +157,7 @@
         "TASK-001",
         "TASK-036"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-003",
@@ -262,7 +262,7 @@
         "TASK-001",
         "TASK-002"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-008",
@@ -364,7 +364,7 @@
         "TASK-007",
         "TASK-002"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-013",

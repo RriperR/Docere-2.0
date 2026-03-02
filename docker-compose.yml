@@ -1,0 +1,89 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: docere
+      POSTGRES_USER: docere
+      POSTGRES_PASSWORD: docere
+    ports:
+      - '5432:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U docere -d docere']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ['uv', 'run', 'uvicorn', 'app.presentation.main:app', '--host', '0.0.0.0', '--port', '8000']
+    environment:
+      APP_SERVICE_NAME: docere-service
+      APP_DATABASE__URL: postgresql+psycopg://docere:docere@postgres:5432/docere
+      APP_AUTH__SECRET_KEY: dev-secret-key
+      APP_STORAGE__ENDPOINT: http://storage.local
+      APP_STORAGE__BUCKET: docere-records
+      APP_QUEUE__BROKER_URL: redis://redis:6379/0
+      APP_QUEUE__RESULT_BACKEND: redis://redis:6379/1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - '8000:8000'
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'python',
+          '-c',
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2).read()",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command:
+      [
+        'uv',
+        'run',
+        'celery',
+        '--app',
+        'app.infrastructure.queue.celery_app:celery_app',
+        'worker',
+        '--loglevel=INFO',
+      ]
+    environment:
+      APP_SERVICE_NAME: docere-service
+      APP_DATABASE__URL: postgresql+psycopg://docere:docere@postgres:5432/docere
+      APP_AUTH__SECRET_KEY: dev-secret-key
+      APP_STORAGE__ENDPOINT: http://storage.local
+      APP_STORAGE__BUCKET: docere-records
+      APP_QUEUE__BROKER_URL: redis://redis:6379/0
+      APP_QUEUE__RESULT_BACKEND: redis://redis:6379/1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

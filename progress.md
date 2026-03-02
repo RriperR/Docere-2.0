@@ -1,0 +1,101 @@
+﻿## [2026-02-23 13:38:36] - TASK-034
+- Реализован архитектурный каркас use-case с явным application port для часов (`ClockPort`) и подключением через presentation слой.
+- Добавлены архитектурные critical-тесты: проверка обязательных слоев и запрет импортов из domain в infrastructure/presentation.
+- Файлы: `src/app/application/ports/__init__.py`, `src/app/application/ports/clock.py`, `src/app/application/use_cases/get_health_status.py`, `src/app/presentation/api/health.py`, `tests/critical/test_architecture_layers.py`, `tasks.json`.
+- Проверки: `uv run pytest tests/critical/test_architecture_layers.py tests/critical/test_health.py -q -p no:cacheprovider` и `make project-check`.
+- Learnings for future iterations:
+  - Используем explicit ports в application слое для инфраструктурных адаптеров.
+  - Границы слоев фиксируем тестами, чтобы случайные зависимости не попадали в domain.
+  - Проверка health через presentation (`/api/health`) покрывает интеграцию application+domain+infrastructure.
+---
+## [2026-02-23 13:48:41] - TASK-001
+- Реализован централизованный модуль конфигурации на Pydantic Settings с обязательными секциями `database`, `auth`, `storage`, `queue`.
+- Добавлены `get_settings()`, `clear_settings_cache()` и `validate_settings()`; валидация конфигурации выполняется на старте FastAPI через lifespan.
+- Обновлен health endpoint: использует единый объект настроек (`get_settings`) без прямого создания settings в модуле.
+- Добавлены проверки конфигурации: старт с полным набором env, отказ старта без `APP_DATABASE__URL`, диагностическая ошибка валидации.
+- Файлы: `src/app/infrastructure/settings.py`, `src/app/presentation/main.py`, `src/app/presentation/api/health.py`, `tests/conftest.py`, `tests/critical/test_settings.py`, `.env.example`, `README.md`, `tasks.json`.
+- Проверки: `uv run pytest tests/critical/test_settings.py tests/critical/test_health.py -q -p no:cacheprovider` и `make project-check`.
+- Learnings for future iterations:
+  - Критичные переменные нужно валидировать в lifespan, чтобы приложение падало до обработки запросов.
+  - Для тестов удобно задавать минимальный обязательный env через `tests/conftest.py`.
+  - Центральный `get_settings()` с cache дает единый источник конфигурации и снижает риск расхождений.
+---
+## [2026-02-23 14:00:44] - TASK-035
+- Добавлена контейнеризация backend: Dockerfile для API/worker и docker-compose.yml c сервисами pi, postgres (PostgreSQL 16), edis, celery-worker.
+- Для celery-worker добавлен минимальный runtime: celery_app и тестовая задача docere.ping.
+- Добавлены зависимости для compose-инфраструктуры: celery[redis] и psycopg[binary].
+- Обновлен README.md с инструкциями запуска backend через docker compose.
+- Файлы: Dockerfile, docker-compose.yml, src/app/infrastructure/queue/__init__.py, src/app/infrastructure/queue/celery_app.py, src/app/infrastructure/queue/tasks.py, pyproject.toml, uv.lock, README.md, 	asks.json.
+- Проверки:
+  - make project-check
+  - docker compose up -d --build
+  - docker compose ps (все сервисы Up, health для pi/postgres/redis)
+  - docker compose exec -T api ... /api/health -> 200
+  - docker compose exec -T api ... psycopg connect + select 1 -> 1
+  - docker compose logs celery-worker -> Connected to redis://redis:6379/0
+  - docker compose exec -T api ... ping.delay().get() -> pong
+- Learnings for future iterations:
+  - Для Celery в strict mypy нужны локальные типовые адаптеры (cast) и точечный import-untyped ignore.
+  - End-to-end проверка worker лучше делается через реальную задачу (delay().get()), а не только по логам.
+  - После docker-проверок стоит делать docker compose down, чтобы не оставлять фоновые контейнеры.
+---
+## [2026-02-23 14:09:05] - TASK-036
+- Инициализирован Alembic как единый механизм миграций: добавлены alembic.ini, migrations/env.py, script.py.mako и baseline-ревизия migrations/versions/20260223_01_baseline.py.
+- Добавлены зависимости sqlalchemy и alembic, обновлен uv.lock.
+- Добавлены make-команды migrate-up и migrate-down, README дополнен разделом по миграциям.
+- Файлы: alembic.ini, migrations/env.py, migrations/script.py.mako, migrations/versions/20260223_01_baseline.py, pyproject.toml, uv.lock, Makefile, README.md, tasks.json.
+- Проверки:
+  - make project-check
+  - docker compose up -d postgres
+  - APP_DATABASE__URL=postgresql+psycopg://docere:docere@localhost:5432/docere uv run alembic upgrade head
+  - APP_DATABASE__URL=postgresql+psycopg://docere:docere@localhost:5432/docere uv run alembic downgrade -1 && uv run alembic upgrade head
+  - проверка alembic_version: 20260223_01
+  - docker compose down
+- Learnings for future iterations:
+  - Для миграций удобно читать APP_DATABASE__URL напрямую в env.py, чтобы не требовать полный набор runtime env.
+  - Базовая пустая ревизия стабилизирует стартовую точку для следующих schema-миграций.
+  - Проверка alembic_version после downgrade/upgrade подтверждает консистентность baseline.
+---
+## [2026-02-23 14:13:45] - TASK-002
+- Добавлена первая schema-миграция Alembic: создана ревизия migrations/versions/20260223_02_initial_schema.py поверх baseline.
+- В миграции созданы таблицы users, patients, medical_records, record_shares, user_patient_access, file_attachments, import_jobs, audit_events с FK и базовыми индексами.
+- Добавлены PostgreSQL enum-типы для ролей, статусов записей, share-статусов, источников доступа и статусов import-job.
+- Файлы: migrations/versions/20260223_02_initial_schema.py, tasks.json, progress.md.
+- Проверки:
+  - make project-check
+  - docker compose down -v && docker compose up -d postgres
+  - APP_DATABASE__URL=... uv run alembic upgrade head
+  - проверка таблиц и FK через psycopg (все ожидаемые таблицы/FK присутствуют)
+  - APP_DATABASE__URL=... uv run alembic downgrade base && uv run alembic upgrade head
+  - проверка alembic_version -> 20260223_02
+  - docker compose down
+- Learnings for future iterations:
+  - Для downgrade миграции с enum в Postgres лучше явно удалять enum-типы, чтобы re-apply работал чисто.
+- Проверка FK через pg_constraint дает быстрый сигнал корректности связей после apply.
+- Разделение baseline и initial schema упрощает дальнейшую эволюцию миграций.
+---
+## [2026-02-23 14:31:48] - TASK-007
+- Реализована безопасная аутентификация: регистрация пациента с хранением только hash пароля, логин с выдачей JWT access token, защищенный endpoint `/api/auth/me`.
+- Добавлены application-компоненты auth (DTO, порты, use-cases, ошибки) и инфраструктурные адаптеры (SQLAlchemy auth repository, JWT token service, password hasher на PBKDF2).
+- Добавлен HTTP API: `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me` с проверкой Bearer token и корректными 401/409 ответами.
+- Добавлены critical-тесты по шагам задачи: проверка hash формата в БД, получение токена при логине, доступ/отказ на protected endpoint.
+- Файлы: `src/app/application/dto/auth_token.py`, `src/app/application/dto/auth_user_view.py`, `src/app/application/ports/auth_repository.py`, `src/app/application/ports/password_hasher.py`, `src/app/application/ports/token_service.py`, `src/app/application/use_cases/auth_errors.py`, `src/app/application/use_cases/get_authenticated_user.py`, `src/app/application/use_cases/login_user.py`, `src/app/application/use_cases/register_patient_user.py`, `src/app/infrastructure/db/base.py`, `src/app/infrastructure/db/models/user.py`, `src/app/infrastructure/db/session.py`, `src/app/infrastructure/repositories/auth_repository.py`, `src/app/infrastructure/security/password_hasher.py`, `src/app/infrastructure/security/token_service.py`, `src/app/presentation/api/auth.py`, `src/app/presentation/main.py`, `tests/critical/test_auth.py`, `tasks.json`.
+- Проверки:
+  - `uv run pytest tests/critical/test_auth.py tests/critical/test_settings.py -q -p no:cacheprovider`
+  - `make project-check`
+- Learnings for future iterations:
+  - Для JWT стоит использовать ключ длиной не менее 32 байт, иначе библиотека предупреждает про небезопасную длину.
+  - Проверка токена и загрузка текущего пользователя лучше держать отдельным use-case (`GetAuthenticatedUser`), чтобы переиспользовать в role-based доступе.
+- Для изоляции auth-тестов удобно использовать временную SQLite БД с очисткой кэшей settings/session между тестами.
+---
+## [2026-02-23 14:33:55] - TASK-012
+- Подтвержден и зафиксирован функционал саморегистрации пациента через `POST /api/auth/register`.
+- Добавлены проверки приёмки для `TASK-012`: повторная регистрация по одному email отклоняется с `409`, отсутствие обязательного поля возвращает `422`.
+- Файлы: `tests/critical/test_auth.py`, `tasks.json`.
+- Проверки:
+  - `uv run pytest tests/critical/test_auth.py -q -p no:cacheprovider`
+  - `make project-check`
+- Learnings for future iterations:
+  - Тесты на валидацию payload стоит держать рядом с позитивным сценарием регистрации, это упрощает поддержку контракта API.
+  - Нормализация email в endpoint + проверка уникальности в use-case дает предсказуемое поведение для дублей.
+---

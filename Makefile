@@ -1,6 +1,7 @@
 .PHONY: install install-dev install-lint install-test install-all \
 	lint lint-fix format format-check type-check test test-critical \
-	test-with-coverage project-check dev
+	test-with-coverage project-check migrate-up migrate-down \
+	dev-backend dev-frontend dev
 
 install:
 	uv sync
@@ -48,5 +49,18 @@ project-check:
 	$(MAKE) type-check
 	$(MAKE) test
 
-dev:
+migrate-up:
+	uv run alembic upgrade head
+
+migrate-down:
+	uv run alembic downgrade -1
+
+dev-backend:
 	PYTHONPATH=src uv run uvicorn app.presentation.main:app --reload
+
+dev-frontend:
+	cd frontend && npm run dev
+
+dev:
+	docker compose up -d --build
+	cd frontend && npm run dev

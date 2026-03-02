@@ -23,7 +23,7 @@ const registerSchema = z
       .optional()
       .or(z.literal(''))
       .refine(val => !val || !isNaN(Date.parse(val)), 'Неверная дата'),
-    password: z.string().min(6, 'Пароль минимум 6 символов'),
+    password: z.string().min(8, 'Минимум 8 символов'),
     confirmPassword: z.string().min(1, 'Подтвердите пароль'),
   })
   .refine((data) => data.password === data.confirmPassword, {

@@ -44,6 +44,21 @@ uv run pre-commit install --hook-type pre-commit --hook-type pre-push
 make dev
 ```
 
+## Конфигурация backend
+
+Сервис использует централизованные `Pydantic Settings` с префиксом `APP_`.
+Критичные переменные обязательны, без них приложение не стартует.
+
+Пример конфигурации: `.env.example`.
+
+Обязательные переменные:
+
+- `APP_DATABASE__URL`
+- `APP_AUTH__SECRET_KEY`
+- `APP_STORAGE__ENDPOINT`
+- `APP_STORAGE__BUCKET`
+- `APP_QUEUE__BROKER_URL`
+
 ## Запуск frontend
 
 ```bash
@@ -51,6 +66,20 @@ cd frontend
 npm install
 npm run dev
 ```
+
+## Запуск backend в Docker
+
+```bash
+docker compose up -d --build
+docker compose ps
+```
+
+Сервисы в compose:
+
+- `api` (FastAPI)
+- `postgres` (`PostgreSQL 16`)
+- `redis` (broker для Celery)
+- `celery-worker`
 
 ## Основные команды проверки
 
@@ -61,6 +90,15 @@ make type-check
 make test
 make project-check
 ```
+
+## Миграции БД (Alembic)
+
+```bash
+make migrate-up
+make migrate-down
+```
+
+Для миграций должна быть задана переменная `APP_DATABASE__URL`.
 
 ## Установка групп зависимостей backend
 
