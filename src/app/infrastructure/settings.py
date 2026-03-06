@@ -17,6 +17,7 @@ class AuthSettings(BaseModel):
 
     secret_key: SecretStr
     access_token_ttl_minutes: int = 60
+    refresh_token_ttl_minutes: int = 10_080
     jwt_algorithm: str = 'HS256'
 
 

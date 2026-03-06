@@ -8,4 +8,5 @@ class AuthToken:
     """Данные access-токена для ответа клиенту."""
 
     access_token: str
+    refresh_token: str
     token_type: str = 'bearer'  # noqa: S105

@@ -8,7 +8,7 @@ from app.application.use_cases.auth_errors import InvalidCredentialsError
 
 
 class LoginUser:
-    """Проверить учетные данные и выдать access-токен."""
+    """Проверить учетные данные и выдать пару access/refresh токенов."""
 
     def __init__(
         self,
@@ -35,7 +35,7 @@ class LoginUser:
             password: Пароль в открытом виде.
 
         Returns:
-            DTO с access-токеном.
+            DTO с access и refresh токенами.
 
         Raises:
             InvalidCredentialsError: Если email/пароль некорректны или пользователь заблокирован.
@@ -51,4 +51,5 @@ class LoginUser:
             raise InvalidCredentialsError
 
         access_token = self._token_service.create_access_token(user_id=user.id)
-        return AuthToken(access_token=access_token)
+        refresh_token = self._token_service.create_refresh_token(user_id=user.id)
+        return AuthToken(access_token=access_token, refresh_token=refresh_token)

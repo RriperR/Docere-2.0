@@ -63,10 +63,17 @@ class LoginRequestSchema(BaseModel):
     password: str = Field(min_length=1, max_length=128)
 
 
+class RefreshTokenRequestSchema(BaseModel):
+    """Тело запроса обновления токенов."""
+
+    refresh_token: str = Field(min_length=1, max_length=4096)
+
+
 class AuthTokenResponseSchema(BaseModel):
-    """Схема ответа с access-токеном."""
+    """Схема ответа с парой access/refresh токенов."""
 
     access_token: str
+    refresh_token: str
     token_type: str
 
 

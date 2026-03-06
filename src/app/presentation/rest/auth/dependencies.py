@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.application.use_cases.get_authenticated_user import GetAuthenticatedUser
 from app.application.use_cases.login_user import LoginUser
+from app.application.use_cases.refresh_access_token import RefreshAccessToken
 from app.application.use_cases.register_patient_user import RegisterPatientUser
 from app.infrastructure.db.session import get_db_session
 from app.infrastructure.repositories.auth_repository import SqlAlchemyAuthRepository
@@ -25,7 +26,8 @@ def _build_token_service() -> JwtTokenService:
     settings = get_settings()
     return JwtTokenService(
         secret_key=settings.auth.secret_key.get_secret_value(),
-        ttl_minutes=settings.auth.access_token_ttl_minutes,
+        access_ttl_minutes=settings.auth.access_token_ttl_minutes,
+        refresh_ttl_minutes=settings.auth.refresh_token_ttl_minutes,
         algorithm=settings.auth.jwt_algorithm,
     )
 
@@ -100,6 +102,23 @@ def get_authenticated_user_use_case(
         Экземпляр `GetAuthenticatedUser`.
     """
     return GetAuthenticatedUser(
+        repository=SqlAlchemyAuthRepository(session=session),
+        token_service=_build_token_service(),
+    )
+
+
+def get_refresh_access_token_use_case(
+    session: Session = db_session_dependency,
+) -> RefreshAccessToken:
+    """Создать use-case обновления access-токена.
+
+    Args:
+        session: Активная сессия БД.
+
+    Returns:
+        Экземпляр `RefreshAccessToken`.
+    """
+    return RefreshAccessToken(
         repository=SqlAlchemyAuthRepository(session=session),
         token_service=_build_token_service(),
     )

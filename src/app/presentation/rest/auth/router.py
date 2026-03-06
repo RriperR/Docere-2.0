@@ -9,22 +9,26 @@ from app.application.dto.auth_user_view import AuthUserView
 from app.application.use_cases.auth_errors import (
     EmailAlreadyExistsError,
     InvalidCredentialsError,
+    InvalidRefreshTokenError,
     InvalidTokenError,
     UserNotFoundError,
 )
 from app.application.use_cases.get_authenticated_user import GetAuthenticatedUser
 from app.application.use_cases.login_user import LoginUser
+from app.application.use_cases.refresh_access_token import RefreshAccessToken
 from app.application.use_cases.register_patient_user import RegisterPatientUser
 from app.presentation.rest.auth.dependencies import (
     extract_bearer_token,
     get_authenticated_user_use_case,
     get_login_user,
+    get_refresh_access_token_use_case,
     get_register_patient_user,
 )
 from app.presentation.rest.auth.schemas import (
     AuthTokenResponseSchema,
     AuthUserResponseSchema,
     LoginRequestSchema,
+    RefreshTokenRequestSchema,
     RegisterPatientRequestSchema,
 )
 from app.presentation.webserver.http_errors import (
@@ -36,6 +40,7 @@ from app.presentation.webserver.http_errors import (
 router = APIRouter(prefix='/auth', tags=['auth'])
 register_patient_dependency = Depends(get_register_patient_user)
 login_user_dependency = Depends(get_login_user)
+refresh_access_token_dependency = Depends(get_refresh_access_token_use_case)
 authenticated_user_use_case_dependency = Depends(get_authenticated_user_use_case)
 bearer_token_extraction_dependency = Depends(extract_bearer_token)
 
@@ -88,6 +93,26 @@ def login(
         return use_case.execute(email=str(payload.email).lower(), password=payload.password)
     except InvalidCredentialsError:
         raise_invalid_credentials()
+
+
+@router.post('/refresh', response_model=AuthTokenResponseSchema)
+def refresh_tokens(
+    payload: RefreshTokenRequestSchema,
+    use_case: RefreshAccessToken = refresh_access_token_dependency,
+) -> AuthToken:
+    """Обновить пару access/refresh токенов.
+
+    Args:
+        payload: Тело запроса с refresh-токеном.
+        use_case: Use-case обновления токенов.
+
+    Returns:
+        Новая пара access/refresh токенов.
+    """
+    try:
+        return use_case.execute(refresh_token=payload.refresh_token)
+    except InvalidRefreshTokenError:
+        raise_unauthorized('Invalid or expired refresh token')
 
 
 @router.get('/me', response_model=AuthUserResponseSchema)

@@ -17,5 +17,9 @@ class InvalidTokenError(AuthError):
     """Invalid or expired token."""
 
 
+class InvalidRefreshTokenError(AuthError):
+    """Invalid or expired refresh token."""
+
+
 class UserNotFoundError(AuthError):
     """User not found."""

@@ -18,6 +18,7 @@ def _set_required_auth_env(monkeypatch: pytest.MonkeyPatch, sqlite_path: Path) -
     monkeypatch.setenv('APP_DATABASE__URL', f'sqlite+pysqlite:///{sqlite_path.as_posix()}')
     monkeypatch.setenv('APP_AUTH__SECRET_KEY', 'test-secret-key-32-bytes-minimum-0001')
     monkeypatch.setenv('APP_AUTH__ACCESS_TOKEN_TTL_MINUTES', '60')
+    monkeypatch.setenv('APP_AUTH__REFRESH_TOKEN_TTL_MINUTES', '10080')
     monkeypatch.setenv('APP_AUTH__JWT_ALGORITHM', 'HS256')
     monkeypatch.setenv('APP_STORAGE__ENDPOINT', 'http://localhost:9000')
     monkeypatch.setenv('APP_STORAGE__BUCKET', 'docere-records')
@@ -108,6 +109,49 @@ def test_login_returns_access_token(auth_client: TestClient) -> None:
     assert login_payload['token_type'] == 'bearer'  # noqa: S105
     assert isinstance(login_payload['access_token'], str)
     assert login_payload['access_token']
+    assert isinstance(login_payload['refresh_token'], str)
+    assert login_payload['refresh_token']
+
+
+@pytest.mark.critical
+def test_refresh_returns_new_token_pair(auth_client: TestClient) -> None:
+    payload = _build_registration_payload()
+    register_response = auth_client.post('/api/auth/register', json=payload)
+    assert register_response.status_code == 201
+
+    login_response = auth_client.post(
+        '/api/auth/login',
+        json={'email': payload['email'], 'password': payload['password']},
+    )
+    assert login_response.status_code == 200
+    refresh_token = login_response.json()['refresh_token']
+
+    refresh_response = auth_client.post('/api/auth/refresh', json={'refresh_token': refresh_token})
+
+    assert refresh_response.status_code == 200
+    refresh_payload = refresh_response.json()
+    assert refresh_payload['token_type'] == 'bearer'  # noqa: S105
+    assert refresh_payload['access_token']
+    assert refresh_payload['refresh_token']
+
+
+@pytest.mark.critical
+def test_refresh_rejects_access_token(auth_client: TestClient) -> None:
+    payload = _build_registration_payload()
+    register_response = auth_client.post('/api/auth/register', json=payload)
+    assert register_response.status_code == 201
+
+    login_response = auth_client.post(
+        '/api/auth/login',
+        json={'email': payload['email'], 'password': payload['password']},
+    )
+    assert login_response.status_code == 200
+    access_token = login_response.json()['access_token']
+
+    refresh_response = auth_client.post('/api/auth/refresh', json={'refresh_token': access_token})
+
+    assert refresh_response.status_code == 401
+    assert refresh_response.json()['detail'] == 'Invalid or expired refresh token'
 
 
 @pytest.mark.critical
@@ -122,6 +166,7 @@ def test_protected_endpoint_requires_valid_token(auth_client: TestClient) -> Non
     )
     assert login_response.status_code == 200
     access_token = login_response.json()['access_token']
+    refresh_token = login_response.json()['refresh_token']
 
     valid_response = auth_client.get('/api/auth/me', headers={'Authorization': f'Bearer {access_token}'})
     assert valid_response.status_code == 200
@@ -129,3 +174,6 @@ def test_protected_endpoint_requires_valid_token(auth_client: TestClient) -> Non
 
     invalid_response = auth_client.get('/api/auth/me', headers={'Authorization': 'Bearer broken-token'})
     assert invalid_response.status_code == 401
+
+    refresh_as_access_response = auth_client.get('/api/auth/me', headers={'Authorization': f'Bearer {refresh_token}'})
+    assert refresh_as_access_response.status_code == 401
