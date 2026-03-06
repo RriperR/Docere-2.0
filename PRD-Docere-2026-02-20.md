@@ -1,21 +1,26 @@
 ﻿# PRD: Docere - Информационная система медицинских записей
 
-Версия: 5.0
-Дата: 2026-02-20
+Версия: 5.1
+Дата: 2026-03-06
 Статус: Draft for Review
 Продукт: Docere (MVP для одной клиники, public cloud)
 
-## 1. Обзор продукта
+## 1. Смысл системы и контекст
 
-Docere - это система обмена медицинскими записями.
-Базовая единица данных: `MedicalRecord` (как пост в соцсети).
+Docere нужна для контролируемого обмена медицинскими данными внутри одной клиники.
 
-Ключевая модель:
+Главная идея модели данных:
 
-1. Понятия постоянной "карточки" нет.
-2. У записи есть обязательные поля: `creator` (кто внес) и `patient` (о ком запись).
-3. Любой пользователь видит историю пациента как динамически собранную ленту доступных записей.
-4. Лента сортируется по `event_date` (дата события), а не по дате создания записи.
+1. `MedicalRecord` - это медицинская информация (результат консультации/обследования/анализа), независимая от конкретного аккаунта пациента.
+2. Персональные данные пациента хранятся отдельно в `PatientPassport`.
+3. Видимость записи конкретному пользователю задается связью `UserRecordLink`.
+4. "Карточка пациента" в интерфейсе не хранится как отдельная сущность БД, а динамически собирается из доступных записей и связанных `PatientPassport`.
+
+Это позволяет:
+
+1. Давать доступ к одной и той же записи разным ролям без копирования медицинского содержания.
+2. Работать с несколькими паспортами одного пациента у разных сотрудников, не смешивая персональные и медицинские данные.
+3. Удерживать инвариант immutable для медицинского содержания записи.
 
 ## 2. Границы MVP
 
@@ -26,63 +31,93 @@ Docere - это система обмена медицинскими запис�
 5. Только in-app уведомления.
 6. Без revoke доступа в MVP.
 7. Без удаления записей.
-8. Без редактирования записей после создания.
+8. Без редактирования медицинского содержания записи после создания.
 
 ## 3. Роли
 
 1. `patient`
 2. `doctor`
-3. `lab_technician`
-4. `admin`
+3. `admin`
 
-## 4. Доменная модель и правила
+## 4. Доменная модель и ключевые правила
 
 ### 4.1 MedicalRecord
 
-Обязательные атрибуты записи:
+`MedicalRecord` хранит только медицинские данные и технические метаданные записи.
 
-1. `creator_user_id` - кто внес запись (врач, лаборант или пациент).
-2. `patient_id` - пациент, к которому относится запись.
+Обязательные атрибуты:
 
-Дополнительно:
-
-1. `event_date` - дата медицинского события.
-2. `created_at` - дата создания записи в системе.
-3. `record_type`, `title`, `payload_json`, `attachments`.
+1. `creator_user_id` - создатель записи.
+2. `event_date` - дата медицинского события.
+3. `record_type` - тип записи.
+4. `payload_json` - медицинское содержимое.
 
 Правила:
 
-1. `creator_user_id` неизменяем.
-2. `patient_id` неизменяем.
-3. Запись immutable после создания.
-4. Запись не удаляется.
+1. Медицинское содержимое immutable после создания.
+2. `creator_user_id` неизменяем.
+3. Запись не удаляется.
+4. Привязка к пациенту выполняется не полем в `MedicalRecord`, а через `UserRecordLink -> PatientPassport`.
 
-### 4.2 Пациент как субъект записи
+### 4.2 PatientPassport
 
-1. Используется сущность `Patient` (субъект медицинской информации).
-2. `Patient` может быть связан с аккаунтом (`linked_user_id`) или существовать без него.
-3. Все записи объединяются по `patient_id`.
+`PatientPassport` хранит персональные данные пациента.
 
-### 4.3 Sharing
+Сценарии:
 
-1. Любой записью можно поделиться.
-2. Share проходит через статусы `pending -> accepted/rejected`.
-3. Принятие share не копирует запись, а дает доступ к оригиналу.
-4. Пациент может делиться записью, которую сам не создавал.
+1. Паспорт создается врачом при внесении записи.
+2. При регистрации пациента создается его собственный `PatientPassport` со `status=confirmed` и `patient_user_id=<id пользователя>`.
+3. Паспорт не является объектом шаринга: врач делится только записью, не паспортом.
 
-### 4.4 История пациента у конечного пользователя
+Правила:
 
-История строится запросом:
+1. Паспорт может существовать без `patient_user_id` (например, создан врачом для локальной работы с записью).
+2. В системе может быть несколько паспортов на похожие ФИО.
+3. Подтвержденный паспорт (`status=confirmed` и `patient_user_id != null`) считается более приоритетным для отображения.
+4. Если пациент принимает запись врача, создается `UserRecordLink` этой записи к подтвержденному паспорту пациента.
 
-1. выбрать записи с нужным `patient_id`;
-2. оставить только записи, доступные текущему пользователю;
-3. сортировать по `event_date DESC`, затем `created_at DESC`.
+### 4.3 Sharing (технический поток)
+
+1. Отправитель инициирует share записи получателю.
+2. Создается `RecordShare(status=pending)`.
+3. Получатель выбирает `accepted` или `rejected`.
+4. При `accepted` создается `UserRecordLink` для получателя к оригинальному `MedicalRecord` (копия записи не создается).
+5. Если получатель - пациент и у него есть подтвержденный `PatientPassport`, создается `UserRecordLink` этой же записи к его подтвержденному паспорту.
+6. Для пациента в MVP у записи должен быть актуальный `UserRecordLink` на его подтвержденный `PatientPassport`.
+7. Конфликт нескольких `UserRecordLink` на одну запись относится к кейсам сотрудников (например, `врач -> врач`) и решается правилом приоритета отображения.
+8. При `rejected` ссылка не создается.
+
+Дополнительно:
+
+1. Пациент может делиться записью, которую не создавал.
+2. В MVP revoke отсутствует.
+
+### 4.4 UserRecordLink и фактическая видимость
+
+`UserRecordLink` - источник истины по доступу пользователя к записи и по контексту отображения в карточке.
+
+Назначение:
+
+1. Фиксирует, что пользователь видит конкретный `MedicalRecord`.
+2. Хранит `patient_passport_id`, в контексте которого запись показывается пользователю.
+3. Позволяет одной записи присутствовать у разных пользователей в разных контекстах паспорта.
+
+### 4.5 Как формируется "карточка пациента" в UI
+
+Алгоритм для текущего пользователя:
+
+1. Берем все `UserRecordLink` пользователя.
+2. Для каждой записи определяем релевантный `PatientPassport`.
+3. Если для одной и той же `MedicalRecord` доступно несколько паспортов, приоритет:
+   - сначала `PatientPassport` со `status=confirmed` и `patient_user_id != null`,
+   - затем остальные варианты.
+4. Группируем записи в карточки по выбранному паспорту.
+5. Внутри карточки сортируем записи по `event_date DESC`, затем `created_at DESC`.
 
 Следствие:
 
-1. У разных пользователей история одного пациента может отличаться по составу записей (из-за прав доступа).
-2. Если запись принята через share, она появляется в истории получателя по этому пациенту.
-3. Если получатель раньше не работал с этим пациентом, при первом `accepted` создается рабочая связь пользователя с пациентом (для отображения в списке пациентов).
+1. Карточка - это read-модель, а не отдельная таблица.
+2. Одна и та же запись может отображаться у разных пользователей по разным карточкам (в зависимости от их `UserRecordLink`).
 
 ## 5. Функциональные требования
 
@@ -95,6 +130,7 @@ Acceptance criteria:
 1. Регистрация по `fio + email + phone + password`.
 2. `email` уникален.
 3. `date_of_birth` в `User` опционален.
+4. При регистрации автоматически создается `PatientPassport(status=confirmed)` c `patient_user_id = User.id`.
 
 ### FR-AUTH-2 Вход
 
@@ -103,22 +139,25 @@ Acceptance criteria:
 1. Вход по `email + password`.
 2. Есть rate limiting на auth endpoints.
 
-## 5.2 Patient Entity
+## 5.2 Patient Passport
 
-### FR-PAT-1 Создание пациента сотрудником
-
-Acceptance criteria:
-
-1. Перед созданием показываются вероятные совпадения по `fio + date_of_birth + email + phone`.
-2. Если совпадений нет, создается новый `Patient`.
-
-### FR-PAT-2 Привязка пациента к аккаунту
+### FR-PASS-1 Создание паспорта пациента сотрудником
 
 Acceptance criteria:
 
-1. Пациент может запросить привязку существующего `Patient` к своему `User`.
-2. Подтверждение выполняется админом.
-3. После подтверждения заполняется `Patient.linked_user_id`.
+1. Сотрудник может создать `PatientPassport` c `fio` и опциональными `date_of_birth/email/phone`.
+2. Перед созданием показываются вероятные совпадения по паспортным полям.
+3. Если совпадений нет или пользователь подтверждает выбор, создается новый паспорт.
+
+### FR-PASS-2 Привязка принятой записи к паспорту пациента
+
+Acceptance criteria:
+
+1. Врач/сотрудник шарит только `MedicalRecord`.
+2. При `accepted` записи пациентом система создает/обновляет `UserRecordLink` этой записи на подтвержденный `PatientPassport` пациента.
+3. Отдельного сценария \"принять/подтвердить паспорт\" в MVP нет.
+4. Для пациента после `accepted` запись отображается в его карточке через подтвержденный `PatientPassport`.
+5. Сценарий конкурирующих `UserRecordLink` для одной записи в MVP учитывается для сотрудников (например, `врач -> врач`), а не для пациента.
 
 ## 5.3 Medical Records
 
@@ -127,15 +166,16 @@ Acceptance criteria:
 Acceptance criteria:
 
 1. Запись создают врач, лаборант или пациент.
-2. Обязательные поля: `creator_user_id`, `patient_id`, `event_date`.
-3. После создания запись не редактируется.
+2. Обязательные поля: `creator_user_id`, `event_date`, `record_type`, `payload_json`.
+3. После создания запись не редактируется в медицинской части.
+4. При создании записи создается `UserRecordLink` для автора.
 
 ### FR-REC-2 Статусы записи
 
 Acceptance criteria:
 
 1. Статусы: `draft`, `unconfirmed`, `confirmed`, `rejected`.
-2. Переход в `confirmed` блокирует любые изменения.
+2. Статус `confirmed` означает верификацию записи по бизнес-процессу, но не снимает ACL-проверки доступа.
 
 ## 5.4 Sharing
 
@@ -146,9 +186,9 @@ Acceptance criteria:
 1. Отправитель выбирает запись и получателя.
 2. Создается `RecordShare(status=pending)`.
 3. Получатель принимает (`accepted`) или отклоняет (`rejected`).
-4. При `accepted` запись появляется в истории получателя по соответствующему пациенту.
-5. При `rejected` запись не появляется у получателя.
-6. Если у получателя нет связи с этим `patient_id`, она создается автоматически при `accepted`.
+4. При `accepted` создается `UserRecordLink` получателя к этой записи.
+5. Если получатель - пациент, запись должна быть связана с его подтвержденным `PatientPassport` через `UserRecordLink`.
+6. При `rejected` связь не создается.
 
 ### FR-SHARE-2 Кейс "врач -> пациент -> другой врач"
 
@@ -165,18 +205,18 @@ Acceptance criteria:
 Acceptance criteria:
 
 1. В MVP отсутствует операция revoke.
-2. Статусы доступа: только `pending/accepted/rejected`.
+2. Статусы share: только `pending/accepted/rejected`.
 
-## 5.5 Timeline View
+## 5.5 Timeline и карточка пациента
 
-### FR-TL-1 История пациента
+### FR-TL-1 История карточки
 
 Acceptance criteria:
 
-1. Экран "История пациента" отображает доступные записи по выбранному `patient_id`.
-2. Сортировка: `event_date DESC`, вторично `created_at DESC`.
-3. Для каждой записи видно минимум: `creator`, `record_type`, `event_date`, `created_at`.
-4. Пациент появляется в списке "Мои пациенты" у пользователя, если есть хотя бы одна запись, которую пользователь создал по этому `patient_id` или принял по share.
+1. Экран карточки показывает записи только из `UserRecordLink` текущего пользователя.
+2. Для каждой записи выбирается один `PatientPassport` по правилу приоритета (подтвержденный с `patient_user_id` выше).
+3. Сортировка записей: `event_date DESC`, вторично `created_at DESC`.
+4. Для записи видно минимум: `creator`, `record_type`, `event_date`, `created_at`.
 
 ## 5.6 Audit
 
@@ -204,30 +244,31 @@ Acceptance criteria:
 9. `created_at: timestamp`
 10. `updated_at: timestamp`
 
-`Patient`
+`PatientPassport`
 
 1. `id: uuid`
-2. `linked_user_id: uuid (nullable, fk -> User.id, unique)`
-3. `fio: string`
-4. `date_of_birth: date (nullable, indexed)`
-5. `email: string (nullable)`
-6. `phone: string (nullable)`
-7. `created_by_user_id: uuid (nullable, fk -> User.id)`
-8. `created_at: timestamp`
-9. `updated_at: timestamp`
+2. `created_by_user_id: uuid (fk -> User.id)`
+3. `patient_user_id: uuid (nullable, fk -> User.id)`
+4. `fio: string`
+5. `date_of_birth: date (nullable)`
+6. `email: string (nullable)`
+7. `phone: string (nullable)`
+8. `status: enum(draft|confirmed)`
+9. `confirmed_at: timestamp (nullable)`
+10. `created_at: timestamp`
+11. `updated_at: timestamp`
 
 `MedicalRecord`
 
 1. `id: uuid`
-2. `patient_id: uuid (fk -> Patient.id, indexed)`
-3. `creator_user_id: uuid (fk -> User.id)`
-4. `status: enum(draft|unconfirmed|confirmed|rejected)`
-5. `record_type: enum(consultation_result|exam_result|lab_result|other)`
-6. `event_date: date`
-7. `title: string`
-8. `payload_json: jsonb`
-9. `created_at: timestamp`
-10. `updated_at: timestamp`
+2. `creator_user_id: uuid (fk -> User.id, indexed)`
+3. `status: enum(draft|unconfirmed|confirmed|rejected)`
+4. `record_type: enum(consultation_result|exam_result|lab_result|other)`
+5. `event_date: date (indexed)`
+6. `title: string`
+7. `payload_json: jsonb`
+8. `created_at: timestamp`
+9. `updated_at: timestamp`
 
 `RecordShare`
 
@@ -239,14 +280,15 @@ Acceptance criteria:
 6. `created_at: timestamp`
 7. `responded_at: timestamp (nullable)`
 
-`UserPatientAccess`
+`UserRecordLink`
 
 1. `id: uuid`
 2. `user_id: uuid (fk -> User.id, indexed)`
-3. `patient_id: uuid (fk -> Patient.id, indexed)`
-4. `source: enum(self_created|share_accepted|imported)`
-5. `source_record_share_id: uuid (nullable, fk -> RecordShare.id)`
-6. `created_at: timestamp`
+3. `record_id: uuid (fk -> MedicalRecord.id, indexed)`
+4. `patient_passport_id: uuid (nullable, fk -> PatientPassport.id, indexed)`
+5. `source: enum(creator|share_accepted|imported|manual_attach)`
+6. `source_record_share_id: uuid (nullable, fk -> RecordShare.id)`
+7. `created_at: timestamp`
 
 `FileAttachment`
 
@@ -278,23 +320,26 @@ Acceptance criteria:
 
 ### 6.2 Ключевые связи
 
-1. `Patient 1..N -> MedicalRecord`.
-2. `MedicalRecord 1..N -> RecordShare`.
-3. `User 1..N -> UserPatientAccess`.
-4. `Patient 1..N -> UserPatientAccess`.
-5. `MedicalRecord 1..N -> FileAttachment`.
-6. `User 1..N -> AuditEvent`.
+1. `User 1..N -> PatientPassport (created_by_user_id)`.
+2. `User 1..N -> PatientPassport (patient_user_id)`.
+3. `User 1..N -> MedicalRecord (creator_user_id)`.
+4. `MedicalRecord 1..N -> RecordShare`.
+5. `User 1..N -> UserRecordLink`.
+6. `MedicalRecord 1..N -> UserRecordLink`.
+7. `PatientPassport 1..N -> UserRecordLink`.
+8. `MedicalRecord 1..N -> FileAttachment`.
+9. `User 1..N -> AuditEvent`.
 
 ## 7. UX-принципы
 
-1. Нет раздела "карточка" как отдельной сущности хранения.
-2. Основной экран - "История пациента" (динамическая лента записей).
+1. "Карточка пациента" - это динамический вид доступных пользователю записей.
+2. На экране явно показывать, из какого `PatientPassport` собрана карточка.
 3. Входящие share-запросы отображаются отдельно и требуют `accept/reject`.
-4. При первом `accept` записи нового пациента этот пациент автоматически появляется в "Мои пациенты".
+4. При наличии подтвержденного паспорта отображение автоматически приоритизирует его.
 
 ## 8. Нефункциональные требования
 
-1. P95 `GET /patients/{id}/timeline` <= 700 ms.
+1. P95 `GET /timeline` <= 700 ms.
 2. P95 операций share/accept <= 2 s.
 3. Импорт архива до 200 MB <= 2 минут асинхронной обработки.
 
@@ -302,12 +347,14 @@ Acceptance criteria:
 
 ### Milestone 0 (Foundation)
 
-1. Auth + роли + `Patient` + immutable `MedicalRecord`.
+1. Auth + роли + `PatientPassport` + immutable `MedicalRecord`.
+2. Базовая модель `UserRecordLink`.
 
 ### Milestone 1 (Sharing)
 
 1. `RecordShare` и входящие `accept/reject`.
-2. История пациента, собранная из доступных записей.
+2. Построение карточки пациента из `UserRecordLink`.
+3. Правило приоритета подтвержденного `PatientPassport`.
 
 ### Milestone 2 (Import + Audit)
 
@@ -316,11 +363,11 @@ Acceptance criteria:
 
 ## 10. Риски
 
-1. Дубли по содержанию.
-2. Митигация: показывать автора, дату события и тип; не объединять автоматически.
+1. Риск: дубли/конфликты паспортов на одного пациента.
+2. Митигация: приоритизировать `confirmed + patient_user_id` и явно показывать источник паспорта в UI.
 
-1. Ошибочное принятие чужой записи.
-2. Митигация: отдельный экран подтверждения с ключевыми метаданными.
+1. Риск: ошибочное принятие чужой записи.
+2. Митигация: отдельный экран подтверждения с ключевыми метаданными перед `accept`.
 
 ## 11. Технические ограничения и архитектура (обязательно)
 
