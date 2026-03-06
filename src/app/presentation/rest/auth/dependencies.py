@@ -122,3 +122,10 @@ def get_refresh_access_token_use_case(
         repository=SqlAlchemyAuthRepository(session=session),
         token_service=_build_token_service(),
     )
+
+
+register_patient_dependency = Depends(get_register_patient_user)
+login_user_dependency = Depends(get_login_user)
+refresh_access_token_dependency = Depends(get_refresh_access_token_use_case)
+authenticated_user_use_case_dependency = Depends(get_authenticated_user_use_case)
+bearer_token_extraction_dependency = Depends(extract_bearer_token)

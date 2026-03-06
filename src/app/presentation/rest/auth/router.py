@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, status
 
 from app.application.dto.auth_token import AuthToken
 from app.application.dto.auth_user_view import AuthUserView
@@ -18,11 +18,11 @@ from app.application.use_cases.login_user import LoginUser
 from app.application.use_cases.refresh_access_token import RefreshAccessToken
 from app.application.use_cases.register_patient_user import RegisterPatientUser
 from app.presentation.rest.auth.dependencies import (
-    extract_bearer_token,
-    get_authenticated_user_use_case,
-    get_login_user,
-    get_refresh_access_token_use_case,
-    get_register_patient_user,
+    authenticated_user_use_case_dependency,
+    bearer_token_extraction_dependency,
+    login_user_dependency,
+    refresh_access_token_dependency,
+    register_patient_dependency,
 )
 from app.presentation.rest.auth.schemas import (
     AuthTokenResponseSchema,
@@ -38,11 +38,6 @@ from app.presentation.webserver.http_errors import (
 )
 
 router = APIRouter(prefix='/auth', tags=['auth'])
-register_patient_dependency = Depends(get_register_patient_user)
-login_user_dependency = Depends(get_login_user)
-refresh_access_token_dependency = Depends(get_refresh_access_token_use_case)
-authenticated_user_use_case_dependency = Depends(get_authenticated_user_use_case)
-bearer_token_extraction_dependency = Depends(extract_bearer_token)
 
 
 @router.post(
