@@ -1,3 +1,5 @@
+"""Доменная сущность состояния здоровья сервиса."""
+
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
@@ -5,6 +7,8 @@ from typing import Literal
 
 @dataclass(frozen=True, slots=True)
 class HealthStatus:
+    """Состояние сервиса для health-check."""
+
     service: str
     status: Literal['ok']
     timestamp_utc: datetime

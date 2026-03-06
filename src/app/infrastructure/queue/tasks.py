@@ -1,3 +1,5 @@
+"""Фоновые Celery-задачи."""
+
 from collections.abc import Callable
 from typing import cast
 
@@ -10,4 +12,9 @@ task_decorator = cast(TaskDecorator, celery_app.task(name='docere.ping'))
 
 @task_decorator
 def ping() -> str:
+    """Проверить доступность воркера.
+
+    Returns:
+        Строка `pong`.
+    """
     return 'pong'

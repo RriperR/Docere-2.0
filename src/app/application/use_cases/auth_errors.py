@@ -1,3 +1,6 @@
+"""Исключения use-case слоя аутентификации."""
+
+
 class AuthError(Exception):
     """Base auth error."""
 

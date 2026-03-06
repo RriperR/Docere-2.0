@@ -1,3 +1,5 @@
+"""HTTP-роут health-check."""
+
 from fastapi import APIRouter
 
 from app.application.use_cases.get_health_status import GetHealthStatus
@@ -10,6 +12,11 @@ router = APIRouter(tags=['health'])
 
 @router.get('/health', response_model=HealthSchema)
 def get_health() -> HealthSchema:
+    """Вернуть состояние доступности сервиса.
+
+    Returns:
+        Ответ `health` с именем сервиса и UTC-временем.
+    """
     settings = get_settings()
     use_case = GetHealthStatus(
         clock=SystemClock(),

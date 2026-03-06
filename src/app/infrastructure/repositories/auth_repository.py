@@ -1,3 +1,5 @@
+"""SQLAlchemy-реализация репозитория пользователей."""
+
 from __future__ import annotations
 
 from datetime import date
@@ -11,10 +13,25 @@ from app.infrastructure.db.models.user import UserRole, UserRow, UserStatus
 
 
 class SqlAlchemyAuthRepository(AuthRepositoryPort):
+    """Репозиторий для чтения и создания пользователей."""
+
     def __init__(self, session: Session) -> None:
+        """Инициализировать репозиторий.
+
+        Args:
+            session: Активная SQLAlchemy-сессия.
+        """
         self._session = session
 
     def find_by_email(self, email: str) -> AuthUser | None:
+        """Найти пользователя по email.
+
+        Args:
+            email: Email пользователя.
+
+        Returns:
+            Пользователь, если найден, иначе `None`.
+        """
         normalized_email = email.strip().lower()
         user_row = self._session.scalar(select(UserRow).where(UserRow.email == normalized_email))
         if user_row is None:
@@ -29,6 +46,18 @@ class SqlAlchemyAuthRepository(AuthRepositoryPort):
         password_hash: str,
         date_of_birth: date | None,
     ) -> AuthUser:
+        """Создать нового пользователя-пациента.
+
+        Args:
+            fio: ФИО пользователя.
+            email: Email пользователя.
+            phone: Телефон пользователя.
+            password_hash: Хеш пароля.
+            date_of_birth: Дата рождения, если указана.
+
+        Returns:
+            Созданный пользователь доменного типа.
+        """
         normalized_email = email.strip().lower()
         user_row = UserRow(
             id=uuid4(),
@@ -46,6 +75,14 @@ class SqlAlchemyAuthRepository(AuthRepositoryPort):
         return self._to_domain(user_row)
 
     def find_by_id(self, user_id: UUID) -> AuthUser | None:
+        """Найти пользователя по идентификатору.
+
+        Args:
+            user_id: Идентификатор пользователя.
+
+        Returns:
+            Пользователь, если найден, иначе `None`.
+        """
         user_row = self._session.get(UserRow, user_id)
         if user_row is None:
             return None

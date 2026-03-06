@@ -1,3 +1,5 @@
+"""Pydantic-схемы для auth-эндпоинтов."""
+
 from __future__ import annotations
 
 from datetime import date
@@ -7,6 +9,8 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 class RegisterPatientRequestSchema(BaseModel):
+    """Тело запроса регистрации пациента."""
+
     fio: str = Field(min_length=1, max_length=255)
     email: EmailStr
     phone: str = Field(min_length=5, max_length=32)
@@ -16,6 +20,17 @@ class RegisterPatientRequestSchema(BaseModel):
     @field_validator('fio')
     @classmethod
     def validate_fio(cls, value: str) -> str:
+        """Провалидировать и нормализовать ФИО.
+
+        Args:
+            value: Исходное значение ФИО.
+
+        Returns:
+            Нормализованное ФИО без лишних пробелов.
+
+        Raises:
+            ValueError: Если ФИО пустое после нормализации.
+        """
         normalized = value.strip()
         if not normalized:
             raise ValueError('fio must not be empty')
@@ -24,6 +39,17 @@ class RegisterPatientRequestSchema(BaseModel):
     @field_validator('phone')
     @classmethod
     def validate_phone(cls, value: str) -> str:
+        """Провалидировать и нормализовать номер телефона.
+
+        Args:
+            value: Исходное значение телефона.
+
+        Returns:
+            Нормализованный телефон без лишних пробелов.
+
+        Raises:
+            ValueError: Если телефон пустой после нормализации.
+        """
         normalized = value.strip()
         if not normalized:
             raise ValueError('phone must not be empty')
@@ -31,16 +57,22 @@ class RegisterPatientRequestSchema(BaseModel):
 
 
 class LoginRequestSchema(BaseModel):
+    """Тело запроса входа пользователя."""
+
     email: EmailStr
     password: str = Field(min_length=1, max_length=128)
 
 
 class AuthTokenResponseSchema(BaseModel):
+    """Схема ответа с access-токеном."""
+
     access_token: str
     token_type: str
 
 
 class AuthUserResponseSchema(BaseModel):
+    """Схема ответа с профилем аутентифицированного пользователя."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID

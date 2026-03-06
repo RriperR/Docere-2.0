@@ -1,3 +1,5 @@
+"""REST-роуты аутентификации пользователя."""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, status
@@ -43,10 +45,19 @@ bearer_token_extraction_dependency = Depends(extract_bearer_token)
     response_model=AuthUserResponseSchema,
     status_code=status.HTTP_201_CREATED,
 )
-def register_patient(
+def register_user(
     payload: RegisterPatientRequestSchema,
     use_case: RegisterPatientUser = register_patient_dependency,
 ) -> AuthUserView:
+    """Зарегистрировать нового пользователя.
+
+    Args:
+        payload: Тело запроса регистрации.
+        use_case: Use-case регистрации пациента.
+
+    Returns:
+        Данные созданного пользователя.
+    """
     try:
         return use_case.execute(
             fio=payload.fio,
@@ -64,6 +75,15 @@ def login(
     payload: LoginRequestSchema,
     use_case: LoginUser = login_user_dependency,
 ) -> AuthToken:
+    """Выполнить вход пользователя.
+
+    Args:
+        payload: Тело запроса входа.
+        use_case: Use-case аутентификации.
+
+    Returns:
+        Access-токен пользователя.
+    """
     try:
         return use_case.execute(email=str(payload.email).lower(), password=payload.password)
     except InvalidCredentialsError:
@@ -75,6 +95,15 @@ def get_authenticated_user(
     token: str = bearer_token_extraction_dependency,
     use_case: GetAuthenticatedUser = authenticated_user_use_case_dependency,
 ) -> AuthUserView:
+    """Вернуть профиль текущего пользователя по токену.
+
+    Args:
+        token: Bearer-токен пользователя.
+        use_case: Use-case получения пользователя.
+
+    Returns:
+        Публичные данные текущего пользователя.
+    """
     try:
         return use_case.execute(token=token)
     except (InvalidTokenError, UserNotFoundError):

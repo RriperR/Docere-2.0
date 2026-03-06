@@ -1,3 +1,5 @@
+"""Dependency-фабрики для auth-эндпоинтов."""
+
 from __future__ import annotations
 
 from fastapi import Depends, Security
@@ -31,6 +33,14 @@ def _build_token_service() -> JwtTokenService:
 def extract_bearer_token(
     credentials: HTTPAuthorizationCredentials | None = bearer_token_dependency,
 ) -> str:
+    """Извлечь Bearer-токен из заголовка Authorization.
+
+    Args:
+        credentials: Данные HTTP Bearer авторизации.
+
+    Returns:
+        Непустой строковый токен.
+    """
     if credentials is None:
         raise_unauthorized('Authentication required')
 
@@ -46,6 +56,14 @@ def extract_bearer_token(
 def get_register_patient_user(
     session: Session = db_session_dependency,
 ) -> RegisterPatientUser:
+    """Создать use-case регистрации пациента.
+
+    Args:
+        session: Активная сессия БД.
+
+    Returns:
+        Экземпляр `RegisterPatientUser`.
+    """
     return RegisterPatientUser(
         repository=SqlAlchemyAuthRepository(session=session),
         password_hasher=Pbkdf2PasswordHasher(),
@@ -55,6 +73,14 @@ def get_register_patient_user(
 def get_login_user(
     session: Session = db_session_dependency,
 ) -> LoginUser:
+    """Создать use-case входа пользователя.
+
+    Args:
+        session: Активная сессия БД.
+
+    Returns:
+        Экземпляр `LoginUser`.
+    """
     return LoginUser(
         repository=SqlAlchemyAuthRepository(session=session),
         password_hasher=Pbkdf2PasswordHasher(),
@@ -65,6 +91,14 @@ def get_login_user(
 def get_authenticated_user_use_case(
     session: Session = db_session_dependency,
 ) -> GetAuthenticatedUser:
+    """Создать use-case получения текущего пользователя.
+
+    Args:
+        session: Активная сессия БД.
+
+    Returns:
+        Экземпляр `GetAuthenticatedUser`.
+    """
     return GetAuthenticatedUser(
         repository=SqlAlchemyAuthRepository(session=session),
         token_service=_build_token_service(),

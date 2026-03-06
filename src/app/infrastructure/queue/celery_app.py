@@ -1,9 +1,16 @@
+"""Инициализация Celery-приложения."""
+
 from celery import Celery  # type: ignore[import-untyped]
 
 from app.infrastructure.settings import get_settings
 
 
 def create_celery_app() -> Celery:
+    """Создать и настроить экземпляр Celery.
+
+    Returns:
+        Настроенный Celery-инстанс.
+    """
     settings = get_settings()
     app = Celery(
         'docere',

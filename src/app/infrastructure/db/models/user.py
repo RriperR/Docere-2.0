@@ -1,6 +1,8 @@
+"""ORM-модель пользователя и связанные enum-типы."""
+
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import date, datetime, UTC
 from enum import StrEnum
 from uuid import UUID, uuid4
 
@@ -15,6 +17,8 @@ def _utc_now() -> datetime:
 
 
 class UserRole(StrEnum):
+    """Доступные роли пользователя."""
+
     PATIENT = 'patient'
     DOCTOR = 'doctor'
     LAB_TECHNICIAN = 'lab_technician'
@@ -22,6 +26,8 @@ class UserRole(StrEnum):
 
 
 class UserStatus(StrEnum):
+    """Статусы учетной записи пользователя."""
+
     ACTIVE = 'active'
     BLOCKED = 'blocked'
 
@@ -31,6 +37,8 @@ def _enum_values(enum_class: type[StrEnum]) -> list[str]:
 
 
 class UserRow(Base):
+    """ORM-представление таблицы `users`."""
+
     __tablename__ = 'users'
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
