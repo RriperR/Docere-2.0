@@ -11,7 +11,7 @@
 2. Внеси изменения.
 3. Прогони проверки локально.
 4. Сделай commit и push.
-5. Открой Merge Request по шаблону `.gitlab/merge_request_templates/default.md`.
+5. Открой Merge Request.
 
 ## Обязательные проверки
 
@@ -21,10 +21,10 @@
 make project-check
 ```
 
-Автоматически:
+Автоматически запускается:
 
-- `pre-commit` запускается на commit
-- `pre-push` запускает:
+- `pre-commit` на commit
+- `pre-push` на git push запускает:
   - `make type-check`
   - `make test-critical`
 
