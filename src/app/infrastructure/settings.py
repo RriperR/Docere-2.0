@@ -39,6 +39,7 @@ class AppSettings(BaseSettings):
     """Корневой объект конфигурации приложения."""
 
     model_config = SettingsConfigDict(
+        env_file=".env",
         env_prefix='APP_',
         env_nested_delimiter='__',
         extra='ignore',

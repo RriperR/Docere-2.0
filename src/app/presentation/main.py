@@ -6,8 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.infrastructure.settings import validate_settings
-from app.presentation.rest.auth.router import router as auth_router
-from app.presentation.webserver.health.router import router as health_router
+from app.presentation.router import router as app_router
 
 
 @asynccontextmanager
@@ -28,8 +27,10 @@ def create_app() -> FastAPI:
         Готовое приложение FastAPI.
     """
     app = FastAPI(title='Docere Service', lifespan=lifespan)
-    app.include_router(health_router, prefix='/api')
-    app.include_router(auth_router, prefix='/api')
+
+    # Подключаем основной роутер (уже содержит все под-роутеры)
+    app.include_router(app_router)
+
     return app
 
 
