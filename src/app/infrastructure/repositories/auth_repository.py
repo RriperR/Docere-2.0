@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.application.ports.auth_repository import AuthRepositoryPort, AuthUser
+from app.infrastructure.db.models.patient_passport import PatientPassportRow, PatientPassportStatusRow
 from app.infrastructure.db.models.user import UserRole, UserRow, UserStatus
 
 
@@ -46,7 +47,7 @@ class SqlAlchemyAuthRepository(AuthRepositoryPort):
         password_hash: str,
         date_of_birth: date | None,
     ) -> AuthUser:
-        """Создать нового пользователя-пациента.
+        """Создать нового пользователя-пациента и его подтвержденный паспорт.
 
         Args:
             fio: ФИО пользователя.
@@ -70,6 +71,19 @@ class SqlAlchemyAuthRepository(AuthRepositoryPort):
             status=UserStatus.ACTIVE,
         )
         self._session.add(user_row)
+        self._session.flush()
+
+        patient_passport_row = PatientPassportRow(
+            created_by_user_id=user_row.id,
+            patient_user_id=user_row.id,
+            fio=user_row.fio,
+            date_of_birth=user_row.date_of_birth,
+            email=user_row.email,
+            phone=user_row.phone,
+            status=PatientPassportStatusRow.CONFIRMED,
+            confirmed_at=user_row.created_at,
+        )
+        self._session.add(patient_passport_row)
         self._session.commit()
         self._session.refresh(user_row)
         return self._to_domain(user_row)

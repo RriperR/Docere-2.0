@@ -1,6 +1,6 @@
 .PHONY: install install-dev install-lint install-test install-all \
 	lint lint-fix format format-check type-check test test-critical \
-	test-with-coverage project-check migrate-up migrate-down \
+	test-with-coverage project-check migrate-up migrate-down docker-migrate-up \
 	dev-backend dev-frontend dev
 
 install:
@@ -54,6 +54,9 @@ migrate-up:
 
 migrate-down:
 	uv run alembic downgrade -1
+
+docker-migrate-up:
+	docker compose run --rm --build api uv run alembic upgrade head
 
 dev-backend:
 	PYTHONPATH=src uv run uvicorn app.presentation.main:app --reload

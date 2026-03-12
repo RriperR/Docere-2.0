@@ -46,3 +46,33 @@ def raise_unauthorized(detail: str) -> NoReturn:
         detail=detail,
         headers={'WWW-Authenticate': 'Bearer'},
     )
+
+
+def raise_forbidden(detail: str) -> NoReturn:
+    """Выбросить HTTP 403 с заданным описанием.
+
+    Args:
+        detail: Текст ошибки авторизации.
+
+    Raises:
+        HTTPException: Если доступ к ресурсу запрещен.
+    """
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=detail,
+    )
+
+
+def raise_not_found(detail: str) -> NoReturn:
+    """Выбросить HTTP 404 с заданным описанием.
+
+    Args:
+        detail: Текст ошибки отсутствующего ресурса.
+
+    Raises:
+        HTTPException: Если ресурс не найден.
+    """
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=detail,
+    )
