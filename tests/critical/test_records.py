@@ -1,3 +1,5 @@
+"""Критические API-тесты для создания и чтения медицинских записей."""
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -8,14 +10,14 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from app.infrastructure.adapters.security.pbkdf2_password_hasher import Pbkdf2PasswordHasherAdapter
+from app.infrastructure.config.settings import clear_settings_cache
 from app.infrastructure.db.base import Base
-from app.infrastructure.db.models.medical_record import MedicalRecordRow
-from app.infrastructure.db.models.patient_passport import PatientPassportRow
-from app.infrastructure.db.models.user import UserRole, UserRow, UserStatus
-from app.infrastructure.db.models.user_record_link import UserRecordLinkRow
+from app.infrastructure.db.models.auth.user import UserRole, UserRow, UserStatus
+from app.infrastructure.db.models.medical_records.medical_record import MedicalRecordRow
+from app.infrastructure.db.models.medical_records.patient_passport import PatientPassportRow
+from app.infrastructure.db.models.medical_records.user_record_link import UserRecordLinkRow
 from app.infrastructure.db.session import clear_db_session_cache, get_engine, get_session_factory
-from app.infrastructure.security.password_hasher import Pbkdf2PasswordHasher
-from app.infrastructure.settings import clear_settings_cache
 from app.presentation.main import create_app
 
 TEST_PATIENT_PASSWORD = 'VeryStrongPass123'  # noqa: S105
@@ -52,7 +54,7 @@ def record_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[T
 def _register_patient(
     client: TestClient,
     email: str,
-    fio: str = 'Иванов Иван Иванович',
+    fio: str = 'РРІР°РЅРѕРІ РРІР°РЅ РРІР°РЅРѕРІРёС‡',
 ) -> None:
     response = client.post(
         '/api/auth/register',
@@ -90,10 +92,10 @@ def _get_patient_passport_id_by_email(email: str) -> UUID:
 def _create_doctor(email: str = 'doctor@example.com', password: str = TEST_DOCTOR_PASSWORD) -> None:
     with get_session_factory()() as session:
         doctor = UserRow(
-            fio='Петров Петр Петрович',
+            fio='РџРµС‚СЂРѕРІ РџРµС‚СЂ РџРµС‚СЂРѕРІРёС‡',
             email=email,
             phone='+79991112233',
-            password_hash=Pbkdf2PasswordHasher().hash_password(plain_password=password),
+            password_hash=Pbkdf2PasswordHasherAdapter().hash_password(plain_password=password),
             role=UserRole.DOCTOR,
             status=UserStatus.ACTIVE,
         )
@@ -105,7 +107,7 @@ def _create_record(
     client: TestClient,
     access_token: str,
     patient_passport_id: UUID,
-    title: str = 'Первичный осмотр',
+    title: str = 'РџРµСЂРІРёС‡РЅС‹Р№ РѕСЃРјРѕС‚СЂ',
 ) -> dict[str, object]:
     response = client.post(
         '/api/records',
@@ -116,8 +118,8 @@ def _create_record(
             'event_date': '2026-03-11',
             'title': title,
             'payload_json': {
-                'complaints': 'Головная боль',
-                'conclusion': 'Наблюдение',
+                'complaints': 'Р“РѕР»РѕРІРЅР°СЏ Р±РѕР»СЊ',
+                'conclusion': 'РќР°Р±Р»СЋРґРµРЅРёРµ',
             },
         },
     )
@@ -155,7 +157,7 @@ def test_doctor_can_create_record_for_existing_patient_passport(record_client: T
     _create_doctor()
     access_token = _login(record_client, 'doctor@example.com', password=TEST_DOCTOR_PASSWORD)
 
-    response_body = _create_record(record_client, access_token, patient_passport_id, title='Осмотр врача')
+    response_body = _create_record(record_client, access_token, patient_passport_id, title='РћСЃРјРѕС‚СЂ РІСЂР°С‡Р°')
 
     assert response_body['patient_passport_id'] == str(patient_passport_id)
 
@@ -183,7 +185,7 @@ def test_user_without_user_record_link_gets_forbidden(record_client: TestClient)
     owner_passport_id = _get_patient_passport_id_by_email('patient4@example.com')
     created_record = _create_record(record_client, owner_token, owner_passport_id)
 
-    _register_patient(record_client, 'patient5@example.com', fio='Сидоров Сидор Сидорович')
+    _register_patient(record_client, 'patient5@example.com', fio='РЎРёРґРѕСЂРѕРІ РЎРёРґРѕСЂ РЎРёРґРѕСЂРѕРІРёС‡')
     stranger_token = _login(record_client, 'patient5@example.com', TEST_PATIENT_PASSWORD)
 
     response = record_client.get(
@@ -199,7 +201,7 @@ def test_patient_cannot_create_record_for_foreign_passport(record_client: TestCl
     _register_patient(record_client, 'patient6@example.com')
     foreign_passport_id = _get_patient_passport_id_by_email('patient6@example.com')
 
-    _register_patient(record_client, 'patient7@example.com', fio='Семенов Семен Семенович')
+    _register_patient(record_client, 'patient7@example.com', fio='РЎРµРјРµРЅРѕРІ РЎРµРјРµРЅ РЎРµРјРµРЅРѕРІРёС‡')
     access_token = _login(record_client, 'patient7@example.com', TEST_PATIENT_PASSWORD)
 
     response = record_client.post(
@@ -209,7 +211,7 @@ def test_patient_cannot_create_record_for_foreign_passport(record_client: TestCl
             'patient_passport_id': str(foreign_passport_id),
             'record_type': 'consultation_result',
             'event_date': '2026-03-11',
-            'title': 'Попытка создать чужую запись',
+            'title': 'РџРѕРїС‹С‚РєР° СЃРѕР·РґР°С‚СЊ С‡СѓР¶СѓСЋ Р·Р°РїРёСЃСЊ',
             'payload_json': {'note': 'forbidden'},
         },
     )

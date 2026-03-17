@@ -1,1 +1,1 @@
-"""Application ports."""
+"""Порты application-слоя."""

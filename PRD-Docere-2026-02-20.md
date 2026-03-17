@@ -27,7 +27,7 @@ Docere нужна для контролируемого обмена медиц�
 1. Одна клиника.
 2. Публичное облако.
 3. Пациенты регистрируются сами.
-4. Врачей/лаборантов/админов создает админ.
+4. Врачей/админов создает админ.
 5. Только in-app уведомления.
 6. Без revoke доступа в MVP.
 7. Без удаления записей.
@@ -165,7 +165,7 @@ Acceptance criteria:
 
 Acceptance criteria:
 
-1. Запись создают врач, лаборант или пациент.
+1. Запись создают врач или пациент.
 2. Обязательные поля: `creator_user_id`, `event_date`, `record_type`, `payload_json`.
 3. После создания запись не редактируется в медицинской части.
 4. При создании записи создается `UserRecordLink` для автора.
@@ -239,7 +239,7 @@ Acceptance criteria:
 4. `phone: string`
 5. `date_of_birth: date (nullable)`
 6. `password_hash: string`
-7. `role: enum(patient|doctor|lab_technician|admin)`
+7. `role: enum(patient|doctor|admin)`
 8. `status: enum(active|blocked)`
 9. `created_at: timestamp`
 10. `updated_at: timestamp`

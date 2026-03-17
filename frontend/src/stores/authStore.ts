@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import api from '../api/api';
 
-export type UserRole = 'doctor' | 'patient' | 'lab_technician' | 'admin';
+export type UserRole = 'doctor' | 'patient' | 'admin';
 
 interface TokenData {
   access_token: string;

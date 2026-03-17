@@ -1,1 +1,1 @@
-"""Application use cases."""
+"""Сценарии application-слоя."""

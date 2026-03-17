@@ -2,7 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from app.infrastructure.settings import clear_settings_cache, get_settings
+from app.infrastructure.config.settings import clear_settings_cache, get_settings
 from app.presentation.main import create_app
 
 

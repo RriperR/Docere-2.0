@@ -19,7 +19,7 @@ branch_labels = None
 depends_on = None
 
 
-user_role = sa.Enum('patient', 'doctor', 'lab_technician', 'admin', name='user_role')
+user_role = sa.Enum('patient', 'doctor', 'admin', name='user_role')
 user_status = sa.Enum('active', 'blocked', name='user_status')
 record_status = sa.Enum('draft', 'unconfirmed', 'confirmed', 'rejected', name='record_status')
 record_type = sa.Enum('consultation_result', 'exam_result', 'lab_result', 'other', name='record_type')

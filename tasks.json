@@ -268,7 +268,7 @@
       "id": "TASK-008",
       "category": "security",
       "priority": "high",
-      "description": "Внедрить проверку ролей (patient/doctor/lab_technician/admin) на сервере для всех чувствительных endpoint.",
+      "description": "Внедрить проверку ролей (patient/doctor/admin) на сервере для всех чувствительных endpoint.",
       "acceptance_criteria": [
         "Ролевые ограничения применяются централизованно",
         "Админские операции недоступны не-админам",
@@ -391,9 +391,9 @@
       "id": "TASK-014",
       "category": "functional",
       "priority": "high",
-      "description": "Реализовать админские endpoint для создания врачей, лаборантов и админов.",
+      "description": "Реализовать админские endpoint для создания врачей и админов.",
       "acceptance_criteria": [
-        "Админ может создать пользователя ролей doctor/lab_technician/admin",
+        "Админ может создать пользователя ролей doctor/admin",
         "Для создания обязательны fio/email/phone/password",
         "Не-админ не может выполнять эту операцию"
       ],
@@ -456,7 +456,7 @@
       "priority": "critical",
       "description": "Реализовать создание MedicalRecord с обязательными полями creator_user_id, patient_id, event_date.",
       "acceptance_criteria": [
-        "Создание доступно ролям doctor/lab_technician/patient",
+        "Создание доступно ролям doctor/patient",
         "При отсутствии обязательных полей API возвращает валидационную ошибку",
         "created_at устанавливается сервером"
       ],

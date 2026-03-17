@@ -7,10 +7,15 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from app.infrastructure.adapters.repositories.auth.sqlalchemy_auth_repository import SqlAlchemyAuthRepositoryAdapter
+from app.infrastructure.config.settings import clear_settings_cache
 from app.infrastructure.db.base import Base
-from app.infrastructure.db.models.user import UserRow
+from app.infrastructure.db.models.auth.user import UserRow
+from app.infrastructure.db.models.medical_records.patient_passport import (
+    PatientPassportRow,
+    PatientPassportStatusRow,
+)
 from app.infrastructure.db.session import clear_db_session_cache, get_engine, get_session_factory
-from app.infrastructure.settings import clear_settings_cache
 from app.presentation.main import create_app
 
 
@@ -43,7 +48,7 @@ def auth_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[Tes
 
 def _build_registration_payload() -> dict[str, str]:
     return {
-        'fio': 'Иванов Иван Иванович',
+        'fio': 'РРІР°РЅРѕРІ РРІР°РЅ РРІР°РЅРѕРІРёС‡',
         'email': 'Patient@example.com',
         'phone': '+79990000000',
         'password': 'VeryStrongPass123',
@@ -72,6 +77,27 @@ def test_register_stores_hashed_password(auth_client: TestClient) -> None:
 
 
 @pytest.mark.critical
+def test_register_creates_confirmed_patient_passport(auth_client: TestClient) -> None:
+    payload = _build_registration_payload()
+
+    response = auth_client.post('/api/auth/register', json=payload)
+
+    assert response.status_code == 201
+
+    with get_session_factory()() as session:
+        user = session.scalar(select(UserRow).where(UserRow.email == 'patient@example.com'))
+        assert user is not None
+        patient_passport = session.scalar(
+            select(PatientPassportRow).where(PatientPassportRow.patient_user_id == user.id),
+        )
+
+    assert patient_passport is not None
+    assert patient_passport.created_by_user_id == user.id
+    assert patient_passport.status == PatientPassportStatusRow.CONFIRMED
+    assert patient_passport.confirmed_at is not None
+
+
+@pytest.mark.critical
 def test_register_rejects_duplicate_email(auth_client: TestClient) -> None:
     payload = _build_registration_payload()
 
@@ -79,6 +105,38 @@ def test_register_rejects_duplicate_email(auth_client: TestClient) -> None:
     assert first_response.status_code == 201
 
     second_response = auth_client.post('/api/auth/register', json=payload)
+    assert second_response.status_code == 409
+    assert second_response.json()['detail'] == 'User with this email already exists'
+
+
+@pytest.mark.critical
+def test_register_maps_db_unique_violation_to_conflict(
+    auth_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = _build_registration_payload()
+    original_find_by_email = SqlAlchemyAuthRepositoryAdapter.find_by_email
+
+    first_response = auth_client.post('/api/auth/register', json=payload)
+    assert first_response.status_code == 201
+
+    def always_return_none(self: SqlAlchemyAuthRepositoryAdapter, email: str) -> None:
+        return None
+
+    monkeypatch.setattr(
+        SqlAlchemyAuthRepositoryAdapter,
+        'find_by_email',
+        always_return_none,
+    )
+    try:
+        second_response = auth_client.post('/api/auth/register', json=payload)
+    finally:
+        monkeypatch.setattr(
+            SqlAlchemyAuthRepositoryAdapter,
+            'find_by_email',
+            original_find_by_email,
+        )
+
     assert second_response.status_code == 409
     assert second_response.json()['detail'] == 'User with this email already exists'
 

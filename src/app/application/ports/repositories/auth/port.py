@@ -1,0 +1,56 @@
+"""Контракт репозитория пользователей для сценариев аутентификации."""
+
+from __future__ import annotations
+
+from datetime import date
+from uuid import UUID
+
+from app.application.ports.repositories.auth.dtos import AuthUserDTO
+
+
+class AuthRepositoryPort:
+    """Порт репозитория для поиска и создания пользователей."""
+
+    def find_by_email(self, email: str) -> AuthUserDTO | None:
+        """Найти пользователя по email.
+
+        Args:
+            email: Email пользователя.
+
+        Returns:
+            Пользователь, если найден, иначе `None`.
+        """
+        raise NotImplementedError
+
+    def create_patient_user(
+        self,
+        fio: str,
+        email: str,
+        phone: str,
+        password_hash: str,
+        date_of_birth: date | None,
+    ) -> AuthUserDTO:
+        """Создать пользователя-пациента.
+
+        Args:
+            fio: ФИО пользователя.
+            email: Email пользователя.
+            phone: Телефон пользователя.
+            password_hash: Хеш пароля.
+            date_of_birth: Дата рождения, если указана.
+
+        Returns:
+            Созданный пользователь.
+        """
+        raise NotImplementedError
+
+    def find_by_id(self, user_id: UUID) -> AuthUserDTO | None:
+        """Найти пользователя по идентификатору.
+
+        Args:
+            user_id: Идентификатор пользователя.
+
+        Returns:
+            Пользователь, если найден, иначе `None`.
+        """
+        raise NotImplementedError

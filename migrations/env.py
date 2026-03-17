@@ -4,11 +4,11 @@ import os
 from logging.config import fileConfig
 
 from alembic import context
+from app.infrastructure.settings import get_settings
 from sqlalchemy import engine_from_config, pool
 
 from app.infrastructure.db import models as _models  # noqa: F401
 from app.infrastructure.db.base import Base
-from app.infrastructure.settings import get_settings
 
 config = context.config
 
