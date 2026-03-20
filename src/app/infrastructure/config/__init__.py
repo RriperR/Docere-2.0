@@ -6,7 +6,6 @@ from app.infrastructure.config.settings import (
     clear_settings_cache,
     DatabaseSettings,
     get_settings,
-    validate_settings,
 )
 
 __all__ = [
@@ -15,5 +14,4 @@ __all__ = [
     'DatabaseSettings',
     'clear_settings_cache',
     'get_settings',
-    'validate_settings',
 ]

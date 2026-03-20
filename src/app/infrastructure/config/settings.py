@@ -1,9 +1,12 @@
 """Конфигурация приложения и фабрики настроек."""
 
-from functools import lru_cache
+from functools import cache
+from pathlib import Path
 
 from pydantic import BaseModel, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.infrastructure.config.paths import DEFAULT_ENV_FILE
 
 
 class DatabaseSettings(BaseModel):
@@ -39,7 +42,6 @@ class AppSettings(BaseSettings):
     """Корневой объект конфигурации приложения."""
 
     model_config = SettingsConfigDict(
-        env_file='.env',
         env_prefix='APP_',
         env_nested_delimiter='__',
         extra='ignore',
@@ -53,25 +55,19 @@ class AppSettings(BaseSettings):
     queue: QueueSettings
 
 
-@lru_cache(maxsize=1)
-def get_settings() -> AppSettings:
+@cache
+def get_settings(*, env_file: Path | None = DEFAULT_ENV_FILE) -> AppSettings:
     """Получить и закешировать настройки приложения.
+
+    Args:
+        env_file: Путь до dotenv-файла. `None` отключает чтение `.env`.
 
     Returns:
         Валидированные настройки приложения.
     """
-    return AppSettings()
+    return AppSettings(_env_file=env_file)
 
 
 def clear_settings_cache() -> None:
     """Очистить кеш объекта настроек."""
     get_settings.cache_clear()
-
-
-def validate_settings() -> AppSettings:
-    """Проверить, что настройки приложения валидны.
-
-    Returns:
-        Валидированные настройки приложения.
-    """
-    return get_settings()
