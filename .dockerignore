@@ -16,7 +16,11 @@ htmlcov/
 
 .env
 .env.*
-!.env.example
+
+tests/
+README.md
+CONTRIBUTING.md
+progress.md
 
 frontend/
 node_modules/
