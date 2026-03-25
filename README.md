@@ -130,9 +130,35 @@ uv run alembic revision --autogenerate -m "describe_change"
 Для Docker Compose миграции лучше запускать явно:
 
 ```bash
-docker compose run --rm api uv run alembic upgrade head
+docker compose run --rm api migrate
 docker compose up -d api celery-worker
 ```
+
+Для одноразового контейнера из того же образа можно запускать management-команды напрямую:
+
+```bash
+docker run --rm --env-file .env docere-api:latest migrate
+docker run --rm --env-file .env docere-api:latest create-admin \
+  --email admin@example.com \
+  --password VeryStrongPass123 \
+  --fio "Главный администратор" \
+  --phone +79990000001
+```
+
+Это удобно для CI/CD и административных задач: не нужно заходить внутрь работающего контейнера и менять состояние вручную.
+
+## CI/CD и деплой
+
+В репозитории есть пример `.gitlab-ci.yml` для цикла:
+
+- `project-check`
+- сборка и публикация нового образа
+- одноразовый контейнер `migrate` перед деплоем
+- деплой новой версии на `staging`
+- smoke-проверка `/api/health`
+- ручной rollback через смену тега образа
+
+Ключевая идея: миграции выполняются отдельным одноразовым контейнером из того же образа, который затем деплоится в `staging`.
 
 ## Установка групп зависимостей backend
 

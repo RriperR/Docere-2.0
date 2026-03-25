@@ -44,6 +44,26 @@ class AuthRepositoryPort:
         """
         raise NotImplementedError
 
+    def create_admin_user(
+        self,
+        fio: str,
+        email: str,
+        phone: str,
+        password_hash: str,
+    ) -> AuthUserDTO:
+        """Создать пользователя-администратора.
+
+        Args:
+            fio: ФИО пользователя.
+            email: Email пользователя.
+            phone: Телефон пользователя.
+            password_hash: Хеш пароля.
+
+        Returns:
+            Созданный пользователь.
+        """
+        raise NotImplementedError
+
     def find_by_id(self, user_id: UUID) -> AuthUserDTO | None:
         """Найти пользователя по идентификатору.
 

@@ -1,7 +1,101 @@
 stages:
   - test
+  - build
+  - migrate
+  - deploy
+  - verify
+  - rollback
 
-ci-smoke:
+variables:
+  DOCKER_TLS_CERTDIR: ''
+  IMAGE_TAG: $CI_COMMIT_SHA
+  IMAGE_NAME: $CI_REGISTRY_IMAGE:$IMAGE_TAG
+  STAGING_COMPOSE_FILE: deploy/staging/docker-compose.yml
+
+project-check:
   stage: test
+  image: python:3.13-slim
+  before_script:
+    - pip install --no-cache-dir uv
+    - uv sync --all-groups
   script:
-    - echo "CI is working"
+    - make project-check
+
+build-image:
+  stage: build
+  image: docker:28-cli
+  services:
+    - docker:28-dind
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" --username "$CI_REGISTRY_USER" --password-stdin
+  script:
+    - docker build -t "$IMAGE_NAME" .
+    - docker push "$IMAGE_NAME"
+
+migrate-staging:
+  stage: migrate
+  image: docker:28-cli
+  services:
+    - docker:28-dind
+  needs:
+    - build-image
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" --username "$CI_REGISTRY_USER" --password-stdin
+    - printf '%s' "$STAGING_ENV_FILE" > .staging.env
+  script:
+    - docker pull "$IMAGE_NAME"
+    - docker run --rm --env-file .staging.env "$IMAGE_NAME" migrate
+  environment:
+    name: staging
+
+deploy-staging:
+  stage: deploy
+  image: alpine:3.22
+  needs:
+    - migrate-staging
+  before_script:
+    - apk add --no-cache openssh-client
+    - mkdir -p ~/.ssh
+    - printf '%s' "$STAGING_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+    - chmod 600 ~/.ssh/id_ed25519
+    - ssh-keyscan -H "$STAGING_HOST" >> ~/.ssh/known_hosts
+  script:
+    - >
+      ssh "$STAGING_SSH_USER@$STAGING_HOST"
+      "cd $STAGING_APP_DIR &&
+      export DOCERE_IMAGE=$IMAGE_NAME &&
+      docker compose -f $STAGING_COMPOSE_FILE pull &&
+      docker compose -f $STAGING_COMPOSE_FILE up -d"
+  environment:
+    name: staging
+
+smoke-staging:
+  stage: verify
+  image: curlimages/curl:8.16.0
+  needs:
+    - deploy-staging
+  script:
+    - curl --fail --show-error --silent "$STAGING_BASE_URL/api/health"
+  environment:
+    name: staging
+
+rollback-staging:
+  stage: rollback
+  image: alpine:3.22
+  when: manual
+  allow_failure: false
+  before_script:
+    - apk add --no-cache openssh-client
+    - mkdir -p ~/.ssh
+    - printf '%s' "$STAGING_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+    - chmod 600 ~/.ssh/id_ed25519
+    - ssh-keyscan -H "$STAGING_HOST" >> ~/.ssh/known_hosts
+  script:
+    - >
+      ssh "$STAGING_SSH_USER@$STAGING_HOST"
+      "cd $STAGING_APP_DIR &&
+      export DOCERE_IMAGE=$CI_REGISTRY_IMAGE:$ROLLBACK_IMAGE_TAG &&
+      docker compose -f $STAGING_COMPOSE_FILE pull &&
+      docker compose -f $STAGING_COMPOSE_FILE up -d"
+  environment:
+    name: staging

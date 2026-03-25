@@ -39,4 +39,5 @@ USER app
 
 EXPOSE 8000
 
-CMD ["python", "-m", "app.presentation.webserver.server_runner"]
+ENTRYPOINT ["python", "-m", "app.presentation.cli"]
+CMD ["serve"]

@@ -77,9 +77,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    entrypoint: ['celery']
     command:
       [
-        'celery',
         '--app',
         'app.infrastructure.queue.celery_app:celery_app',
         'worker',

@@ -1,0 +1,44 @@
+services:
+  gateway:
+    image: nginx:1.27-alpine
+    depends_on:
+      api:
+        condition: service_started
+    ports:
+      - '8000:80'
+    volumes:
+      - ../nginx/docere.conf:/etc/nginx/nginx.conf:ro
+
+  api:
+    image: ${DOCERE_IMAGE:?DOCERE_IMAGE is required}
+    environment:
+      APP_SERVICE_NAME: docere-service
+      APP_DATABASE__URL: ${APP_DATABASE__URL}
+      APP_AUTH__SECRET_KEY: ${APP_AUTH__SECRET_KEY}
+      APP_STORAGE__ENDPOINT: ${APP_STORAGE__ENDPOINT}
+      APP_STORAGE__BUCKET: ${APP_STORAGE__BUCKET}
+      APP_QUEUE__BROKER_URL: ${APP_QUEUE__BROKER_URL}
+      APP_QUEUE__RESULT_BACKEND: ${APP_QUEUE__RESULT_BACKEND}
+    stop_signal: SIGTERM
+    stop_grace_period: 15s
+    expose:
+      - '8000'
+
+  celery-worker:
+    image: ${DOCERE_IMAGE:?DOCERE_IMAGE is required}
+    entrypoint: ['celery']
+    command:
+      [
+        '--app',
+        'app.infrastructure.queue.celery_app:celery_app',
+        'worker',
+        '--loglevel=INFO',
+      ]
+    environment:
+      APP_SERVICE_NAME: docere-service
+      APP_DATABASE__URL: ${APP_DATABASE__URL}
+      APP_AUTH__SECRET_KEY: ${APP_AUTH__SECRET_KEY}
+      APP_STORAGE__ENDPOINT: ${APP_STORAGE__ENDPOINT}
+      APP_STORAGE__BUCKET: ${APP_STORAGE__BUCKET}
+      APP_QUEUE__BROKER_URL: ${APP_QUEUE__BROKER_URL}
+      APP_QUEUE__RESULT_BACKEND: ${APP_QUEUE__RESULT_BACKEND}

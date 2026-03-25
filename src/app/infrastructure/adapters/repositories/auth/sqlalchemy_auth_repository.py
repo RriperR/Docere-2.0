@@ -76,6 +76,39 @@ class SqlAlchemyAuthRepositoryAdapter(AuthRepositoryPort):
         self._session.flush()
         return self._to_domain(user_row)
 
+    def create_admin_user(
+        self,
+        fio: str,
+        email: str,
+        phone: str,
+        password_hash: str,
+    ) -> AuthUserDTO:
+        """Создать нового пользователя-администратора.
+
+        Args:
+            fio: ФИО пользователя.
+            email: Email пользователя.
+            phone: Телефон пользователя.
+            password_hash: Хеш пароля.
+
+        Returns:
+            Созданный пользователь доменного типа.
+        """
+        normalized_email = email.strip().lower()
+        user_row = UserRow(
+            id=uuid4(),
+            fio=fio,
+            email=normalized_email,
+            phone=phone,
+            date_of_birth=None,
+            password_hash=password_hash,
+            role=UserRole.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        self._session.add(user_row)
+        self._session.flush()
+        return self._to_domain(user_row)
+
     def find_by_id(self, user_id: UUID) -> AuthUserDTO | None:
         """Найти пользователя по идентификатору.
 
