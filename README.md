@@ -77,10 +77,20 @@ docker compose ps
 
 Сервисы в compose:
 
+- `gateway` (`nginx`, точка входа с хоста на `localhost:8000`)
 - `api` (FastAPI)
 - `postgres` (`PostgreSQL 16`)
 - `redis` (broker для Celery)
 - `celery-worker`
+
+Для локальной проверки проксирования и масштабирования backend можно поднять gateway и несколько backend-реплик:
+
+```bash
+docker compose up -d --build --scale api=2 gateway
+docker compose ps
+```
+
+При таком запуске внешний трафик идёт через `nginx`, а `api` остаётся доступен только внутри docker-сети.
 
 ## Основные команды проверки
 

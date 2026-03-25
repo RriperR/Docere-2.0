@@ -50,3 +50,11 @@ def clear_db_session_cache() -> None:
     """Очистить кеши engine и session-factory."""
     get_session_factory.cache_clear()
     get_engine.cache_clear()
+
+
+def close_db_connections() -> None:
+    """Закрыть активные подключения к БД и очистить кеш фабрик."""
+    if get_engine.cache_info().currsize:
+        get_engine().dispose()
+
+    clear_db_session_cache()

@@ -1,4 +1,4 @@
-"""HTTP-роут health-check."""
+"""HTTP-роуты health-check."""
 
 from fastapi import APIRouter
 

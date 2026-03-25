@@ -49,6 +49,7 @@ class AppSettings(BaseSettings):
     )
 
     service_name: str = 'docere-service'
+    graceful_shutdown_reject_window_seconds: float = 1.0
     database: DatabaseSettings
     auth: AuthSettings
     storage: StorageSettings
