@@ -45,8 +45,11 @@ export const AddRecordModal: React.FC<Props> = ({ patientId, onClose }) => {
     setError(null)
 
     let payloadJson: Record<string, unknown>
+    const normalizedPayloadText = payloadText.trim()
     try {
-      payloadJson = JSON.parse(payloadText) as Record<string, unknown>
+      payloadJson = normalizedPayloadText
+        ? (JSON.parse(normalizedPayloadText) as Record<string, unknown>)
+        : {}
     } catch {
       setError('Поле payload_json должно содержать корректный JSON')
       return
