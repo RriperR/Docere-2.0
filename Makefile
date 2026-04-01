@@ -56,7 +56,7 @@ migrate-down:
 	uv run alembic downgrade -1
 
 docker-migrate-up:
-	docker compose run --rm --build api uv run alembic upgrade head
+	docker compose run --rm --build api migrate
 
 dev-backend:
 	PYTHONPATH=src uv run uvicorn app.presentation.main:app --reload
