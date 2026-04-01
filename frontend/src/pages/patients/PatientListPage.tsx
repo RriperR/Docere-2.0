@@ -1,20 +1,35 @@
-// src/pages/PatientListPage.tsx
 import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Search, Calendar, FileText, Plus } from 'lucide-react'
+import { Calendar, FileText, Plus, Search } from 'lucide-react'
 import { format } from 'date-fns'
 
+import { Button } from '../../components/common/Button'
 import { Card } from '../../components/common/Card'
 import { Input } from '../../components/common/Input'
-import { Button } from '../../components/common/Button'
+import { useAuthStore } from '../../stores/authStore'
 import { usePatientsStore } from '../../stores/patientsStore'
-import api from '../../api/api'
+
+type ApiError = {
+  response?: {
+    data?: {
+      detail?: string
+    }
+  }
+}
+
+const buildFio = (lastName: string, firstName: string, middleName: string): string =>
+  [lastName, firstName, middleName]
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0)
+    .join(' ')
 
 const PatientListPage: React.FC = () => {
+  const { user } = useAuthStore()
   const {
     filteredPatients,
     fetchPatients,
+    createPatient,
     searchPatients,
     filterPatientsByDate,
     isLoading,
@@ -22,86 +37,61 @@ const PatientListPage: React.FC = () => {
   } = usePatientsStore()
 
   const [searchQuery, setSearchQuery] = useState('')
-  const [startDate, setStartDate]     = useState('')
-  const [endDate, setEndDate]         = useState('')
-  const [currentPage, setCurrentPage] = useState(1)
-
-  // ---- modal state ----
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
   const [isModalOpen, setModalOpen] = useState(false)
-  const [form, setForm] = useState({
-    lastName:   '',
-    firstName:  '',
-    middleName: '',
-    email:      '',
-    phone:      '',
-    birthday:   '',
-  })
-  const [formError, setFormError]     = useState<string | null>(null)
   const [isSubmitting, setSubmitting] = useState(false)
-
-  const patientsPerPage = 10
-  const indexLast  = currentPage * patientsPerPage
-  const indexFirst = indexLast - patientsPerPage
-  const current    = filteredPatients.slice(indexFirst, indexLast)
-  const totalPages = Math.ceil(filteredPatients.length / patientsPerPage)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [form, setForm] = useState({
+    lastName: '',
+    firstName: '',
+    middleName: '',
+    email: '',
+    phone: '',
+    birthday: '',
+  })
 
   useEffect(() => {
-    fetchPatients()
+    void fetchPatients()
   }, [fetchPatients])
 
   useEffect(() => {
     searchPatients(searchQuery)
-    setCurrentPage(1)
   }, [searchQuery, searchPatients])
 
   useEffect(() => {
     filterPatientsByDate(startDate, endDate)
-    setCurrentPage(1)
   }, [startDate, endDate, filterPatientsByDate])
 
-  const changePage = (n: number) => {
-    if (n < 1 || n > totalPages) return
-    setCurrentPage(n)
-  }
+  const canCreatePatient = user?.role === 'doctor' || user?.role === 'admin'
 
-  // ---- modal handlers ----
-  const openModal  = () => setModalOpen(true)
   const closeModal = () => {
     setModalOpen(false)
-    setForm({
-      lastName:   '',
-      firstName:  '',
-      middleName: '',
-      email:      '',
-      phone:      '',
-      birthday:   '',
-    })
     setFormError(null)
+    setForm({
+      lastName: '',
+      firstName: '',
+      middleName: '',
+      email: '',
+      phone: '',
+      birthday: '',
+    })
   }
 
-  const handleFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setForm({ ...form, [e.target.name]: e.target.value })
-  }
-
-  const handleFormSubmit = async () => {
+  const handleCreatePatient = async () => {
     setFormError(null)
     setSubmitting(true)
     try {
-      const payload: any = {
-        first_name:  form.firstName,
-        middle_name: form.middleName,
-        last_name:   form.lastName,
-        email:       form.email || null,
-        phone:       form.phone || null,
-      };
-      if (form.birthday.trim()) {
-        payload.birthday = form.birthday;  // only include if non-empty
-      }
-      await api.post('/patients/', payload);
-      await fetchPatients()
+      await createPatient({
+        fio: buildFio(form.lastName, form.firstName, form.middleName),
+        email: form.email || undefined,
+        phone: form.phone || undefined,
+        date_of_birth: form.birthday || undefined,
+      })
       closeModal()
-    } catch (err: any) {
-      setFormError(err.response?.data?.detail || 'Failed to add patient')
+    } catch (submitError: unknown) {
+      const apiError = submitError as ApiError
+      setFormError(apiError.response?.data?.detail || 'Не удалось создать карточку пациента')
     } finally {
       setSubmitting(false)
     }
@@ -115,107 +105,93 @@ const PatientListPage: React.FC = () => {
         className="flex items-center justify-between"
       >
         <div>
-          <h1 className="text-2xl font-bold">Patient List</h1>
-          <p className="text-gray-500">View and manage your patients.</p>
+          <h1 className="text-2xl font-bold text-gray-900">Карточки пациентов</h1>
+          <p className="text-gray-500">
+            {user?.role === 'patient'
+              ? 'Ваши доступные карточки и медицинские записи.'
+              : 'Пациенты, к которым у вас есть доступ.'}
+          </p>
         </div>
-        <Button
-          icon={<Plus className="h-5 w-5" />}
-          onClick={openModal}
-        >
-          Add Patient
-        </Button>
+        {canCreatePatient && (
+          <Button icon={<Plus className="h-5 w-5" />} onClick={() => setModalOpen(true)}>
+            Добавить пациента
+          </Button>
+        )}
       </motion.div>
 
-      {isLoading ? (
-        <p className="text-center py-20">Loading patients…</p>
-      ) : error ? (
-        <p className="text-center py-20 text-red-600">{error}</p>
-      ) : (
-        <Card>
-          {/* Filters */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <Input
-              placeholder="Search patients…"
-              icon={<Search className="h-5 w-5" />}
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-            />
-            <Input
-              type="date"
-              icon={<Calendar className="h-5 w-5" />}
-              value={startDate}
-              onChange={e => setStartDate(e.target.value)}
-            />
-            <Input
-              type="date"
-              icon={<Calendar className="h-5 w-5" />}
-              value={endDate}
-              onChange={e => setEndDate(e.target.value)}
-            />
-          </div>
+      <Card>
+        <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+          <Input
+            placeholder="Поиск по ФИО, email или телефону"
+            icon={<Search className="h-5 w-5" />}
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+          />
+          <Input
+            type="date"
+            icon={<Calendar className="h-5 w-5" />}
+            value={startDate}
+            onChange={(event) => setStartDate(event.target.value)}
+          />
+          <Input
+            type="date"
+            icon={<Calendar className="h-5 w-5" />}
+            value={endDate}
+            onChange={(event) => setEndDate(event.target.value)}
+          />
+        </div>
 
-          {/* Table */}
+        {isLoading ? (
+          <p className="py-20 text-center text-gray-500">Загружаю пациентов…</p>
+        ) : error ? (
+          <p className="py-20 text-center text-red-600">{error}</p>
+        ) : filteredPatients.length === 0 ? (
+          <p className="py-20 text-center text-gray-500">Доступных карточек пока нет.</p>
+        ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  {['Patient', 'DOB', 'Last Visit', 'Records', 'Actions'].map(h => (
+                  {['Пациент', 'Дата рождения', 'Последняя запись', 'Записей', 'Действия'].map((header) => (
                     <th
-                      key={h}
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase"
+                      key={header}
+                      className="px-6 py-3 text-left text-xs font-medium uppercase text-gray-500"
                     >
-                      {h}
+                      {header}
                     </th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {current.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
-                      No patients found.
-                    </td>
-                  </tr>
-                ) : current.map(p => (
-                  <tr key={p.id} className="hover:bg-gray-50">
+              <tbody className="divide-y divide-gray-200 bg-white">
+                {filteredPatients.map((patient) => (
+                  <tr key={patient.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4">
                       <div className="flex items-center">
-                        <div className="h-10 w-10 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-medium">
-                          {(p.firstName[0] ?? '') + (p.lastName[0] ?? '')}
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-100 font-medium text-primary-700">
+                          {(patient.firstName[0] ?? '') + (patient.lastName[0] ?? '')}
                         </div>
                         <div className="ml-4">
-                          <div className="font-medium text-gray-900">
-                            {p.lastName} {p.firstName} {p.middleName ? p.middleName + ' ' : ''}
-                          </div>
-                          <div className="text-gray-500 text-sm">{p.email || '—'}</div>
-                          {p.phone && (
-                            <div className="text-gray-500 text-sm">{p.phone}</div>
-                          )}
+                          <div className="font-medium text-gray-900">{patient.fio}</div>
+                          <div className="text-sm text-gray-500">{patient.email || '—'}</div>
+                          {patient.phone && <div className="text-sm text-gray-500">{patient.phone}</div>}
                         </div>
                       </div>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-900">
-                      {p.birthday
-                        ? format(new Date(p.birthday), 'MMM d, yyyy')
-                        : '—'}
+                      {patient.birthday ? format(new Date(patient.birthday), 'dd.MM.yyyy') : '—'}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-900">
-                      {p.lastVisit
-                        ? format(new Date(p.lastVisit), 'MMM d, yyyy')
-                        : '—'}
+                      {patient.lastVisit ? format(new Date(patient.lastVisit), 'dd.MM.yyyy') : '—'}
                     </td>
-                    <td className="px-6 py-4 text-sm">
+                    <td className="px-6 py-4 text-sm text-gray-900">
                       <div className="flex items-center">
-                        <FileText className="h-5 w-5 text-gray-400 mr-1" />
-                        {p.recordCount ?? 0}
+                        <FileText className="mr-1 h-4 w-4 text-gray-400" />
+                        {patient.recordCount}
                       </div>
                     </td>
                     <td className="px-6 py-4 text-sm">
-                      <Link
-                        to={`/patients/${p.id}`}
-                        className="text-primary-600 hover:underline"
-                      >
-                        View Details
+                      <Link to={`/patients/${patient.id}`} className="text-primary-600 hover:underline">
+                        Открыть карточку
                       </Link>
                     </td>
                   </tr>
@@ -223,89 +199,29 @@ const PatientListPage: React.FC = () => {
               </tbody>
             </table>
           </div>
+        )}
+      </Card>
 
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex justify-between items-center px-6 py-3 bg-gray-50 border-t">
-              <Button onClick={() => changePage(currentPage - 1)} disabled={currentPage === 1}>
-                Previous
-              </Button>
-              <div className="space-x-1">
-                {Array.from({ length: totalPages }, (_, i) => (
-                  <Button
-                    key={i + 1}
-                    variant={currentPage === i + 1 ? 'primary' : 'outline'}
-                    onClick={() => changePage(i + 1)}
-                  >
-                    {i + 1}
-                  </Button>
-                ))}
-              </div>
-              <Button onClick={() => changePage(currentPage + 1)} disabled={currentPage === totalPages}>
-                Next
-              </Button>
-            </div>
-          )}
-        </Card>
-      )}
-
-      {/* Add Patient Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md">
-            <h2 className="text-xl font-semibold mb-4">Add New Patient</h2>
-            {formError && <p className="text-red-600 mb-2">{formError}</p>}
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg">
+            <h2 className="mb-4 text-xl font-semibold">Новый пациент</h2>
+            {formError && <p className="mb-3 rounded bg-red-50 px-3 py-2 text-sm text-red-700">{formError}</p>}
             <div className="space-y-4">
-              <Input
-                name="lastName"
-                label="Last Name *"
-                value={form.lastName}
-                onChange={handleFormChange}
-              />
-              <Input
-                name="firstName"
-                label="First Name *"
-                value={form.firstName}
-                onChange={handleFormChange}
-              />
-              <Input
-                name="middleName"
-                label="Middle Name"
-                value={form.middleName}
-                onChange={handleFormChange}
-              />
-              <Input
-                name="email"
-                type="email"
-                label="Email"
-                value={form.email}
-                onChange={handleFormChange}
-              />
-              <Input
-                name="phone"
-                label="Phone"
-                value={form.phone}
-                onChange={handleFormChange}
-              />
-              <Input
-                name="birthday"
-                type="date"
-                label="Date of Birth"
-                value={form.birthday}
-                onChange={handleFormChange}
-              />
+              <Input name="lastName" label="Фамилия *" value={form.lastName} onChange={(event) => setForm({ ...form, lastName: event.target.value })} />
+              <Input name="firstName" label="Имя *" value={form.firstName} onChange={(event) => setForm({ ...form, firstName: event.target.value })} />
+              <Input name="middleName" label="Отчество" value={form.middleName} onChange={(event) => setForm({ ...form, middleName: event.target.value })} />
+              <Input name="email" label="Email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
+              <Input name="phone" label="Телефон" value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} />
+              <Input name="birthday" type="date" label="Дата рождения" value={form.birthday} onChange={(event) => setForm({ ...form, birthday: event.target.value })} />
             </div>
             <div className="mt-6 flex justify-end space-x-2">
-              <Button variant="outline" onClick={closeModal}>Cancel</Button>
+              <Button variant="outline" onClick={closeModal}>Отмена</Button>
               <Button
-                onClick={handleFormSubmit}
-                disabled={
-                  isSubmitting ||
-                  !form.firstName.trim() ||
-                  !form.lastName.trim()
-                }
+                onClick={handleCreatePatient}
+                disabled={isSubmitting || !form.firstName.trim() || !form.lastName.trim()}
               >
-                {isSubmitting ? 'Saving…' : 'Save'}
+                {isSubmitting ? 'Сохраняю…' : 'Создать'}
               </Button>
             </div>
           </div>

@@ -1,37 +1,25 @@
-// src/pages/dashboard/PatientDashboard.tsx
-import React, { useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import React, { useEffect, useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { FileText, CheckCircle, Clock, AlertTriangle, Upload } from 'lucide-react'
-import { Card } from '../../components/common/Card'
+import { Calendar, FileText, Stethoscope } from 'lucide-react'
+
 import { Button } from '../../components/common/Button'
+import { Card } from '../../components/common/Card'
 import { useAuthStore } from '../../stores/authStore'
 import { usePatientsStore } from '../../stores/patientsStore'
 
-const getStatusIcon = (status: string) => {
-  switch (status) {
-    case 'done': case 'completed':    return <CheckCircle className="h-5 w-5 text-success-500" />
-    case 'processing': case 'scheduled': return <Clock       className="h-5 w-5 text-warning-500" />
-    case 'failed':                     return <AlertTriangle className="h-5 w-5 text-error-500" />
-    default:                          return null
-  }
-}
-
-const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } }
-const item      = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }
-
 const PatientDashboard: React.FC = () => {
-  const navigate = useNavigate()
   const { user } = useAuthStore()
   const {
     fetchPatients,
+    patients,
     currentPatient,
     patientRecords,
     fetchPatientRecords,
   } = usePatientsStore()
 
-  // 1) если это пациент — сначала load всех (одного) patients,
-  //    потом, как только currentPatient появится — load его записи
+  const patient = currentPatient ?? patients[0] ?? null
+
   useEffect(() => {
     if (user?.role === 'patient') {
       void fetchPatients()
@@ -39,165 +27,109 @@ const PatientDashboard: React.FC = () => {
   }, [user?.role, fetchPatients])
 
   useEffect(() => {
-    if (currentPatient?.id) {
-      void fetchPatientRecords(currentPatient.id)
+    if (patient?.id) {
+      void fetchPatientRecords(patient.id)
     }
-  }, [currentPatient?.id, fetchPatientRecords])
+  }, [patient?.id, fetchPatientRecords])
 
-  const { firstName = 'Patient', lastName = '' } = currentPatient ?? {}
+  const recentRecords = useMemo(
+    () => patientRecords.slice(0, 5),
+    [patientRecords],
+  )
 
   return (
-    <div>
-      {/* Header */}
+    <div className="space-y-8">
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className="mb-8"
+        transition={{ duration: 0.4 }}
       >
         <h1 className="text-2xl font-bold text-gray-900">
-          Welcome, {firstName} {lastName}
+          {patient
+            ? patient.fio
+            : user
+              ? `${user.first_name} ${user.last_name}`
+              : 'Личный кабинет'}
         </h1>
         <p className="mt-1 text-gray-500">
-          Here's a summary of your medical records and upcoming checkups.
+          Здесь собраны ваши медицинские записи и история наблюдений.
         </p>
       </motion.div>
 
-      {/* Top Cards */}
-      <motion.div
-        variants={container}
-        initial="hidden"
-        animate="show"
-        className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 mb-8"
-      >
-        {/* Medical Records */}
-        <motion.div variants={item}>
-          <Card
-            icon={<FileText className="h-5 w-5" />}
-            title="Medical Records"
-            hoverable
-            onClick={() => currentPatient?.id && navigate(`/patients/${currentPatient.id}`)}
-            className="h-full"
-          >
-            <div className="flex items-baseline mb-4">
-              <span className="text-3xl font-bold text-primary-600">
-                {patientRecords.length}
-              </span>
-              <span className="ml-1 text-gray-500">records</span>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => currentPatient?.id && navigate(`/patients/${currentPatient.id}`)}
-            >
-              View All Records
-            </Button>
-          </Card>
-        </motion.div>
-
-        {/* Upload Archive */}
-        <motion.div variants={item}>
-          <Card
-            icon={<Upload className="h-5 w-5" />}
-            title="Upload Archive"
-            hoverable
-            onClick={() => navigate('/upload')}
-            className="h-full"
-          >
-            <p className="text-gray-500 mb-4">
-              Upload and process new medical records
-            </p>
-            <Button variant="primary" size="sm" onClick={() => navigate('/upload')}>
-              Upload Files
-            </Button>
-          </Card>
-        </motion.div>
-
-        {/* Doctor Role */}
-        <motion.div variants={item}>
-          <Card
-            icon={<Clock className="h-5 w-5" />}
-            title="Doctor Role"
-            hoverable
-            onClick={() => navigate('/roles/request')}
-            className="h-full"
-          >
-            <p className="text-gray-500 mb-4">
-              Request doctor role privileges to manage patient records
-            </p>
-            <Button variant="primary" size="sm" onClick={() => navigate('/roles/request')}>
-              Request Access
-            </Button>
-          </Card>
-        </motion.div>
-      </motion.div>
-
-      {/* Records Table */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3, duration: 0.5 }}
-      >
-        <Card title="Your Medical Records">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  {['Date', 'Location', 'Notes', 'Status', 'Actions'].map(h => (
-                    <th
-                      key={h}
-                      className="px-6 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider"
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {patientRecords.length > 0 ? (
-                  patientRecords.map(rec => (
-                    <tr key={rec.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 text-sm text-gray-900">
-                        {rec.visit_date
-                          ? new Date(rec.visit_date).toLocaleDateString()
-                          : '—'}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-500">
-                        {rec.appointment_location || '—'}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-500">
-                        {rec.notes || '—'}
-                      </td>
-                      <td className="px-6 py-4 text-sm flex items-center">
-                        {getStatusIcon(rec.doctor ? 'done' : 'processing')}
-                        <span className="ml-1 capitalize">
-                          {rec.doctor ? 'Completed' : 'Processing'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-sm">
-                        {currentPatient?.id && (
-                          <Link
-                            to={`/patients/${currentPatient.id}/records/${rec.id}`}
-                            className="text-primary-600 hover:underline"
-                          >
-                            View Record
-                          </Link>
-                        )}
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
-                      No records yet
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+        <Card title="Карточка пациента">
+          <p className="text-3xl font-bold text-primary-600">
+            {patient ? '1' : '0'}
+          </p>
+          <p className="mt-2 text-sm text-gray-500">
+            Для пациента доступна собственная карточка и связанные с ней записи.
+          </p>
+          <div className="mt-4">
+            <Link to={patient?.id ? `/patients/${patient.id}` : '/patients'}>
+              <Button variant="outline" size="sm" disabled={!patient?.id}>
+                Открыть карточку
+              </Button>
+            </Link>
           </div>
         </Card>
-      </motion.div>
+
+        <Card title="Всего записей">
+          <p className="text-3xl font-bold text-primary-600">{patientRecords.length}</p>
+          <p className="mt-2 text-sm text-gray-500">
+            Все записи immutable. Обсуждение по ним ведётся через комментарии врачей.
+          </p>
+        </Card>
+
+        <Card title="Последнее событие">
+          <p className="text-lg font-semibold text-gray-900">
+            {patient?.lastVisit
+              ? new Date(patient.lastVisit).toLocaleDateString()
+              : 'Пока нет данных'}
+          </p>
+          <p className="mt-2 text-sm text-gray-500">
+            Дата последней медицинской записи в вашей карточке.
+          </p>
+        </Card>
+      </div>
+
+      <Card title="Последние записи">
+        {recentRecords.length === 0 ? (
+          <p className="py-10 text-center text-gray-500">Записей пока нет.</p>
+        ) : (
+          <div className="space-y-3">
+            {recentRecords.map((record) => (
+              <Link
+                key={record.id}
+                to={patient ? `/patients/${patient.id}` : '/patients'}
+                className="block rounded-lg border border-gray-200 px-4 py-4 transition hover:border-primary-200 hover:bg-gray-50"
+              >
+                <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500">
+                  <span className="inline-flex items-center gap-1">
+                    <Calendar className="h-4 w-4" />
+                    {new Date(record.eventDate).toLocaleDateString()}
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <FileText className="h-4 w-4" />
+                    {record.recordType}
+                  </span>
+                  <span className="rounded-full bg-primary-50 px-2 py-0.5 text-xs text-primary-700">
+                    {record.status}
+                  </span>
+                </div>
+                <h3 className="mt-2 font-semibold text-gray-900">
+                  {record.title || 'Медицинская запись'}
+                </h3>
+                {record.practitioner?.full_name && (
+                  <p className="mt-1 inline-flex items-center gap-1 text-sm text-gray-500">
+                    <Stethoscope className="h-4 w-4" />
+                    {record.practitioner.full_name}
+                  </p>
+                )}
+              </Link>
+            ))}
+          </div>
+        )}
+      </Card>
     </div>
   )
 }

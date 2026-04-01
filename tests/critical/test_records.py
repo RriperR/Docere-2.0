@@ -427,3 +427,92 @@ def test_admin_can_comment_when_has_access_link(record_client: TestClient) -> No
     )
 
     assert response.status_code == 201
+
+
+@pytest.mark.critical
+def test_patient_can_list_own_patient_card_and_records(record_client: TestClient) -> None:
+    _register_patient(record_client, 'patient9@example.com')
+    patient_token = _login(record_client, 'patient9@example.com', TEST_PATIENT_PASSWORD)
+    patient_passport_id = _get_patient_passport_id_by_email('patient9@example.com')
+    created_record = _create_record(
+        record_client,
+        patient_token,
+        patient_passport_id,
+        author_practitioner_full_name='Dr. External',
+        title='Self record',
+    )
+
+    patients_response = record_client.get(
+        '/api/patients',
+        headers={'Authorization': f'Bearer {patient_token}'},
+    )
+    records_response = record_client.get(
+        f'/api/patients/{patient_passport_id}/records',
+        headers={'Authorization': f'Bearer {patient_token}'},
+    )
+
+    assert patients_response.status_code == 200
+    assert len(patients_response.json()) == 1
+    assert patients_response.json()[0]['id'] == str(patient_passport_id)
+    assert patients_response.json()[0]['record_count'] == 1
+
+    assert records_response.status_code == 200
+    assert len(records_response.json()) == 1
+    assert records_response.json()[0]['id'] == created_record['id']
+    assert records_response.json()[0]['title'] == 'Self record'
+    assert records_response.json()[0]['author_practitioner_passport']['full_name'] == 'Dr. External'
+
+
+@pytest.mark.critical
+def test_doctor_can_create_patient_card_and_see_patient_records(record_client: TestClient) -> None:
+    _register_patient(record_client, 'patient10@example.com')
+    patient_token = _login(record_client, 'patient10@example.com', TEST_PATIENT_PASSWORD)
+    patient_passport_id = _get_patient_passport_id_by_email('patient10@example.com')
+    _create_record(
+        record_client,
+        patient_token,
+        patient_passport_id,
+        author_practitioner_full_name='Dr. External',
+        title='Visible record',
+    )
+
+    _create_doctor(email='doctor-list@example.com')
+    doctor_token = _login(record_client, 'doctor-list@example.com', TEST_DOCTOR_PASSWORD)
+    doctor = _get_user_by_email('doctor-list@example.com')
+    with get_session_factory()() as session:
+        record = session.scalar(
+            select(MedicalRecordRow).where(MedicalRecordRow.title == 'Visible record'),
+        )
+        assert record is not None
+    _grant_record_access(doctor.id, record.id, patient_passport_id)
+
+    create_patient_response = record_client.post(
+        '/api/patients',
+        headers={'Authorization': f'Bearer {doctor_token}'},
+        json={
+            'fio': 'Петров Пётр Петрович',
+            'date_of_birth': '1985-07-01',
+            'email': 'draft-patient@example.com',
+            'phone': '+79995554433',
+        },
+    )
+    list_patients_response = record_client.get(
+        '/api/patients',
+        headers={'Authorization': f'Bearer {doctor_token}'},
+    )
+    patient_records_response = record_client.get(
+        f'/api/patients/{patient_passport_id}/records',
+        headers={'Authorization': f'Bearer {doctor_token}'},
+    )
+
+    assert create_patient_response.status_code == 201
+    assert create_patient_response.json()['fio'] == 'Петров Пётр Петрович'
+    assert create_patient_response.json()['status'] == 'draft'
+
+    assert list_patients_response.status_code == 200
+    assert any(patient['id'] == create_patient_response.json()['id'] for patient in list_patients_response.json())
+    assert any(patient['id'] == str(patient_passport_id) for patient in list_patients_response.json())
+
+    assert patient_records_response.status_code == 200
+    assert len(patient_records_response.json()) == 1
+    assert patient_records_response.json()[0]['title'] == 'Visible record'
