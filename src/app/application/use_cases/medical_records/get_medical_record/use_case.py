@@ -1,9 +1,10 @@
-"""Сценарий получения медицинской записи."""
+"""Сценарий чтения медицинской записи."""
 
 from __future__ import annotations
 
 from app.application.ports.repositories.medical_records.port import MedicalRecordRepositoryPort
 from app.application.use_cases.medical_records.common.dtos import MedicalRecordDTO
+from app.application.use_cases.medical_records.create_medical_record.use_case import _to_medical_record_dto
 from app.application.use_cases.medical_records.errors import (
     MedicalRecordAccessDeniedError,
     MedicalRecordNotFoundError,
@@ -12,28 +13,21 @@ from app.application.use_cases.medical_records.get_medical_record.dtos import Ge
 
 
 class GetMedicalRecordUseCase:
-    """Получить медицинскую запись по идентификатору для конкретного пользователя."""
+    """Вернуть медицинскую запись, если она доступна пользователю."""
 
     def __init__(self, repository: MedicalRecordRepositoryPort) -> None:
-        """Инициализировать use-case.
-
-        Args:
-            repository: Репозиторий медицинских записей.
-        """
+        """Инициализировать use case репозиторием медицинских записей."""
         self._repository = repository
 
     def execute(self, input_dto: GetMedicalRecordDTO) -> MedicalRecordDTO:
-        """Вернуть доступную пользователю медицинскую запись.
-
-        Args:
-            input_dto: Входной DTO сценария.
+        """Вернуть detail-проекцию медицинской записи для пользователя.
 
         Returns:
-            DTO записи в контексте доступа пользователя.
+            Detail-проекция медицинской записи.
 
         Raises:
+            MedicalRecordAccessDeniedError: Если запись существует, но недоступна.
             MedicalRecordNotFoundError: Если запись не существует.
-            MedicalRecordAccessDeniedError: Если запись существует, но доступа нет.
         """
         accessible_record = self._repository.get_accessible_record(
             record_id=input_dto.record_id,
@@ -44,15 +38,4 @@ class GetMedicalRecordUseCase:
                 raise MedicalRecordAccessDeniedError
             raise MedicalRecordNotFoundError
 
-        return MedicalRecordDTO(
-            id=accessible_record.record.id,
-            creator_user_id=accessible_record.record.creator_user_id,
-            status=accessible_record.record.status.value,
-            record_type=accessible_record.record.record_type.value,
-            event_date=accessible_record.record.event_date,
-            title=accessible_record.record.title,
-            payload_json=accessible_record.record.payload_json,
-            patient_passport_id=accessible_record.patient_passport_id,
-            created_at=accessible_record.record.created_at,
-            updated_at=accessible_record.record.updated_at,
-        )
+        return _to_medical_record_dto(accessible_record)

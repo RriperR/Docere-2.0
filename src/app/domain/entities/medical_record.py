@@ -9,7 +9,7 @@ from uuid import UUID
 
 
 class MedicalRecordStatus(StrEnum):
-    """Статусы медицинской записи."""
+    """Поддерживаемые статусы медицинской записи."""
 
     DRAFT = 'draft'
     UNCONFIRMED = 'unconfirmed'
@@ -28,14 +28,17 @@ class MedicalRecordType(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class MedicalRecord:
-    """Медицинская запись без пользовательского контекста доступа."""
+    """Неизменяемая медицинская запись без пользовательского контекста доступа."""
 
     id: UUID
     creator_user_id: UUID
+    author_practitioner_passport_id: UUID | None
     status: MedicalRecordStatus
     record_type: MedicalRecordType
     event_date: date
     title: str | None
+    appointment_location: str | None
+    clinical_summary: str | None
     payload_json: dict[str, object]
     created_at: datetime
     updated_at: datetime

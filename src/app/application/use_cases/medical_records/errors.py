@@ -2,16 +2,24 @@
 
 
 class MedicalRecordError(Exception):
-    """Базовая ошибка сценариев работы с медицинскими записями."""
+    """Базовая ошибка сценариев медицинских записей."""
 
 
 class MedicalRecordNotFoundError(MedicalRecordError):
-    """Запись не найдена."""
+    """Медицинская запись не найдена."""
 
 
 class MedicalRecordAccessDeniedError(MedicalRecordError):
-    """Доступ к записи запрещен."""
+    """Доступ к медицинской записи запрещен."""
 
 
 class PatientPassportNotFoundError(MedicalRecordError):
-    """Паспортная карточка пациента не найдена."""
+    """Паспорт пациента не найден."""
+
+
+class PractitionerPassportNotFoundError(MedicalRecordError):
+    """Паспорт врача не найден."""
+
+
+class MedicalRecordValidationError(MedicalRecordError):
+    """Бизнес-валидация медицинской записи не пройдена."""

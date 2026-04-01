@@ -1,4 +1,4 @@
-"""Dependency-фабрики для REST-эндпоинтов медицинских записей."""
+"""Dependency-фабрики REST-эндпоинтов медицинских записей."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.application.use_cases.auth.common.dtos import AuthenticatedUserDTO
 from app.application.use_cases.auth.errors import InvalidTokenError, UserNotFoundError
 from app.application.use_cases.auth.get_authenticated_user.use_case import GetAuthenticatedUserUseCase
+from app.application.use_cases.medical_records.add_record_comment.use_case import AddRecordCommentUseCase
 from app.application.use_cases.medical_records.create_medical_record.use_case import CreateMedicalRecordUseCase
 from app.application.use_cases.medical_records.get_medical_record.use_case import GetMedicalRecordUseCase
 from app.infrastructure.adapters.repositories.medical_records.sqlalchemy_medical_record_repository import (
@@ -27,11 +28,7 @@ def get_current_authenticated_user(
     token: str = bearer_token_extraction_dependency,
     use_case: GetAuthenticatedUserUseCase = authenticated_user_use_case_dependency,
 ) -> AuthenticatedUserDTO:
-    """Получить текущего аутентифицированного пользователя.
-
-    Args:
-        token: Bearer-токен текущего пользователя.
-        use_case: Use case получения пользователя по токену.
+    """Получить текущего аутентифицированного пользователя по bearer-токену.
 
     Returns:
         DTO текущего пользователя.
@@ -42,34 +39,44 @@ def get_current_authenticated_user(
         raise_unauthorized('Invalid or expired token')
 
 
+def _build_repository(session: Session) -> SqlAlchemyMedicalRecordRepositoryAdapter:
+    return SqlAlchemyMedicalRecordRepositoryAdapter(session=session)
+
+
 def get_create_medical_record_use_case(
     session: Session = db_session_dependency,
 ) -> CreateMedicalRecordUseCase:
     """Создать use case создания медицинской записи.
 
-    Args:
-        session: Активная сессия БД.
-
     Returns:
-        Экземпляр `CreateMedicalRecordUseCase`.
+        Настроенный use case создания записи.
     """
-    return CreateMedicalRecordUseCase(repository=SqlAlchemyMedicalRecordRepositoryAdapter(session=session))
+    return CreateMedicalRecordUseCase(repository=_build_repository(session))
 
 
 def get_medical_record_use_case(
     session: Session = db_session_dependency,
 ) -> GetMedicalRecordUseCase:
-    """Создать use case получения медицинской записи.
-
-    Args:
-        session: Активная сессия БД.
+    """Создать use case чтения медицинской записи.
 
     Returns:
-        Экземпляр `GetMedicalRecordUseCase`.
+        Настроенный use case чтения записи.
     """
-    return GetMedicalRecordUseCase(repository=SqlAlchemyMedicalRecordRepositoryAdapter(session=session))
+    return GetMedicalRecordUseCase(repository=_build_repository(session))
+
+
+def get_add_record_comment_use_case(
+    session: Session = db_session_dependency,
+) -> AddRecordCommentUseCase:
+    """Создать use case добавления комментария к записи.
+
+    Returns:
+        Настроенный use case создания комментария.
+    """
+    return AddRecordCommentUseCase(repository=_build_repository(session))
 
 
 current_authenticated_user_dependency = Depends(get_current_authenticated_user)
 create_medical_record_use_case_dependency = Depends(get_create_medical_record_use_case)
 get_medical_record_use_case_dependency = Depends(get_medical_record_use_case)
+add_record_comment_use_case_dependency = Depends(get_add_record_comment_use_case)

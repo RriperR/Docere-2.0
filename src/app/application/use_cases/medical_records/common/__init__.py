@@ -1,5 +1,10 @@
-"""Общие DTO сценариев работы с медицинскими записями."""
+"""Общие DTO сценариев медицинских записей."""
 
-from app.application.use_cases.medical_records.common.dtos import MedicalRecordDTO
+from app.application.use_cases.medical_records.common.dtos import (
+    FileAttachmentDTO,
+    MedicalRecordDTO,
+    PractitionerPassportDTO,
+    RecordCommentDTO,
+)
 
-__all__ = ['MedicalRecordDTO']
+__all__ = ['FileAttachmentDTO', 'MedicalRecordDTO', 'PractitionerPassportDTO', 'RecordCommentDTO']

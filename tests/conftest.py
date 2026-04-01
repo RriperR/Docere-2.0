@@ -1,5 +1,8 @@
 import os
 
+# Import ORM models so Base.metadata.create_all() sees the full schema in tests.
+import app.infrastructure.db.models  # noqa: F401
+
 
 def _set_required_env_defaults() -> None:
     os.environ.setdefault('APP_DATABASE__URL', 'postgresql+psycopg://docere:docere@localhost:5432/docere')

@@ -7,44 +7,57 @@ from uuid import UUID
 
 from app.application.ports.repositories.medical_records.dtos import AccessibleMedicalRecordDTO
 from app.domain.entities.patient_passport import PatientPassport
+from app.domain.entities.practitioner_passport import PractitionerPassport
+from app.domain.entities.record_comment import RecordComment
 
 
 class MedicalRecordRepositoryPort:
-    """Порт для чтения и создания медицинских записей."""
+    """Порт для создания и чтения медицинских записей и связанных сущностей."""
 
     def get_patient_passport(self, patient_passport_id: UUID) -> PatientPassport | None:
-        """Получить паспорт пациента по идентификатору.
+        """Вернуть паспорт пациента по идентификатору."""
+        raise NotImplementedError
 
-        Args:
-            patient_passport_id: Идентификатор паспортной карточки.
+    def get_practitioner_passport(self, practitioner_passport_id: UUID) -> PractitionerPassport | None:
+        """Вернуть паспорт врача по идентификатору."""
+        raise NotImplementedError
 
-        Returns:
-            Паспорт пациента или `None`, если он не найден.
-        """
+    def get_or_create_practitioner_passport_for_user(
+        self,
+        user_id: UUID,
+        full_name: str,
+        email: str | None,
+        phone: str | None,
+    ) -> PractitionerPassport:
+        """Вернуть паспорт внутреннего врача, создав его при необходимости."""
+        raise NotImplementedError
+
+    def create_practitioner_passport(
+        self,
+        created_by_user_id: UUID,
+        full_name: str,
+        specialty: str | None,
+        organization: str | None,
+        position: str | None,
+        email: str | None,
+        phone: str | None,
+    ) -> PractitionerPassport:
+        """Создать паспорт внешнего врача."""
         raise NotImplementedError
 
     def create_record(
         self,
         creator_user_id: UUID,
         patient_passport_id: UUID,
+        author_practitioner_passport_id: UUID | None,
         record_type: str,
         event_date: date,
         title: str | None,
+        appointment_location: str | None,
+        clinical_summary: str | None,
         payload_json: dict[str, object],
     ) -> AccessibleMedicalRecordDTO:
-        """Создать медицинскую запись и связать ее с автором.
-
-        Args:
-            creator_user_id: Идентификатор автора записи.
-            patient_passport_id: Паспортная карточка, через которую автор видит запись.
-            record_type: Тип записи.
-            event_date: Дата медицинского события.
-            title: Заголовок записи.
-            payload_json: Медицинское содержимое записи.
-
-        Returns:
-            Созданная запись в пользовательском контексте автора.
-        """
+        """Создать медицинскую запись и вернуть ее доступную проекцию."""
         raise NotImplementedError
 
     def get_accessible_record(
@@ -52,24 +65,18 @@ class MedicalRecordRepositoryPort:
         record_id: UUID,
         user_id: UUID,
     ) -> AccessibleMedicalRecordDTO | None:
-        """Получить запись, если она доступна пользователю.
+        """Вернуть медицинскую запись, если у пользователя есть ссылка доступа."""
+        raise NotImplementedError
 
-        Args:
-            record_id: Идентификатор записи.
-            user_id: Идентификатор пользователя.
-
-        Returns:
-            Запись в пользовательском контексте или `None`, если доступа нет.
-        """
+    def add_comment(
+        self,
+        record_id: UUID,
+        author_user_id: UUID,
+        body: str,
+    ) -> RecordComment:
+        """Добавить комментарий к медицинской записи."""
         raise NotImplementedError
 
     def record_exists(self, record_id: UUID) -> bool:
-        """Проверить существование медицинской записи.
-
-        Args:
-            record_id: Идентификатор записи.
-
-        Returns:
-            `True`, если запись существует, иначе `False`.
-        """
+        """Проверить существование медицинской записи."""
         raise NotImplementedError

@@ -13,14 +13,16 @@ Docere нужна для контролируемого обмена медиц�
 
 1. `MedicalRecord` - это медицинская информация (результат консультации/обследования/анализа), независимая от конкретного аккаунта пациента.
 2. Персональные данные пациента хранятся отдельно в `PatientPassport`.
-3. Видимость записи конкретному пользователю задается связью `UserRecordLink`.
-4. "Карточка пациента" в интерфейсе не хранится как отдельная сущность БД, а динамически собирается из доступных записей и связанных `PatientPassport`.
+3. Данные врача-автора записи хранятся отдельно в `PractitionerPassport`.
+4. Видимость записи конкретному пользователю задается связью `UserRecordLink`.
+5. "Карточка пациента" в интерфейсе не хранится как отдельная сущность БД, а динамически собирается из доступных записей и связанных `PatientPassport`.
 
 Это позволяет:
 
 1. Давать доступ к одной и той же записи разным ролям без копирования медицинского содержания.
 2. Работать с несколькими паспортами одного пациента у разных сотрудников, не смешивая персональные и медицинские данные.
 3. Удерживать инвариант immutable для медицинского содержания записи.
+4. Разделять автора записи в системе и врача-автора по смыслу медицинского документа.
 
 ## 2. Границы MVP
 
@@ -43,23 +45,43 @@ Docere нужна для контролируемого обмена медиц�
 
 ### 4.1 MedicalRecord
 
-`MedicalRecord` хранит только медицинские данные и технические метаданные записи.
+`MedicalRecord` хранит медицинские данные, автора записи в системе и ссылку на врача-автора документа.
 
 Обязательные атрибуты:
 
-1. `creator_user_id` - создатель записи.
-2. `event_date` - дата медицинского события.
-3. `record_type` - тип записи.
-4. `payload_json` - медицинское содержимое.
+1. `creator_user_id` - кто создал запись в системе.
+2. `author_practitioner_passport_id` - врач-автор документа по смыслу записи.
+3. `event_date` - дата медицинского события.
+4. `record_type` - тип записи.
+5. `appointment_location` - место приема или проведения исследования (nullable).
+6. `clinical_summary` - краткое клиническое резюме, видимое пациенту (nullable).
+7. `payload_json` - типоспецифичное медицинское содержимое.
 
 Правила:
 
 1. Медицинское содержимое immutable после создания.
-2. `creator_user_id` неизменяем.
+2. `creator_user_id`, `author_practitioner_passport_id`, `event_date`, `record_type`, `appointment_location`, `clinical_summary` и `payload_json` неизменяемы после создания.
 3. Запись не удаляется.
 4. Привязка к пациенту выполняется не полем в `MedicalRecord`, а через `UserRecordLink -> PatientPassport`.
+5. Врач-автор может не иметь учетной записи в системе; в этом случае используется `PractitionerPassport` без `user_id`.
 
-### 4.2 PatientPassport
+### 4.2 PractitionerPassport
+
+`PractitionerPassport` хранит справочную информацию о враче-авторе записи.
+
+Сценарии:
+
+1. Если запись создает внутренний врач, система использует или создает его `PractitionerPassport(status=confirmed, user_id=<id пользователя>)`.
+2. Если запись ссылается на внешнего врача, сотрудник или пациент может выбрать существующий `PractitionerPassport` или создать новый.
+3. `creator_user_id` и `author_practitioner_passport_id` могут ссылаться на разные сущности.
+
+Правила:
+
+1. `PractitionerPassport` может существовать без `user_id`.
+2. Для MVP справочные данные врача редактируемы и не снапшотятся внутрь `MedicalRecord`.
+3. Одна запись ссылается только на одного врача через `author_practitioner_passport_id`.
+
+### 4.3 PatientPassport
 
 `PatientPassport` хранит персональные данные пациента.
 
@@ -76,7 +98,28 @@ Docere нужна для контролируемого обмена медиц�
 3. Подтвержденный паспорт (`status=confirmed` и `patient_user_id != null`) считается более приоритетным для отображения.
 4. Если пациент принимает запись врача, создается `UserRecordLink` этой записи к подтвержденному паспорту пациента.
 
-### 4.3 Sharing (технический поток)
+### 4.4 RecordComment
+
+`RecordComment` - отдельная append-only сущность для обсуждения записи врачами.
+
+Правила:
+
+1. Комментарии не являются частью immutable-ядра `MedicalRecord`.
+2. Создавать комментарии могут только `doctor` и `admin`.
+3. Пациент может читать комментарии к доступной записи, но не может их создавать.
+4. У одной записи может быть несколько комментариев от разных врачей.
+
+### 4.5 FileAttachment
+
+`FileAttachment` - отдельная сущность для вложений записи.
+
+Правила:
+
+1. Вложения не входят в immutable-ядро `MedicalRecord`.
+2. У вложения есть категория: `lab|imaging|document|other`.
+3. У вложения фиксируется `uploaded_by_user_id`.
+
+### 4.6 Sharing (технический поток)
 
 1. Отправитель инициирует share записи получателю.
 2. Создается `RecordShare(status=pending)`.
@@ -92,7 +135,7 @@ Docere нужна для контролируемого обмена медиц�
 1. Пациент может делиться записью, которую не создавал.
 2. В MVP revoke отсутствует.
 
-### 4.4 UserRecordLink и фактическая видимость
+### 4.7 UserRecordLink и фактическая видимость
 
 `UserRecordLink` - источник истины по доступу пользователя к записи и по контексту отображения в карточке.
 
@@ -102,7 +145,7 @@ Docere нужна для контролируемого обмена медиц�
 2. Хранит `patient_passport_id`, в контексте которого запись показывается пользователю.
 3. Позволяет одной записи присутствовать у разных пользователей в разных контекстах паспорта.
 
-### 4.5 Как формируется "карточка пациента" в UI
+### 4.8 Как формируется "карточка пациента" в UI
 
 Алгоритм для текущего пользователя:
 
@@ -166,9 +209,10 @@ Acceptance criteria:
 Acceptance criteria:
 
 1. Запись создают врач или пациент.
-2. Обязательные поля: `creator_user_id`, `event_date`, `record_type`, `payload_json`.
+2. Обязательные поля: `creator_user_id`, `author_practitioner_passport_id`, `event_date`, `record_type`, `payload_json`.
 3. После создания запись не редактируется в медицинской части.
 4. При создании записи создается `UserRecordLink` для автора.
+5. Для patient/admin без внутреннего врача необходимо указать существующий `PractitionerPassport` или создать новый.
 
 ### FR-REC-2 Статусы записи
 
@@ -176,6 +220,15 @@ Acceptance criteria:
 
 1. Статусы: `draft`, `unconfirmed`, `confirmed`, `rejected`.
 2. Статус `confirmed` означает верификацию записи по бизнес-процессу, но не снимает ACL-проверки доступа.
+
+### FR-REC-3 Комментарии к записи
+
+Acceptance criteria:
+
+1. Комментарий может создать только `doctor` или `admin`.
+2. Комментарий append-only и не редактируется.
+3. Пациент видит комментарии в detail view записи, если у него есть доступ к записи.
+4. У одной записи может быть несколько комментариев.
 
 ## 5.4 Sharing
 
@@ -216,7 +269,7 @@ Acceptance criteria:
 1. Экран карточки показывает записи только из `UserRecordLink` текущего пользователя.
 2. Для каждой записи выбирается один `PatientPassport` по правилу приоритета (подтвержденный с `patient_user_id` выше).
 3. Сортировка записей: `event_date DESC`, вторично `created_at DESC`.
-4. Для записи видно минимум: `creator`, `record_type`, `event_date`, `created_at`.
+4. Для записи видно минимум: `creator`, `author_practitioner_passport`, `record_type`, `event_date`, `created_at`, `comments_count`, `attachments_count`.
 
 ## 5.6 Audit
 
@@ -258,17 +311,36 @@ Acceptance criteria:
 10. `created_at: timestamp`
 11. `updated_at: timestamp`
 
+`PractitionerPassport`
+
+1. `id: uuid`
+2. `created_by_user_id: uuid (nullable, fk -> User.id)`
+3. `user_id: uuid (nullable, fk -> User.id)`
+4. `full_name: string`
+5. `specialty: string (nullable)`
+6. `organization: string (nullable)`
+7. `position: string (nullable)`
+8. `email: string (nullable)`
+9. `phone: string (nullable)`
+10. `status: enum(draft|confirmed)`
+11. `confirmed_at: timestamp (nullable)`
+12. `created_at: timestamp`
+13. `updated_at: timestamp`
+
 `MedicalRecord`
 
 1. `id: uuid`
 2. `creator_user_id: uuid (fk -> User.id, indexed)`
-3. `status: enum(draft|unconfirmed|confirmed|rejected)`
-4. `record_type: enum(consultation_result|exam_result|lab_result|other)`
-5. `event_date: date (indexed)`
-6. `title: string`
-7. `payload_json: jsonb`
-8. `created_at: timestamp`
-9. `updated_at: timestamp`
+3. `author_practitioner_passport_id: uuid (nullable, fk -> PractitionerPassport.id, indexed)`
+4. `status: enum(draft|unconfirmed|confirmed|rejected)`
+5. `record_type: enum(consultation_result|exam_result|lab_result|other)`
+6. `event_date: date (indexed)`
+7. `title: string`
+8. `appointment_location: string (nullable)`
+9. `clinical_summary: text (nullable)`
+10. `payload_json: jsonb`
+11. `created_at: timestamp`
+12. `updated_at: timestamp`
 
 `RecordShare`
 
@@ -294,10 +366,20 @@ Acceptance criteria:
 
 1. `id: uuid`
 2. `record_id: uuid (fk -> MedicalRecord.id, indexed)`
-3. `storage_key: string (unique)`
-4. `mime_type: string`
-5. `size_bytes: bigint`
-6. `uploaded_at: timestamp`
+3. `uploaded_by_user_id: uuid (fk -> User.id)`
+4. `category: enum(lab|imaging|document|other)`
+5. `storage_key: string (unique)`
+6. `mime_type: string`
+7. `size_bytes: bigint`
+8. `uploaded_at: timestamp`
+
+`RecordComment`
+
+1. `id: uuid`
+2. `record_id: uuid (fk -> MedicalRecord.id, indexed)`
+3. `author_user_id: uuid (fk -> User.id, indexed)`
+4. `body: text`
+5. `created_at: timestamp`
 
 `ImportJob`
 
@@ -322,13 +404,18 @@ Acceptance criteria:
 
 1. `User 1..N -> PatientPassport (created_by_user_id)`.
 2. `User 1..N -> PatientPassport (patient_user_id)`.
-3. `User 1..N -> MedicalRecord (creator_user_id)`.
-4. `MedicalRecord 1..N -> RecordShare`.
-5. `User 1..N -> UserRecordLink`.
-6. `MedicalRecord 1..N -> UserRecordLink`.
-7. `PatientPassport 1..N -> UserRecordLink`.
-8. `MedicalRecord 1..N -> FileAttachment`.
-9. `User 1..N -> AuditEvent`.
+3. `User 1..N -> PractitionerPassport (created_by_user_id)`.
+4. `User 1..N -> PractitionerPassport (user_id)`.
+5. `User 1..N -> MedicalRecord (creator_user_id)`.
+6. `PractitionerPassport 1..N -> MedicalRecord`.
+7. `MedicalRecord 1..N -> RecordShare`.
+8. `User 1..N -> UserRecordLink`.
+9. `MedicalRecord 1..N -> UserRecordLink`.
+10. `PatientPassport 1..N -> UserRecordLink`.
+11. `MedicalRecord 1..N -> FileAttachment`.
+12. `MedicalRecord 1..N -> RecordComment`.
+13. `User 1..N -> RecordComment`.
+14. `User 1..N -> AuditEvent`.
 
 ## 7. UX-принципы
 
@@ -347,7 +434,7 @@ Acceptance criteria:
 
 ### Milestone 0 (Foundation)
 
-1. Auth + роли + `PatientPassport` + immutable `MedicalRecord`.
+1. Auth + роли + `PatientPassport` + `PractitionerPassport` + immutable `MedicalRecord`.
 2. Базовая модель `UserRecordLink`.
 
 ### Milestone 1 (Sharing)

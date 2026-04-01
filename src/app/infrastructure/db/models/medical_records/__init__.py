@@ -1,5 +1,9 @@
 """ORM-модели медицинских записей и связанных сущностей."""
 
+from app.infrastructure.db.models.medical_records.file_attachment import (
+    FileAttachmentCategoryRow,
+    FileAttachmentRow,
+)
 from app.infrastructure.db.models.medical_records.medical_record import (
     MedicalRecordRow,
     MedicalRecordStatusRow,
@@ -9,17 +13,27 @@ from app.infrastructure.db.models.medical_records.patient_passport import (
     PatientPassportRow,
     PatientPassportStatusRow,
 )
+from app.infrastructure.db.models.medical_records.practitioner_passport import (
+    PractitionerPassportRow,
+    PractitionerPassportStatusRow,
+)
+from app.infrastructure.db.models.medical_records.record_comment import RecordCommentRow
 from app.infrastructure.db.models.medical_records.user_record_link import (
     UserRecordLinkRow,
     UserRecordLinkSourceRow,
 )
 
 __all__ = [
+    'FileAttachmentCategoryRow',
+    'FileAttachmentRow',
     'MedicalRecordRow',
     'MedicalRecordStatusRow',
     'MedicalRecordTypeRow',
     'PatientPassportRow',
     'PatientPassportStatusRow',
+    'PractitionerPassportRow',
+    'PractitionerPassportStatusRow',
+    'RecordCommentRow',
     'UserRecordLinkRow',
     'UserRecordLinkSourceRow',
 ]
