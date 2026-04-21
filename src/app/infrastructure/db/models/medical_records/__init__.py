@@ -18,6 +18,11 @@ from app.infrastructure.db.models.medical_records.practitioner_passport import (
     PractitionerPassportStatusRow,
 )
 from app.infrastructure.db.models.medical_records.record_comment import RecordCommentRow
+from app.infrastructure.db.models.medical_records.record_share import (
+    RecordShareRequestRow,
+    RecordShareRow,
+    RecordShareStatusRow,
+)
 from app.infrastructure.db.models.medical_records.user_record_link import (
     UserRecordLinkRow,
     UserRecordLinkSourceRow,
@@ -34,6 +39,9 @@ __all__ = [
     'PractitionerPassportRow',
     'PractitionerPassportStatusRow',
     'RecordCommentRow',
+    'RecordShareRequestRow',
+    'RecordShareRow',
+    'RecordShareStatusRow',
     'UserRecordLinkRow',
     'UserRecordLinkSourceRow',
 ]

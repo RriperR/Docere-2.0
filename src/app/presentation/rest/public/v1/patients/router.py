@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.application.ports.repositories.medical_records.dtos import AccessibleMedicalRecordDTO
 from app.application.use_cases.auth.common.dtos import AuthenticatedUserDTO
+from app.application.use_cases.medical_records.common.dtos import PractitionerPassportDTO
 from app.application.use_cases.medical_records.create_medical_record.use_case import (
     _to_medical_record_dto,
 )
@@ -32,6 +33,7 @@ from app.presentation.rest.public.v1.records.dependencies import (
     current_authenticated_user_dependency,
     db_session_dependency,
 )
+from app.presentation.rest.public.v1.records.schemas import PractitionerPassportResponseSchema
 from app.presentation.webserver.http_errors import raise_forbidden, raise_not_found
 
 router = APIRouter(prefix='/patients', tags=['patients'])
@@ -141,7 +143,14 @@ def _accessible_patient_passports_query(
     if current_user.role == 'patient':
         return (
             select(PatientPassportRow)
-            .where(PatientPassportRow.patient_user_id == current_user.id)
+            .outerjoin(UserRecordLinkRow, UserRecordLinkRow.patient_passport_id == PatientPassportRow.id)
+            .where(
+                or_(
+                    PatientPassportRow.patient_user_id == current_user.id,
+                    UserRecordLinkRow.user_id == current_user.id,
+                ),
+            )
+            .distinct()
             .order_by(PatientPassportRow.confirmed_at.desc().nullslast(), PatientPassportRow.created_at.desc())
         )
 
@@ -218,9 +227,17 @@ def _to_record_summary(
         title=record_dto.title,
         appointment_location=record_dto.appointment_location,
         clinical_summary=record_dto.clinical_summary,
-        author_practitioner_passport=record_dto.author_practitioner_passport,
+        author_practitioner_passport=_to_practitioner_response(record_dto.author_practitioner_passport),
         comments_count=record_dto.comments_count,
         attachments_count=record_dto.attachments_count,
         created_at=record_dto.created_at,
         updated_at=record_dto.updated_at,
     )
+
+
+def _to_practitioner_response(
+    practitioner: PractitionerPassportDTO | None,
+) -> PractitionerPassportResponseSchema | None:
+    if practitioner is None:
+        return None
+    return PractitionerPassportResponseSchema.model_validate(practitioner)

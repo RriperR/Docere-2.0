@@ -50,5 +50,9 @@ class UserRecordLinkRow(Base):
             values_callable=_enum_values,
         )
     )
-    source_record_share_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    source_record_share_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey('record_shares.id'),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=moscow_now)

@@ -21,6 +21,11 @@ from app.infrastructure.db.models.medical_records.file_attachment import (
 from app.infrastructure.db.models.medical_records.medical_record import MedicalRecordRow
 from app.infrastructure.db.models.medical_records.patient_passport import PatientPassportRow
 from app.infrastructure.db.models.medical_records.practitioner_passport import PractitionerPassportRow
+from app.infrastructure.db.models.medical_records.record_share import (
+    RecordShareRequestRow,
+    RecordShareRow,
+    RecordShareStatusRow,
+)
 from app.infrastructure.db.models.medical_records.user_record_link import (
     UserRecordLinkRow,
     UserRecordLinkSourceRow,
@@ -140,6 +145,27 @@ def _create_admin(email: str = 'admin@example.com', password: str = TEST_DOCTOR_
         role=UserRole.ADMIN,
         fio='System Admin',
     )
+
+
+def _create_share_request(
+    client: TestClient,
+    access_token: str,
+    *,
+    to_user_email: str,
+    record_ids: list[str],
+    message: str | None = 'Please review.',
+) -> dict[str, object]:
+    response = client.post(
+        '/api/share-requests',
+        headers={'Authorization': f'Bearer {access_token}'},
+        json={
+            'to_user_email': to_user_email,
+            'record_ids': record_ids,
+            'message': message,
+        },
+    )
+    assert response.status_code == 201
+    return response.json()
 
 
 def _grant_record_access(user_id: UUID, record_id: UUID, patient_passport_id: UUID) -> None:
@@ -516,3 +542,350 @@ def test_doctor_can_create_patient_card_and_see_patient_records(record_client: T
     assert patient_records_response.status_code == 200
     assert len(patient_records_response.json()) == 1
     assert patient_records_response.json()[0]['title'] == 'Visible record'
+
+
+@pytest.mark.critical
+def test_share_request_accept_grants_record_access_to_registered_user(record_client: TestClient) -> None:
+    _register_patient(record_client, 'share-owner@example.com')
+    _register_patient(record_client, 'share-recipient@example.com', fio='Recipient Patient')
+    owner_token = _login(record_client, 'share-owner@example.com', TEST_PATIENT_PASSWORD)
+    recipient_token = _login(record_client, 'share-recipient@example.com', TEST_PATIENT_PASSWORD)
+    owner_passport_id = _get_patient_passport_id_by_email('share-owner@example.com')
+    created_record = _create_record(
+        record_client,
+        owner_token,
+        owner_passport_id,
+        author_practitioner_full_name='Dr. External',
+        title='Shared record',
+    )
+
+    before_accept_response = record_client.get(
+        f'/api/records/{created_record["id"]}',
+        headers={'Authorization': f'Bearer {recipient_token}'},
+    )
+    share_response = _create_share_request(
+        record_client,
+        owner_token,
+        to_user_email='share-recipient@example.com',
+        record_ids=[created_record['id']],
+    )
+    inbox_response = record_client.get(
+        '/api/share-requests/inbox',
+        headers={'Authorization': f'Bearer {recipient_token}'},
+    )
+    accept_response = record_client.post(
+        f'/api/share-requests/{share_response["request"]["id"]}/accept',
+        headers={'Authorization': f'Bearer {recipient_token}'},
+    )
+    after_accept_response = record_client.get(
+        f'/api/records/{created_record["id"]}',
+        headers={'Authorization': f'Bearer {recipient_token}'},
+    )
+    recipient_patients_response = record_client.get(
+        '/api/patients',
+        headers={'Authorization': f'Bearer {recipient_token}'},
+    )
+    recipient_patient_records_response = record_client.get(
+        f'/api/patients/{owner_passport_id}/records',
+        headers={'Authorization': f'Bearer {recipient_token}'},
+    )
+    patient_comment_response = record_client.post(
+        f'/api/records/{created_record["id"]}/comments',
+        headers={'Authorization': f'Bearer {recipient_token}'},
+        json={'body': 'Patient should not be allowed to comment.'},
+    )
+
+    assert before_accept_response.status_code == 403
+    assert inbox_response.status_code == 200
+    assert inbox_response.json()[0]['id'] == share_response['request']['id']
+    assert accept_response.status_code == 200
+    assert accept_response.json()['status'] == 'accepted'
+    assert accept_response.json()['shares'][0]['status'] == 'accepted'
+    assert after_accept_response.status_code == 200
+    assert after_accept_response.json()['id'] == created_record['id']
+    assert recipient_patients_response.status_code == 200
+    assert any(patient['id'] == str(owner_passport_id) for patient in recipient_patients_response.json())
+    assert recipient_patient_records_response.status_code == 200
+    assert [record['id'] for record in recipient_patient_records_response.json()] == [created_record['id']]
+    assert patient_comment_response.status_code == 403
+
+    recipient = _get_user_by_email('share-recipient@example.com')
+    with get_session_factory()() as session:
+        link = session.scalar(
+            select(UserRecordLinkRow).where(
+                UserRecordLinkRow.user_id == recipient.id,
+                UserRecordLinkRow.record_id == UUID(created_record['id']),
+                UserRecordLinkRow.source == UserRecordLinkSourceRow.SHARE_ACCEPTED,
+            ),
+        )
+    assert link is not None
+    assert link.source_record_share_id == UUID(accept_response.json()['shares'][0]['id'])
+
+
+@pytest.mark.critical
+def test_declined_or_cancelled_share_request_does_not_grant_access(record_client: TestClient) -> None:
+    _register_patient(record_client, 'share-owner-2@example.com')
+    _register_patient(record_client, 'share-recipient-2@example.com', fio='Recipient Patient')
+    owner_token = _login(record_client, 'share-owner-2@example.com', TEST_PATIENT_PASSWORD)
+    recipient_token = _login(record_client, 'share-recipient-2@example.com', TEST_PATIENT_PASSWORD)
+    owner_passport_id = _get_patient_passport_id_by_email('share-owner-2@example.com')
+    declined_record = _create_record(
+        record_client,
+        owner_token,
+        owner_passport_id,
+        author_practitioner_full_name='Dr. External',
+        title='Declined record',
+    )
+    cancelled_record = _create_record(
+        record_client,
+        owner_token,
+        owner_passport_id,
+        author_practitioner_full_name='Dr. External',
+        title='Cancelled record',
+    )
+
+    declined_share = _create_share_request(
+        record_client,
+        owner_token,
+        to_user_email='share-recipient-2@example.com',
+        record_ids=[declined_record['id']],
+    )
+    decline_response = record_client.post(
+        f'/api/share-requests/{declined_share["request"]["id"]}/decline',
+        headers={'Authorization': f'Bearer {recipient_token}'},
+    )
+    cancelled_share = _create_share_request(
+        record_client,
+        owner_token,
+        to_user_email='share-recipient-2@example.com',
+        record_ids=[cancelled_record['id']],
+    )
+    cancel_response = record_client.post(
+        f'/api/share-requests/{cancelled_share["request"]["id"]}/cancel',
+        headers={'Authorization': f'Bearer {owner_token}'},
+    )
+    accept_cancelled_response = record_client.post(
+        f'/api/share-requests/{cancelled_share["request"]["id"]}/accept',
+        headers={'Authorization': f'Bearer {recipient_token}'},
+    )
+
+    declined_record_response = record_client.get(
+        f'/api/records/{declined_record["id"]}',
+        headers={'Authorization': f'Bearer {recipient_token}'},
+    )
+    cancelled_record_response = record_client.get(
+        f'/api/records/{cancelled_record["id"]}',
+        headers={'Authorization': f'Bearer {recipient_token}'},
+    )
+
+    assert decline_response.status_code == 200
+    assert decline_response.json()['status'] == 'declined'
+    assert cancel_response.status_code == 200
+    assert cancel_response.json()['status'] == 'cancelled'
+    assert accept_cancelled_response.status_code == 403
+    assert declined_record_response.status_code == 403
+    assert cancelled_record_response.status_code == 403
+
+
+@pytest.mark.critical
+def test_revoke_accepted_share_removes_record_access(record_client: TestClient) -> None:
+    _register_patient(record_client, 'share-owner-3@example.com')
+    _register_patient(record_client, 'share-recipient-3@example.com', fio='Recipient Patient')
+    owner_token = _login(record_client, 'share-owner-3@example.com', TEST_PATIENT_PASSWORD)
+    recipient_token = _login(record_client, 'share-recipient-3@example.com', TEST_PATIENT_PASSWORD)
+    owner_passport_id = _get_patient_passport_id_by_email('share-owner-3@example.com')
+    created_record = _create_record(
+        record_client,
+        owner_token,
+        owner_passport_id,
+        author_practitioner_full_name='Dr. External',
+        title='Revoked record',
+    )
+
+    share_response = _create_share_request(
+        record_client,
+        owner_token,
+        to_user_email='share-recipient-3@example.com',
+        record_ids=[created_record['id']],
+    )
+    accept_response = record_client.post(
+        f'/api/share-requests/{share_response["request"]["id"]}/accept',
+        headers={'Authorization': f'Bearer {recipient_token}'},
+    )
+    visible_response = record_client.get(
+        f'/api/records/{created_record["id"]}',
+        headers={'Authorization': f'Bearer {recipient_token}'},
+    )
+    revoke_response = record_client.post(
+        f'/api/share-requests/{share_response["request"]["id"]}/revoke',
+        headers={'Authorization': f'Bearer {owner_token}'},
+    )
+    revoked_access_response = record_client.get(
+        f'/api/records/{created_record["id"]}',
+        headers={'Authorization': f'Bearer {recipient_token}'},
+    )
+
+    assert accept_response.status_code == 200
+    assert visible_response.status_code == 200
+    assert revoke_response.status_code == 200
+    assert revoke_response.json()['status'] == 'revoked'
+    assert revoke_response.json()['shares'][0]['status'] == 'revoked'
+    assert revoked_access_response.status_code == 403
+
+
+@pytest.mark.critical
+def test_duplicate_share_records_are_skipped(record_client: TestClient) -> None:
+    _register_patient(record_client, 'share-owner-4@example.com')
+    _register_patient(record_client, 'share-recipient-4@example.com', fio='Recipient Patient')
+    owner_token = _login(record_client, 'share-owner-4@example.com', TEST_PATIENT_PASSWORD)
+    owner_passport_id = _get_patient_passport_id_by_email('share-owner-4@example.com')
+    created_record = _create_record(
+        record_client,
+        owner_token,
+        owner_passport_id,
+        author_practitioner_full_name='Dr. External',
+        title='Duplicate shared record',
+    )
+
+    first_share = _create_share_request(
+        record_client,
+        owner_token,
+        to_user_email='share-recipient-4@example.com',
+        record_ids=[created_record['id']],
+    )
+    second_share = _create_share_request(
+        record_client,
+        owner_token,
+        to_user_email='share-recipient-4@example.com',
+        record_ids=[created_record['id']],
+    )
+
+    assert first_share['request'] is not None
+    assert second_share['request'] is None
+    assert second_share['skipped_record_ids'] == [created_record['id']]
+
+    with get_session_factory()() as session:
+        shares_count = len(
+            session.scalars(
+                select(RecordShareRow).where(RecordShareRow.record_id == UUID(created_record['id'])),
+            ).all(),
+        )
+        request_count = len(session.scalars(select(RecordShareRequestRow)).all())
+
+    assert shares_count == 1
+    assert request_count == 1
+
+
+@pytest.mark.critical
+def test_doctor_recipient_can_comment_after_accepting_share(record_client: TestClient) -> None:
+    _register_patient(record_client, 'share-owner-5@example.com')
+    owner_token = _login(record_client, 'share-owner-5@example.com', TEST_PATIENT_PASSWORD)
+    owner_passport_id = _get_patient_passport_id_by_email('share-owner-5@example.com')
+    _create_doctor(email='share-doctor@example.com')
+    doctor_token = _login(record_client, 'share-doctor@example.com', TEST_DOCTOR_PASSWORD)
+    created_record = _create_record(
+        record_client,
+        owner_token,
+        owner_passport_id,
+        author_practitioner_full_name='Dr. External',
+        title='Doctor shared record',
+    )
+
+    share_response = _create_share_request(
+        record_client,
+        owner_token,
+        to_user_email='share-doctor@example.com',
+        record_ids=[created_record['id']],
+    )
+    record_client.post(
+        f'/api/share-requests/{share_response["request"]["id"]}/accept',
+        headers={'Authorization': f'Bearer {doctor_token}'},
+    )
+    comment_response = record_client.post(
+        f'/api/records/{created_record["id"]}/comments',
+        headers={'Authorization': f'Bearer {doctor_token}'},
+        json={'body': 'Doctor can comment after accepting share.'},
+    )
+
+    assert comment_response.status_code == 201
+
+
+@pytest.mark.critical
+def test_invalid_share_targets_and_records_are_rejected(record_client: TestClient) -> None:
+    _register_patient(record_client, 'share-owner-6@example.com')
+    owner_token = _login(record_client, 'share-owner-6@example.com', TEST_PATIENT_PASSWORD)
+    owner_passport_id = _get_patient_passport_id_by_email('share-owner-6@example.com')
+    created_record = _create_record(
+        record_client,
+        owner_token,
+        owner_passport_id,
+        author_practitioner_full_name='Dr. External',
+        title='Invalid share target record',
+    )
+    _register_patient(record_client, 'share-other@example.com', fio='Other Patient')
+    other_token = _login(record_client, 'share-other@example.com', TEST_PATIENT_PASSWORD)
+
+    self_share_response = record_client.post(
+        '/api/share-requests',
+        headers={'Authorization': f'Bearer {owner_token}'},
+        json={'to_user_email': 'share-owner-6@example.com', 'record_ids': [created_record['id']]},
+    )
+    missing_user_response = record_client.post(
+        '/api/share-requests',
+        headers={'Authorization': f'Bearer {owner_token}'},
+        json={'to_user_email': 'missing-user@example.com', 'record_ids': [created_record['id']]},
+    )
+    inaccessible_record_response = record_client.post(
+        '/api/share-requests',
+        headers={'Authorization': f'Bearer {other_token}'},
+        json={'to_user_email': 'share-owner-6@example.com', 'record_ids': [created_record['id']]},
+    )
+
+    assert self_share_response.status_code == 403
+    assert missing_user_response.status_code == 404
+    assert inaccessible_record_response.status_code == 403
+
+
+@pytest.mark.critical
+def test_share_statuses_are_persisted_for_audit(record_client: TestClient) -> None:
+    _register_patient(record_client, 'share-owner-7@example.com')
+    _register_patient(record_client, 'share-recipient-7@example.com', fio='Recipient Patient')
+    owner_token = _login(record_client, 'share-owner-7@example.com', TEST_PATIENT_PASSWORD)
+    recipient_token = _login(record_client, 'share-recipient-7@example.com', TEST_PATIENT_PASSWORD)
+    owner_passport_id = _get_patient_passport_id_by_email('share-owner-7@example.com')
+    created_record = _create_record(
+        record_client,
+        owner_token,
+        owner_passport_id,
+        author_practitioner_full_name='Dr. External',
+        title='Audit shared record',
+    )
+
+    share_response = _create_share_request(
+        record_client,
+        owner_token,
+        to_user_email='share-recipient-7@example.com',
+        record_ids=[created_record['id']],
+    )
+    record_client.post(
+        f'/api/share-requests/{share_response["request"]["id"]}/accept',
+        headers={'Authorization': f'Bearer {recipient_token}'},
+    )
+    record_client.post(
+        f'/api/share-requests/{share_response["request"]["id"]}/revoke',
+        headers={'Authorization': f'Bearer {owner_token}'},
+    )
+
+    with get_session_factory()() as session:
+        request_row = session.get(RecordShareRequestRow, UUID(share_response['request']['id']))
+        share_row = session.scalar(
+            select(RecordShareRow).where(RecordShareRow.request_id == UUID(share_response['request']['id'])),
+        )
+
+    assert request_row is not None
+    assert request_row.status == RecordShareStatusRow.REVOKED
+    assert request_row.revoked_at is not None
+    assert share_row is not None
+    assert share_row.status == RecordShareStatusRow.REVOKED
+    assert share_row.responded_at is not None
+    assert share_row.revoked_at is not None

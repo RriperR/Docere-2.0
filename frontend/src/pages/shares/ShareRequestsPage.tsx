@@ -1,153 +1,180 @@
-// src/pages/shares/ShareRequestsPage.tsx
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { format } from 'date-fns'
-import { Card } from '../../components/common/Card'
+import { Inbox, Send } from 'lucide-react'
+
 import { Button } from '../../components/common/Button'
-import { X, FileText } from 'lucide-react'
-import api from '../../api/api'
+import { Card } from '../../components/common/Card'
+import { ShareRequest, ShareStatus, useShareRequestsStore } from '../../stores/shareRequestsStore'
 
-import { useShareRequestsStore } from '../../stores/shareRequestsStore'
-import type { PatientRecord, DoctorInfo } from '../../stores/patientsStore'
+type Tab = 'inbox' | 'outbox'
 
-export function ShareRequestsPage() {
-  const { requests, isLoading, error, fetchAll, respond } = useShareRequestsStore()
-  const [modalRecord, setModalRecord] = useState<PatientRecord | null>(null)
-
-  useEffect(() => {
-    // Подгружаем все запросы
-    fetchAll()
-  }, [fetchAll])
-
-  if (isLoading) return <p>Загрузка шарингов…</p>
-  if (error)     return <p className="text-red-600">{error}</p>
-  if (!requests.length) return <p>Нет запросов на шаринг.</p>
-
-  return (
-    <>
-      <div className="space-y-6">
-        {requests.map(req => (
-          <Card key={req.id} className="p-6">
-            <h2 className="text-lg font-medium mb-4">
-              От: {req.from_user_fullname} → {req.to_email} <br/>
-              Пациент: {req.patient_name} — {format(new Date(req.created_at), 'dd.MM.yyyy, HH:mm')}<br/>
-              Статус: <strong>{req.status}</strong>
-            </h2>
-
-            <ul className="space-y-4">
-              {req.shares.map(s => (
-                <li key={s.id} className="flex items-start justify-between">
-                  <div>
-                    <p>
-                      <strong>Запись #{s.record_id}</strong> — статус: {s.status}
-                    </p>
-                    <p className="text-sm text-gray-600 mt-1">
-                      Дата: {s.visit_date ?? '—'}
-                    </p>
-                  </div>
-                  <div className="flex flex-col items-end space-y-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={async () => {
-                        // Загрузим конкретную запись
-                        const { data } = await api.get<PatientRecord>(
-                          `/patients/${req.patient}/records/${s.record_id}/`
-                        )
-                        setModalRecord(data)
-                      }}
-                    >
-                      Открыть
-                    </Button>
-                    <div className="flex space-x-2">
-                      <Button
-                        size="sm"
-                        onClick={() => respond(req.id, s.id, 'accept')}
-                        disabled={s.status !== 'pending'}
-                      >
-                        Принять
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => respond(req.id, s.id, 'decline')}
-                        disabled={s.status !== 'pending'}
-                      >
-                        Отклонить
-                      </Button>
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </Card>
-        ))}
-      </div>
-
-      {modalRecord && (
-        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg max-w-2xl w-full overflow-auto max-h-[90vh]">
-            <div className="flex justify-end p-4">
-              <button onClick={() => setModalRecord(null)}>
-                <X className="h-5 w-5 text-gray-600 hover:text-gray-800" />
-              </button>
-            </div>
-            <RecordView record={modalRecord} />
-          </div>
-        </div>
-      )}
-    </>
-  )
+const statusLabel: Record<ShareStatus, string> = {
+  pending: 'Ожидает ответа',
+  accepted: 'Принят',
+  declined: 'Отклонён',
+  cancelled: 'Отменён',
+  revoked: 'Отозван',
 }
 
-// View-only из PatientDetailsPage
-function RecordView({ record }: { record: PatientRecord }) {
-  const isImage = (f: string) => /\.(jpe?g|png|gif)$/i.test(f)
-  const doc = record.doctor as DoctorInfo|undefined
-  const dateLabel = record.visit_date
-    ? format(new Date(record.visit_date), 'd MMMM yyyy')
-    : '—'
+const formatDateTime = (date: string) => format(new Date(date), 'dd.MM.yyyy HH:mm')
+
+const ShareRequestsPage = () => {
+  const {
+    inbox,
+    outbox,
+    isLoading,
+    error,
+    fetchInbox,
+    fetchOutbox,
+    acceptRequest,
+    declineRequest,
+    cancelRequest,
+    revokeRequest,
+  } = useShareRequestsStore()
+  const [tab, setTab] = useState<Tab>('inbox')
+
+  useEffect(() => {
+    void fetchInbox()
+    void fetchOutbox()
+  }, [fetchInbox, fetchOutbox])
+
+  const requests = tab === 'inbox' ? inbox : outbox
 
   return (
-    <div className="space-y-4 p-6">
-      <div className="grid grid-cols-[auto_1fr_auto_auto]
-                      items-center bg-gray-50 px-6 py-2 text-sm text-gray-600 rounded-t-lg">
-        <div>{dateLabel}</div>
-        <div className="text-center">Комментарий / Заключение</div>
-        <div className="text-right">Лабораторные данные</div>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Sharing записей</h1>
+        <p className="mt-1 text-gray-500">
+          Управляйте входящими запросами и доступами, которые вы выдали другим пользователям.
+        </p>
       </div>
-      <div className="grid grid-cols-[auto_auto_2fr_1fr] gap-6 p-6">
-        {/* Доктор */}
-        <div className="flex flex-col items-center space-y-1">
-          <img src={doc?.photo||'/images/doctor.png'} className="h-10 w-10 rounded-full" />
-          <p className="font-medium">{doc?.full_name||'Не назначен'}</p>
-        </div>
-        {/* Локация */}
-        <div className="flex flex-col items-center space-y-1">
-          <img src="/images/hospital.png" className="h-10 w-10 rounded-full" />
-          <p className="font-medium">{record.appointment_location||'—'}</p>
-        </div>
-        {/* Заметки */}
-        <div className="text-gray-800 whitespace-pre-line">
-          {record.notes||'—'}
-        </div>
-        {/* Файлы */}
-        <div className="flex flex-wrap gap-3">
-          {(record.lab_files||[]).map(f =>
-            isImage(f.file) ? (
-              <a key={f.id} href={f.file} target="_blank" rel="noopener noreferrer"
-                 className="h-24 w-24 border rounded overflow-hidden">
-                <img src={f.file} className="h-full w-full object-cover"/>
-              </a>
-            ) : (
-              <a key={f.id} href={f.file} target="_blank" rel="noopener noreferrer"
-                 className="h-24 w-24 flex flex-col items-center justify-center
-                            bg-gray-50 border rounded text-primary-600">
-                <FileText className="h-8 w-8"/><span className="text-[10px] mt-1">PDF</span>
-              </a>
-            )
-          )}
-        </div>
+
+      <div className="flex gap-2">
+        <Button
+          variant={tab === 'inbox' ? 'primary' : 'outline'}
+          icon={<Inbox className="h-4 w-4" />}
+          onClick={() => setTab('inbox')}
+        >
+          Входящие
+        </Button>
+        <Button
+          variant={tab === 'outbox' ? 'primary' : 'outline'}
+          icon={<Send className="h-4 w-4" />}
+          onClick={() => setTab('outbox')}
+        >
+          Исходящие
+        </Button>
       </div>
+
+      {error && <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+      {isLoading && requests.length === 0 ? (
+        <p className="py-12 text-center text-gray-500">Загружаю sharing-запросы...</p>
+      ) : requests.length === 0 ? (
+        <p className="py-12 text-center text-gray-500">Запросов пока нет.</p>
+      ) : (
+        <div className="space-y-4">
+          {requests.map((request) => (
+            <ShareRequestCard
+              key={request.id}
+              request={request}
+              mode={tab}
+              onAccept={() => acceptRequest(request.id)}
+              onDecline={() => declineRequest(request.id)}
+              onCancel={() => cancelRequest(request.id)}
+              onRevoke={() => revokeRequest(request.id)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
+
+function ShareRequestCard({
+  request,
+  mode,
+  onAccept,
+  onDecline,
+  onCancel,
+  onRevoke,
+}: {
+  request: ShareRequest
+  mode: Tab
+  onAccept: () => Promise<void>
+  onDecline: () => Promise<void>
+  onCancel: () => Promise<void>
+  onRevoke: () => Promise<void>
+}) {
+  const counterparty = mode === 'inbox' ? request.from_user : request.to_user
+
+  return (
+    <Card>
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-lg font-semibold text-gray-900">{counterparty.fio}</h2>
+            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700">
+              {counterparty.role}
+            </span>
+            <span className="rounded-full bg-primary-50 px-2 py-0.5 text-xs text-primary-700">
+              {statusLabel[request.status]}
+            </span>
+          </div>
+          <p className="mt-1 text-sm text-gray-500">{counterparty.email}</p>
+          <p className="mt-1 text-sm text-gray-500">Создан: {formatDateTime(request.created_at)}</p>
+          {request.message && <p className="mt-3 text-sm text-gray-700">{request.message}</p>}
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {mode === 'inbox' && request.status === 'pending' && (
+            <>
+              <Button size="sm" onClick={onAccept}>
+                Принять
+              </Button>
+              <Button size="sm" variant="outline" onClick={onDecline}>
+                Отклонить
+              </Button>
+            </>
+          )}
+          {mode === 'outbox' && request.status === 'pending' && (
+            <Button size="sm" variant="outline" onClick={onCancel}>
+              Отменить
+            </Button>
+          )}
+          {mode === 'outbox' && request.status === 'accepted' && (
+            <Button size="sm" variant="outline" onClick={onRevoke}>
+              Отозвать доступ
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-4 space-y-2">
+        {request.shares.map((share) => (
+          <div
+            key={share.id}
+            className="flex flex-col rounded-lg bg-gray-50 px-4 py-3 text-sm md:flex-row md:items-center md:justify-between"
+          >
+            <div>
+              <p className="font-medium text-gray-900">Запись {share.record_id}</p>
+              {share.patient_passport_id && (
+                <Link
+                  to={`/patients/${share.patient_passport_id}`}
+                  className="text-primary-600 hover:text-primary-700"
+                >
+                  Открыть карточку пациента
+                </Link>
+              )}
+            </div>
+            <span className="mt-2 rounded-full bg-white px-2 py-0.5 text-xs text-gray-700 md:mt-0">
+              {statusLabel[share.status]}
+            </span>
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
+export default ShareRequestsPage

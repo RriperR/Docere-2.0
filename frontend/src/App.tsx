@@ -15,6 +15,7 @@ const PatientDashboard = lazy(() => import('./pages/dashboard/PatientDashboard')
 const AdminDashboard = lazy(() => import('./pages/dashboard/AdminDashboard'))
 const PatientListPage = lazy(() => import('./pages/patients/PatientListPage'))
 const PatientDetailsPage = lazy(() => import('./pages/patients/PatientDetailsPage'))
+const ShareRequestsPage = lazy(() => import('./pages/shares/ShareRequestsPage'))
 const AdminPanelPage = lazy(() => import('./pages/admin/AdminPanelPage'))
 const AccountSettings = lazy(() => import('./pages/settings/AccountSettingsPage'))
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'))
@@ -71,6 +72,7 @@ function App() {
 
             <Route path="/patients" element={<PatientListPage />} />
             <Route path="/patients/:id" element={<PatientDetailsPage />} />
+            <Route path="/share-requests" element={<ShareRequestsPage />} />
             <Route
               path="/admin"
               element={

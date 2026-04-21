@@ -9,6 +9,7 @@ import {
   LogOut,
   Menu,
   Settings,
+  Share2,
   Shield,
   Users,
   X,
@@ -51,6 +52,11 @@ export const DashboardLayout = () => {
         path: '/dashboard',
         label: 'Dashboard',
         icon: <LayoutDashboard className="h-5 w-5" />,
+      },
+      {
+        path: '/share-requests',
+        label: 'Sharing',
+        icon: <Share2 className="h-5 w-5" />,
       },
     ]
 
