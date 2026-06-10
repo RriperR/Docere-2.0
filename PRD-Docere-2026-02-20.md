@@ -122,7 +122,7 @@ Docere нужна для контролируемого обмена медиц�
 ### 4.6 Sharing (технический поток)
 
 1. Отправитель инициирует share записи получателю.
-2. Создается `RecordShare(status=pending)`.
+2. Создается `RecordShareRequest(status=pending)` и связанные `RecordShare(status=pending)` для выбранных записей.
 3. Получатель выбирает `accepted` или `declined`.
 4. При `accepted` создается `UserRecordLink` для получателя к оригинальному `MedicalRecord` (копия записи не создается).
 5. `UserRecordLink.patient_passport_id` наследует контекст карточки отправителя для этой записи.
@@ -239,7 +239,7 @@ Acceptance criteria:
 Acceptance criteria:
 
 1. Отправитель выбирает запись и получателя.
-2. Создается `RecordShare(status=pending)`.
+2. Создается `RecordShareRequest(status=pending)` и связанный `RecordShare(status=pending)`.
 3. Получатель принимает (`accepted`) или отклоняет (`declined`).
 4. При `accepted` создается `UserRecordLink` получателя к этой записи.
 5. При `accepted` связь создается в контексте `PatientPassport`, с которым запись была доступна отправителю.
@@ -346,15 +346,28 @@ Acceptance criteria:
 11. `created_at: timestamp`
 12. `updated_at: timestamp`
 
+`RecordShareRequest`
+
+1. `id: uuid`
+2. `from_user_id: uuid (fk -> User.id, indexed)`
+3. `to_user_id: uuid (fk -> User.id, indexed)`
+4. `status: enum(pending|accepted|declined|cancelled|revoked)`
+5. `message: text (nullable)`
+6. `created_at: timestamp`
+7. `responded_at: timestamp (nullable)`
+8. `cancelled_at: timestamp (nullable)`
+9. `revoked_at: timestamp (nullable)`
+
 `RecordShare`
 
 1. `id: uuid`
-2. `record_id: uuid (fk -> MedicalRecord.id, indexed)`
-3. `granted_by_user_id: uuid (fk -> User.id)`
-4. `granted_to_user_id: uuid (fk -> User.id)`
+2. `request_id: uuid (fk -> RecordShareRequest.id, indexed)`
+3. `record_id: uuid (fk -> MedicalRecord.id, indexed)`
+4. `patient_passport_id: uuid (nullable, fk -> PatientPassport.id, indexed)`
 5. `status: enum(pending|accepted|declined|cancelled|revoked)`
 6. `created_at: timestamp`
 7. `responded_at: timestamp (nullable)`
+8. `revoked_at: timestamp (nullable)`
 
 `UserRecordLink`
 
@@ -412,20 +425,24 @@ Acceptance criteria:
 4. `User 1..N -> PractitionerPassport (user_id)`.
 5. `User 1..N -> MedicalRecord (creator_user_id)`.
 6. `PractitionerPassport 1..N -> MedicalRecord`.
-7. `MedicalRecord 1..N -> RecordShare`.
-8. `User 1..N -> UserRecordLink`.
-9. `MedicalRecord 1..N -> UserRecordLink`.
-10. `PatientPassport 1..N -> UserRecordLink`.
-11. `MedicalRecord 1..N -> FileAttachment`.
-12. `MedicalRecord 1..N -> RecordComment`.
-13. `User 1..N -> RecordComment`.
-14. `User 1..N -> AuditEvent`.
+7. `User 1..N -> RecordShareRequest (from_user_id)`.
+8. `User 1..N -> RecordShareRequest (to_user_id)`.
+9. `RecordShareRequest 1..N -> RecordShare`.
+10. `MedicalRecord 1..N -> RecordShare`.
+11. `PatientPassport 1..N -> RecordShare`.
+12. `User 1..N -> UserRecordLink`.
+13. `MedicalRecord 1..N -> UserRecordLink`.
+14. `PatientPassport 1..N -> UserRecordLink`.
+15. `MedicalRecord 1..N -> FileAttachment`.
+16. `MedicalRecord 1..N -> RecordComment`.
+17. `User 1..N -> RecordComment`.
+18. `User 1..N -> AuditEvent`.
 
 ## 7. UX-принципы
 
 1. "Карточка пациента" - это динамический вид доступных пользователю записей.
 2. На экране явно показывать, из какого `PatientPassport` собрана карточка.
-3. Входящие share-запросы отображаются отдельно и требуют `accept/reject`.
+3. Входящие share-запросы отображаются отдельно и требуют `accept/decline`.
 4. При наличии подтвержденного паспорта отображение автоматически приоритизирует его.
 
 ## 8. Нефункциональные требования
@@ -443,7 +460,7 @@ Acceptance criteria:
 
 ### Milestone 1 (Sharing)
 
-1. `RecordShare` и входящие `accept/reject`.
+1. `RecordShareRequest`, `RecordShare` и входящие `accept/decline`.
 2. Построение карточки пациента из `UserRecordLink`.
 3. Правило приоритета подтвержденного `PatientPassport`.
 
