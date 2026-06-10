@@ -577,6 +577,40 @@ def test_doctor_can_create_patient_card_and_see_patient_records(record_client: T
 
 
 @pytest.mark.critical
+def test_doctor_created_empty_patient_card_is_not_visible_to_other_doctor(record_client: TestClient) -> None:
+    _create_doctor(email='doctor-card-owner@example.com')
+    _create_doctor(email='doctor-card-stranger@example.com')
+    owner_token = _login(record_client, 'doctor-card-owner@example.com', TEST_DOCTOR_PASSWORD)
+    stranger_token = _login(record_client, 'doctor-card-stranger@example.com', TEST_DOCTOR_PASSWORD)
+
+    create_patient_response = record_client.post(
+        '/api/patients',
+        headers={'Authorization': f'Bearer {owner_token}'},
+        json={
+            'fio': 'Local Draft Patient',
+            'date_of_birth': '1977-04-01',
+            'email': 'local-draft-patient@example.com',
+            'phone': '+79995550011',
+        },
+    )
+    patient_id = create_patient_response.json()['id']
+
+    owner_patients_response = record_client.get('/api/patients', headers={'Authorization': f'Bearer {owner_token}'})
+    stranger_patients_response = record_client.get(
+        '/api/patients', headers={'Authorization': f'Bearer {stranger_token}'}
+    )
+    stranger_patient_response = record_client.get(
+        f'/api/patients/{patient_id}',
+        headers={'Authorization': f'Bearer {stranger_token}'},
+    )
+
+    assert create_patient_response.status_code == 201
+    assert any(patient['id'] == patient_id for patient in owner_patients_response.json())
+    assert all(patient['id'] != patient_id for patient in stranger_patients_response.json())
+    assert stranger_patient_response.status_code == 404
+
+
+@pytest.mark.critical
 def test_share_request_accept_grants_record_access_to_registered_user(record_client: TestClient) -> None:
     _register_patient(record_client, 'share-owner@example.com')
     _register_patient(record_client, 'share-recipient@example.com', fio='Recipient Patient')
@@ -652,6 +686,84 @@ def test_share_request_accept_grants_record_access_to_registered_user(record_cli
         )
     assert link is not None
     assert link.source_record_share_id == UUID(accept_response.json()['shares'][0]['id'])
+
+
+@pytest.mark.critical
+def test_doctor_patient_share_comment_and_revoke_flow_for_foreign_patient_card(record_client: TestClient) -> None:
+    _create_doctor(email='flow-doctor@example.com')
+    _register_patient(record_client, 'flow-recipient@example.com', fio='Recipient Patient')
+    doctor_token = _login(record_client, 'flow-doctor@example.com', TEST_DOCTOR_PASSWORD)
+    recipient_token = _login(record_client, 'flow-recipient@example.com', TEST_PATIENT_PASSWORD)
+
+    create_patient_response = record_client.post(
+        '/api/patients',
+        headers={'Authorization': f'Bearer {doctor_token}'},
+        json={
+            'fio': 'Shared Foreign Patient',
+            'date_of_birth': '1991-05-12',
+            'email': 'shared-foreign-patient@example.com',
+            'phone': '+79995550123',
+        },
+    )
+    assert create_patient_response.status_code == 201
+    foreign_patient_id = create_patient_response.json()['id']
+
+    created_record = _create_record(
+        record_client,
+        doctor_token,
+        UUID(foreign_patient_id),
+        title='Doctor owned shared record',
+        clinical_summary='Shared context summary.',
+    )
+    share_response = _create_share_request(
+        record_client,
+        doctor_token,
+        to_user_email='flow-recipient@example.com',
+        record_ids=[created_record['id']],
+    )
+    accept_response = record_client.post(
+        f'/api/share-requests/{share_response["request"]["id"]}/accept',
+        headers={'Authorization': f'Bearer {recipient_token}'},
+    )
+    recipient_patients_response = record_client.get(
+        '/api/patients', headers={'Authorization': f'Bearer {recipient_token}'}
+    )
+    recipient_foreign_records_response = record_client.get(
+        f'/api/patients/{foreign_patient_id}/records',
+        headers={'Authorization': f'Bearer {recipient_token}'},
+    )
+    comment_response = record_client.post(
+        f'/api/records/{created_record["id"]}/comments',
+        headers={'Authorization': f'Bearer {doctor_token}'},
+        json={'body': 'Doctor follow-up comment.'},
+    )
+    recipient_record_detail_response = record_client.get(
+        f'/api/records/{created_record["id"]}',
+        headers={'Authorization': f'Bearer {recipient_token}'},
+    )
+    revoke_response = record_client.post(
+        f'/api/share-requests/{share_response["request"]["id"]}/revoke',
+        headers={'Authorization': f'Bearer {doctor_token}'},
+    )
+    recipient_after_revoke_patients_response = record_client.get(
+        '/api/patients',
+        headers={'Authorization': f'Bearer {recipient_token}'},
+    )
+    recipient_after_revoke_record_response = record_client.get(
+        f'/api/records/{created_record["id"]}',
+        headers={'Authorization': f'Bearer {recipient_token}'},
+    )
+
+    assert accept_response.status_code == 200
+    assert any(patient['id'] == foreign_patient_id for patient in recipient_patients_response.json())
+    assert recipient_foreign_records_response.status_code == 200
+    assert [record['id'] for record in recipient_foreign_records_response.json()] == [created_record['id']]
+    assert comment_response.status_code == 201
+    assert recipient_record_detail_response.status_code == 200
+    assert recipient_record_detail_response.json()['comments'][0]['body'] == 'Doctor follow-up comment.'
+    assert revoke_response.status_code == 200
+    assert all(patient['id'] != foreign_patient_id for patient in recipient_after_revoke_patients_response.json())
+    assert recipient_after_revoke_record_response.status_code == 403
 
 
 @pytest.mark.critical
