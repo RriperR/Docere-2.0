@@ -266,10 +266,20 @@ def test_patient_can_create_record_for_own_passport_with_external_practitioner(r
 
 @pytest.mark.critical
 def test_doctor_can_create_record_and_internal_practitioner_is_linked(record_client: TestClient) -> None:
-    _register_patient(record_client, 'patient2@example.com')
-    patient_passport_id = _get_patient_passport_id_by_email('patient2@example.com')
     _create_doctor()
     access_token = _login(record_client, 'doctor@example.com', password=TEST_DOCTOR_PASSWORD)
+    create_patient_response = record_client.post(
+        '/api/patients',
+        headers={'Authorization': f'Bearer {access_token}'},
+        json={
+            'fio': 'Doctor Local Patient',
+            'date_of_birth': '1988-02-01',
+            'email': 'doctor-local-patient@example.com',
+            'phone': '+79994445566',
+        },
+    )
+    assert create_patient_response.status_code == 201
+    patient_passport_id = UUID(create_patient_response.json()['id'])
 
     response_body = _create_record(
         record_client,
@@ -286,6 +296,28 @@ def test_doctor_can_create_record_and_internal_practitioner_is_linked(record_cli
 
     assert record is not None
     assert record.author_practitioner_passport_id is not None
+
+
+@pytest.mark.critical
+def test_doctor_cannot_create_record_for_inaccessible_passport(record_client: TestClient) -> None:
+    _register_patient(record_client, 'patient2-private@example.com')
+    patient_passport_id = _get_patient_passport_id_by_email('patient2-private@example.com')
+    _create_doctor(email='doctor-no-access@example.com')
+    access_token = _login(record_client, 'doctor-no-access@example.com', password=TEST_DOCTOR_PASSWORD)
+
+    response = record_client.post(
+        '/api/records',
+        headers={'Authorization': f'Bearer {access_token}'},
+        json={
+            'patient_passport_id': str(patient_passport_id),
+            'record_type': 'consultation_result',
+            'event_date': '2026-03-11',
+            'title': 'Forbidden doctor record',
+            'payload_json': {'note': 'doctor has no patient access'},
+        },
+    )
+
+    assert response.status_code == 403
 
 
 @pytest.mark.critical

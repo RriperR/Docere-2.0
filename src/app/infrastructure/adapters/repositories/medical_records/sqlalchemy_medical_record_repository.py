@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import case, exists, Select, select
+from sqlalchemy import case, exists, or_, Select, select
 from sqlalchemy.orm import Session
 
 from app.application.ports.repositories.medical_records.dtos import AccessibleMedicalRecordDTO
@@ -55,6 +55,37 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
         if row is None:
             return None
         return self._to_patient_passport(row)
+
+    def user_can_access_patient_passport(
+        self,
+        *,
+        user_id: UUID,
+        user_role: str,
+        patient_passport_id: UUID,
+    ) -> bool:
+        """Проверить, что паспорт пациента доступен пользователю.
+
+        Returns:
+            ``True``, если паспорт виден пользователю в его списке карточек.
+        """
+        access_conditions = [UserRecordLinkRow.user_id == user_id]
+        if user_role == 'patient':
+            access_conditions.append(PatientPassportRow.patient_user_id == user_id)
+        else:
+            access_conditions.append(PatientPassportRow.created_by_user_id == user_id)
+
+        return (
+            self._session.scalar(
+                select(PatientPassportRow.id)
+                .outerjoin(UserRecordLinkRow, UserRecordLinkRow.patient_passport_id == PatientPassportRow.id)
+                .where(
+                    PatientPassportRow.id == patient_passport_id,
+                    or_(*access_conditions),
+                )
+                .limit(1),
+            )
+            is not None
+        )
 
     def get_practitioner_passport(self, practitioner_passport_id: UUID) -> PractitionerPassport | None:
         """Вернуть паспорт врача по идентификатору.

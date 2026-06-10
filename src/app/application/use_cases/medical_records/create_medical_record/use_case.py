@@ -49,6 +49,12 @@ class CreateMedicalRecordUseCase:
 
         if input_dto.actor_role == 'patient' and patient_passport.patient_user_id != input_dto.actor_user_id:
             raise MedicalRecordAccessDeniedError
+        if input_dto.actor_role in {'doctor', 'admin'} and not self._repository.user_can_access_patient_passport(
+            user_id=input_dto.actor_user_id,
+            user_role=input_dto.actor_role,
+            patient_passport_id=input_dto.patient_passport_id,
+        ):
+            raise MedicalRecordAccessDeniedError
 
         author_practitioner_passport = None
         if input_dto.author_practitioner_passport_id is not None:

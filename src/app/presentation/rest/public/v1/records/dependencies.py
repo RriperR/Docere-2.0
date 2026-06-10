@@ -11,8 +11,27 @@ from app.application.use_cases.auth.get_authenticated_user.use_case import GetAu
 from app.application.use_cases.medical_records.add_record_comment.use_case import AddRecordCommentUseCase
 from app.application.use_cases.medical_records.create_medical_record.use_case import CreateMedicalRecordUseCase
 from app.application.use_cases.medical_records.get_medical_record.use_case import GetMedicalRecordUseCase
+from app.application.use_cases.patients.create_patient import CreatePatientUseCase
+from app.application.use_cases.patients.get_patient import GetPatientUseCase
+from app.application.use_cases.patients.list_patient_records import ListPatientRecordsUseCase
+from app.application.use_cases.patients.list_patients import ListPatientsUseCase
+from app.application.use_cases.share_requests.use_cases import (
+    AcceptShareRequestUseCase,
+    CancelShareRequestUseCase,
+    CreateShareRequestUseCase,
+    DeclineShareRequestUseCase,
+    ListInboxShareRequestsUseCase,
+    ListOutboxShareRequestsUseCase,
+    RevokeShareRequestUseCase,
+)
 from app.infrastructure.adapters.repositories.medical_records.sqlalchemy_medical_record_repository import (
     SqlAlchemyMedicalRecordRepositoryAdapter,
+)
+from app.infrastructure.adapters.repositories.patient_cards.sqlalchemy_patient_card_repository import (
+    SqlAlchemyPatientCardRepositoryAdapter,
+)
+from app.infrastructure.adapters.repositories.share_requests.sqlalchemy_share_request_repository import (
+    SqlAlchemyShareRequestRepositoryAdapter,
 )
 from app.infrastructure.db.session import get_db_session
 from app.presentation.rest.public.v1.auth.dependencies import (
@@ -41,6 +60,14 @@ def get_current_authenticated_user(
 
 def _build_repository(session: Session) -> SqlAlchemyMedicalRecordRepositoryAdapter:
     return SqlAlchemyMedicalRecordRepositoryAdapter(session=session)
+
+
+def _build_patient_card_repository(session: Session) -> SqlAlchemyPatientCardRepositoryAdapter:
+    return SqlAlchemyPatientCardRepositoryAdapter(session=session)
+
+
+def _build_share_request_repository(session: Session) -> SqlAlchemyShareRequestRepositoryAdapter:
+    return SqlAlchemyShareRequestRepositoryAdapter(session=session)
 
 
 def get_create_medical_record_use_case(
@@ -76,7 +103,117 @@ def get_add_record_comment_use_case(
     return AddRecordCommentUseCase(repository=_build_repository(session))
 
 
+def get_list_patients_use_case(session: Session = db_session_dependency) -> ListPatientsUseCase:
+    """Создать use case получения списка карточек пациентов.
+
+    Returns:
+        Настроенный use case списка карточек пациентов.
+    """
+    return ListPatientsUseCase(repository=_build_patient_card_repository(session))
+
+
+def get_create_patient_use_case(session: Session = db_session_dependency) -> CreatePatientUseCase:
+    """Создать use case создания карточки пациента.
+
+    Returns:
+        Настроенный use case создания карточки пациента.
+    """
+    return CreatePatientUseCase(repository=_build_patient_card_repository(session))
+
+
+def get_get_patient_use_case(session: Session = db_session_dependency) -> GetPatientUseCase:
+    """Создать use case чтения карточки пациента.
+
+    Returns:
+        Настроенный use case чтения карточки пациента.
+    """
+    return GetPatientUseCase(repository=_build_patient_card_repository(session))
+
+
+def get_list_patient_records_use_case(session: Session = db_session_dependency) -> ListPatientRecordsUseCase:
+    """Создать use case списка записей карточки пациента.
+
+    Returns:
+        Настроенный use case списка записей карточки.
+    """
+    return ListPatientRecordsUseCase(repository=_build_patient_card_repository(session))
+
+
+def get_create_share_request_use_case(session: Session = db_session_dependency) -> CreateShareRequestUseCase:
+    """Создать use case создания sharing-запроса.
+
+    Returns:
+        Настроенный use case создания sharing-запроса.
+    """
+    return CreateShareRequestUseCase(repository=_build_share_request_repository(session))
+
+
+def get_list_inbox_share_requests_use_case(session: Session = db_session_dependency) -> ListInboxShareRequestsUseCase:
+    """Создать use case входящих sharing-запросов.
+
+    Returns:
+        Настроенный use case входящих sharing-запросов.
+    """
+    return ListInboxShareRequestsUseCase(repository=_build_share_request_repository(session))
+
+
+def get_list_outbox_share_requests_use_case(session: Session = db_session_dependency) -> ListOutboxShareRequestsUseCase:
+    """Создать use case исходящих sharing-запросов.
+
+    Returns:
+        Настроенный use case исходящих sharing-запросов.
+    """
+    return ListOutboxShareRequestsUseCase(repository=_build_share_request_repository(session))
+
+
+def get_accept_share_request_use_case(session: Session = db_session_dependency) -> AcceptShareRequestUseCase:
+    """Создать use case принятия sharing-запроса.
+
+    Returns:
+        Настроенный use case принятия sharing-запроса.
+    """
+    return AcceptShareRequestUseCase(repository=_build_share_request_repository(session))
+
+
+def get_decline_share_request_use_case(session: Session = db_session_dependency) -> DeclineShareRequestUseCase:
+    """Создать use case отклонения sharing-запроса.
+
+    Returns:
+        Настроенный use case отклонения sharing-запроса.
+    """
+    return DeclineShareRequestUseCase(repository=_build_share_request_repository(session))
+
+
+def get_cancel_share_request_use_case(session: Session = db_session_dependency) -> CancelShareRequestUseCase:
+    """Создать use case отмены sharing-запроса.
+
+    Returns:
+        Настроенный use case отмены sharing-запроса.
+    """
+    return CancelShareRequestUseCase(repository=_build_share_request_repository(session))
+
+
+def get_revoke_share_request_use_case(session: Session = db_session_dependency) -> RevokeShareRequestUseCase:
+    """Создать use case отзыва sharing-запроса.
+
+    Returns:
+        Настроенный use case отзыва sharing-запроса.
+    """
+    return RevokeShareRequestUseCase(repository=_build_share_request_repository(session))
+
+
 current_authenticated_user_dependency = Depends(get_current_authenticated_user)
 create_medical_record_use_case_dependency = Depends(get_create_medical_record_use_case)
 get_medical_record_use_case_dependency = Depends(get_medical_record_use_case)
 add_record_comment_use_case_dependency = Depends(get_add_record_comment_use_case)
+list_patients_use_case_dependency = Depends(get_list_patients_use_case)
+create_patient_use_case_dependency = Depends(get_create_patient_use_case)
+get_patient_use_case_dependency = Depends(get_get_patient_use_case)
+list_patient_records_use_case_dependency = Depends(get_list_patient_records_use_case)
+create_share_request_use_case_dependency = Depends(get_create_share_request_use_case)
+list_inbox_share_requests_use_case_dependency = Depends(get_list_inbox_share_requests_use_case)
+list_outbox_share_requests_use_case_dependency = Depends(get_list_outbox_share_requests_use_case)
+accept_share_request_use_case_dependency = Depends(get_accept_share_request_use_case)
+decline_share_request_use_case_dependency = Depends(get_decline_share_request_use_case)
+cancel_share_request_use_case_dependency = Depends(get_cancel_share_request_use_case)
+revoke_share_request_use_case_dependency = Depends(get_revoke_share_request_use_case)

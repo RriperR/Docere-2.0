@@ -18,6 +18,16 @@ class MedicalRecordRepositoryPort:
         """Вернуть паспорт пациента по идентификатору."""
         raise NotImplementedError
 
+    def user_can_access_patient_passport(
+        self,
+        *,
+        user_id: UUID,
+        user_role: str,
+        patient_passport_id: UUID,
+    ) -> bool:
+        """РџСЂРѕРІРµСЂРёС‚СЊ РґРѕСЃС‚СѓРї РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ Рє РїР°СЃРїРѕСЂС‚Сѓ РїР°С†РёРµРЅС‚Р°."""
+        raise NotImplementedError
+
     def get_practitioner_passport(self, practitioner_passport_id: UUID) -> PractitionerPassport | None:
         """Вернуть паспорт врача по идентификатору."""
         raise NotImplementedError
