@@ -37,6 +37,30 @@ const getErrorMessage = (error: unknown, fallback: string): string => {
   return apiError.response?.data?.detail || apiError.message || fallback
 }
 
+const accessContextLabel = (accessContext: string): string => {
+  if (accessContext === 'shared') {
+    return 'Sharing'
+  }
+
+  if (accessContext === 'created') {
+    return 'Локальная карточка'
+  }
+
+  return 'Моя карточка'
+}
+
+const accessContextClasses = (accessContext: string): string => {
+  if (accessContext === 'shared') {
+    return 'bg-amber-50 text-amber-700'
+  }
+
+  if (accessContext === 'created') {
+    return 'bg-sky-50 text-sky-700'
+  }
+
+  return 'bg-emerald-50 text-emerald-700'
+}
+
 const PatientDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>()
   const { user } = useAuthStore()
@@ -189,7 +213,14 @@ const PatientDetailsPage: React.FC = () => {
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">{currentPatient.fio}</h1>
-            <p className="text-gray-500">ID карточки: {currentPatient.id}</p>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <p className="text-gray-500">ID карточки: {currentPatient.id}</p>
+              <span
+                className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${accessContextClasses(currentPatient.accessContext)}`}
+              >
+                {accessContextLabel(currentPatient.accessContext)}
+              </span>
+            </div>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button
@@ -204,6 +235,12 @@ const PatientDetailsPage: React.FC = () => {
           </div>
         </div>
       </motion.div>
+
+      {currentPatient.accessContext === 'shared' && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Эта карточка доступна вам по sharing. Она может относиться к другому пациенту.
+        </div>
+      )}
 
       {showAddModal && (
         <AddRecordModal
@@ -236,6 +273,10 @@ const PatientDetailsPage: React.FC = () => {
             <div>
               <p className="text-gray-500">ФИО</p>
               <p className="font-medium text-gray-900">{currentPatient.fio}</p>
+            </div>
+            <div>
+              <p className="text-gray-500">Тип доступа</p>
+              <p>{accessContextLabel(currentPatient.accessContext)}</p>
             </div>
             <div>
               <p className="text-gray-500">Дата рождения</p>

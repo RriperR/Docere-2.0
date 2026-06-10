@@ -512,6 +512,7 @@ def test_patient_can_list_own_patient_card_and_records(record_client: TestClient
     assert patients_response.status_code == 200
     assert len(patients_response.json()) == 1
     assert patients_response.json()[0]['id'] == str(patient_passport_id)
+    assert patients_response.json()[0]['access_context'] == 'own_confirmed'
     assert patients_response.json()[0]['record_count'] == 1
 
     assert records_response.status_code == 200
@@ -566,6 +567,7 @@ def test_doctor_can_create_patient_card_and_see_patient_records(record_client: T
     assert create_patient_response.status_code == 201
     assert create_patient_response.json()['fio'] == 'Петров Пётр Петрович'
     assert create_patient_response.json()['status'] == 'draft'
+    assert create_patient_response.json()['access_context'] == 'created'
 
     assert list_patients_response.status_code == 200
     assert any(patient['id'] == create_patient_response.json()['id'] for patient in list_patients_response.json())
@@ -605,6 +607,7 @@ def test_doctor_created_empty_patient_card_is_not_visible_to_other_doctor(record
     )
 
     assert create_patient_response.status_code == 201
+    assert create_patient_response.json()['access_context'] == 'created'
     assert any(patient['id'] == patient_id for patient in owner_patients_response.json())
     assert all(patient['id'] != patient_id for patient in stranger_patients_response.json())
     assert stranger_patient_response.status_code == 404
@@ -670,7 +673,10 @@ def test_share_request_accept_grants_record_access_to_registered_user(record_cli
     assert after_accept_response.status_code == 200
     assert after_accept_response.json()['id'] == created_record['id']
     assert recipient_patients_response.status_code == 200
-    assert any(patient['id'] == str(owner_passport_id) for patient in recipient_patients_response.json())
+    recipient_patient = next(
+        patient for patient in recipient_patients_response.json() if patient['id'] == str(owner_passport_id)
+    )
+    assert recipient_patient['access_context'] == 'shared'
     assert recipient_patient_records_response.status_code == 200
     assert [record['id'] for record in recipient_patient_records_response.json()] == [created_record['id']]
     assert patient_comment_response.status_code == 403
@@ -755,7 +761,10 @@ def test_doctor_patient_share_comment_and_revoke_flow_for_foreign_patient_card(r
     )
 
     assert accept_response.status_code == 200
-    assert any(patient['id'] == foreign_patient_id for patient in recipient_patients_response.json())
+    shared_patient = next(
+        patient for patient in recipient_patients_response.json() if patient['id'] == foreign_patient_id
+    )
+    assert shared_patient['access_context'] == 'shared'
     assert recipient_foreign_records_response.status_code == 200
     assert [record['id'] for record in recipient_foreign_records_response.json()] == [created_record['id']]
     assert comment_response.status_code == 201

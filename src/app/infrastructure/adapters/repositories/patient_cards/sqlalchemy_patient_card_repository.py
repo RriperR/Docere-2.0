@@ -165,9 +165,18 @@ class SqlAlchemyPatientCardRepositoryAdapter(PatientCardRepositoryPort):
             email=row.email,
             phone=row.phone,
             status=row.status.value,
+            access_context=self._access_context(row, user_id),
             record_count=record_count,
             last_record_date=last_record_date,
         )
+
+    @staticmethod
+    def _access_context(row: PatientPassportRow, user_id: UUID) -> str:
+        if row.patient_user_id == user_id and row.status == PatientPassportStatusRow.CONFIRMED:
+            return 'own_confirmed'
+        if row.created_by_user_id == user_id:
+            return 'created'
+        return 'shared'
 
     def _patient_record_stats(self, patient_id: UUID, user_id: UUID) -> tuple[int, date | None]:
         stats = self._session.execute(

@@ -24,6 +24,30 @@ const buildFio = (lastName: string, firstName: string, middleName: string): stri
     .filter((part) => part.length > 0)
     .join(' ')
 
+const accessContextLabel = (accessContext: string): string => {
+  if (accessContext === 'shared') {
+    return 'Sharing'
+  }
+
+  if (accessContext === 'created') {
+    return 'Локальная'
+  }
+
+  return 'Моя'
+}
+
+const accessContextClasses = (accessContext: string): string => {
+  if (accessContext === 'shared') {
+    return 'bg-amber-50 text-amber-700'
+  }
+
+  if (accessContext === 'created') {
+    return 'bg-sky-50 text-sky-700'
+  }
+
+  return 'bg-emerald-50 text-emerald-700'
+}
+
 const PatientListPage: React.FC = () => {
   const { user } = useAuthStore()
   const {
@@ -152,7 +176,7 @@ const PatientListPage: React.FC = () => {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  {['Пациент', 'Дата рождения', 'Последняя запись', 'Записей', 'Действия'].map((header) => (
+                  {['Пациент', 'Дата рождения', 'Последняя запись', 'Доступ', 'Записей', 'Действия'].map((header) => (
                     <th
                       key={header}
                       className="px-6 py-3 text-left text-xs font-medium uppercase text-gray-500"
@@ -182,6 +206,13 @@ const PatientListPage: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-900">
                       {patient.lastVisit ? format(new Date(patient.lastVisit), 'dd.MM.yyyy') : '—'}
+                    </td>
+                    <td className="px-6 py-4 text-sm">
+                      <span
+                        className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${accessContextClasses(patient.accessContext)}`}
+                      >
+                        {accessContextLabel(patient.accessContext)}
+                      </span>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-900">
                       <div className="flex items-center">

@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import api from '../api/api'
 
+export type PatientAccessContext = 'own_confirmed' | 'created' | 'shared'
+
 export interface Patient {
   id: string
   fio: string
@@ -11,6 +13,7 @@ export interface Patient {
   email?: string
   phone?: string
   status: string
+  accessContext: PatientAccessContext
   lastVisit?: string
   recordCount: number
 }
@@ -93,6 +96,7 @@ interface BackendPatient {
   email: string | null
   phone: string | null
   status: string
+  access_context: PatientAccessContext
   record_count: number
   last_record_date: string | null
 }
@@ -235,6 +239,7 @@ const mapPatient = (p: BackendPatient): Patient => {
     email: p.email ?? undefined,
     phone: p.phone ?? undefined,
     status: p.status,
+    accessContext: p.access_context,
     lastVisit: p.last_record_date ?? undefined,
     recordCount: p.record_count,
   }

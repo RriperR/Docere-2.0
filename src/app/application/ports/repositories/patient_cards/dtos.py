@@ -19,6 +19,7 @@ class PatientSummaryDTO:
     email: str | None
     phone: str | None
     status: str
+    access_context: str
     record_count: int
     last_record_date: date | None
 
