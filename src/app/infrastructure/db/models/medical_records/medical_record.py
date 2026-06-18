@@ -3,33 +3,15 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from enum import StrEnum
 from uuid import UUID, uuid4
 
 from sqlalchemy import Date, DateTime, Enum, ForeignKey, func, JSON, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.domain.entities.medical_record import MedicalRecordStatus, MedicalRecordType
 from app.infrastructure.db.base import Base
 from app.infrastructure.db.models._enums import enum_values
 from app.infrastructure.db.models._time import utc_now
-
-
-class MedicalRecordStatusRow(StrEnum):
-    """Статусы ORM-модели медицинской записи."""
-
-    DRAFT = 'draft'
-    UNCONFIRMED = 'unconfirmed'
-    CONFIRMED = 'confirmed'
-    REJECTED = 'rejected'
-
-
-class MedicalRecordTypeRow(StrEnum):
-    """Типы ORM-модели медицинской записи."""
-
-    CONSULTATION_RESULT = 'consultation_result'
-    EXAM_RESULT = 'exam_result'
-    LAB_RESULT = 'lab_result'
-    OTHER = 'other'
 
 
 class MedicalRecordRow(Base):
@@ -45,19 +27,19 @@ class MedicalRecordRow(Base):
         nullable=True,
         index=True,
     )
-    status: Mapped[MedicalRecordStatusRow] = mapped_column(
+    status: Mapped[MedicalRecordStatus] = mapped_column(
         Enum(
-            MedicalRecordStatusRow,
+            MedicalRecordStatus,
             name='record_status',
             native_enum=True,
             validate_strings=True,
             values_callable=enum_values,
         ),
-        default=MedicalRecordStatusRow.UNCONFIRMED,
+        default=MedicalRecordStatus.UNCONFIRMED,
     )
-    record_type: Mapped[MedicalRecordTypeRow] = mapped_column(
+    record_type: Mapped[MedicalRecordType] = mapped_column(
         Enum(
-            MedicalRecordTypeRow,
+            MedicalRecordType,
             name='record_type',
             native_enum=True,
             validate_strings=True,

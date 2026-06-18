@@ -8,10 +8,8 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.application.ports.repositories.patient_passports.port import PatientPassportRepositoryPort
-from app.infrastructure.db.models.medical_records.patient_passport import (
-    PatientPassportRow,
-    PatientPassportStatusRow,
-)
+from app.domain.entities.patient_passport import PatientPassportStatus
+from app.infrastructure.db.models.medical_records.patient_passport import PatientPassportRow
 
 
 class SqlAlchemyPatientPassportRepositoryAdapter(PatientPassportRepositoryPort):
@@ -52,7 +50,7 @@ class SqlAlchemyPatientPassportRepositoryAdapter(PatientPassportRepositoryPort):
             date_of_birth=date_of_birth,
             email=email,
             phone=phone,
-            status=PatientPassportStatusRow.CONFIRMED,
+            status=PatientPassportStatus.CONFIRMED,
             confirmed_at=confirmed_at,
         )
         self._session.add(patient_passport_row)

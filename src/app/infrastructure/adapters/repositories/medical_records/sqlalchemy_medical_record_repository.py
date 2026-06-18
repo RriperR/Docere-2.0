@@ -10,27 +10,15 @@ from sqlalchemy.orm import Session
 
 from app.application.ports.repositories.medical_records.dtos import AccessibleMedicalRecordDTO
 from app.application.ports.repositories.medical_records.port import MedicalRecordRepositoryPort
-from app.domain.entities.file_attachment import FileAttachment, FileAttachmentCategory
+from app.domain.entities.file_attachment import FileAttachment
 from app.domain.entities.medical_record import MedicalRecord, MedicalRecordStatus, MedicalRecordType
 from app.domain.entities.patient_passport import PatientPassport, PatientPassportStatus
 from app.domain.entities.practitioner_passport import PractitionerPassport, PractitionerPassportStatus
 from app.domain.entities.record_comment import RecordComment
-from app.infrastructure.db.models.medical_records.file_attachment import (
-    FileAttachmentRow,
-)
-from app.infrastructure.db.models.medical_records.medical_record import (
-    MedicalRecordRow,
-    MedicalRecordStatusRow,
-    MedicalRecordTypeRow,
-)
-from app.infrastructure.db.models.medical_records.patient_passport import (
-    PatientPassportRow,
-    PatientPassportStatusRow,
-)
-from app.infrastructure.db.models.medical_records.practitioner_passport import (
-    PractitionerPassportRow,
-    PractitionerPassportStatusRow,
-)
+from app.infrastructure.db.models.medical_records.file_attachment import FileAttachmentRow
+from app.infrastructure.db.models.medical_records.medical_record import MedicalRecordRow
+from app.infrastructure.db.models.medical_records.patient_passport import PatientPassportRow
+from app.infrastructure.db.models.medical_records.practitioner_passport import PractitionerPassportRow
 from app.infrastructure.db.models.medical_records.record_comment import RecordCommentRow
 from app.infrastructure.db.models.medical_records.user_record_link import (
     UserRecordLinkRow,
@@ -120,7 +108,7 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
                 full_name=full_name,
                 email=email,
                 phone=phone,
-                status=PractitionerPassportStatusRow.CONFIRMED,
+                status=PractitionerPassportStatus.CONFIRMED,
             )
             self._session.add(row)
             self._session.flush()
@@ -150,7 +138,7 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
             position=position,
             email=email,
             phone=phone,
-            status=PractitionerPassportStatusRow.DRAFT,
+            status=PractitionerPassportStatus.DRAFT,
         )
         self._session.add(row)
         self._session.flush()
@@ -176,8 +164,8 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
         record_row = MedicalRecordRow(
             creator_user_id=creator_user_id,
             author_practitioner_passport_id=author_practitioner_passport_id,
-            status=MedicalRecordStatusRow.UNCONFIRMED,
-            record_type=MedicalRecordTypeRow(record_type),
+            status=MedicalRecordStatus.UNCONFIRMED,
+            record_type=MedicalRecordType(record_type),
             event_date=event_date,
             title=title,
             appointment_location=appointment_location,
@@ -317,7 +305,7 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
         """
         priority_expression = case(
             (
-                (PatientPassportRow.status == PatientPassportStatusRow.CONFIRMED)
+                (PatientPassportRow.status == PatientPassportStatus.CONFIRMED)
                 & (PatientPassportRow.patient_user_id.is_not(None)),
                 0,
             ),
@@ -348,8 +336,8 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
             id=row.id,
             creator_user_id=row.creator_user_id,
             author_practitioner_passport_id=row.author_practitioner_passport_id,
-            status=MedicalRecordStatus(row.status.value),
-            record_type=MedicalRecordType(row.record_type.value),
+            status=row.status,
+            record_type=row.record_type,
             event_date=row.event_date,
             title=row.title,
             appointment_location=row.appointment_location,
@@ -369,7 +357,7 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
             date_of_birth=row.date_of_birth,
             email=row.email,
             phone=row.phone,
-            status=PatientPassportStatus(row.status.value),
+            status=row.status,
             confirmed_at=row.confirmed_at,
             created_at=row.created_at,
             updated_at=row.updated_at,
@@ -387,7 +375,7 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
             position=row.position,
             email=row.email,
             phone=row.phone,
-            status=PractitionerPassportStatus(row.status.value),
+            status=row.status,
             confirmed_at=row.confirmed_at,
             created_at=row.created_at,
             updated_at=row.updated_at,
@@ -409,7 +397,7 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
             id=row.id,
             record_id=row.record_id,
             uploaded_by_user_id=row.uploaded_by_user_id,
-            category=FileAttachmentCategory(row.category.value),
+            category=row.category,
             storage_key=row.storage_key,
             mime_type=row.mime_type,
             size_bytes=row.size_bytes,

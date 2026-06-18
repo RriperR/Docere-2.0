@@ -15,14 +15,12 @@ from app.application.ports.repositories.patient_cards.dtos import (
 )
 from app.application.ports.repositories.patient_cards.port import PatientCardRepositoryPort
 from app.application.use_cases.medical_records.common.dtos import PractitionerPassportDTO
+from app.domain.entities.patient_passport import PatientPassportStatus
 from app.infrastructure.adapters.repositories.medical_records.sqlalchemy_medical_record_repository import (
     SqlAlchemyMedicalRecordRepositoryAdapter,
 )
 from app.infrastructure.db.models.medical_records.medical_record import MedicalRecordRow
-from app.infrastructure.db.models.medical_records.patient_passport import (
-    PatientPassportRow,
-    PatientPassportStatusRow,
-)
+from app.infrastructure.db.models.medical_records.patient_passport import PatientPassportRow
 from app.infrastructure.db.models.medical_records.user_record_link import UserRecordLinkRow
 
 
@@ -67,7 +65,7 @@ class SqlAlchemyPatientCardRepositoryAdapter(PatientCardRepositoryPort):
             date_of_birth=date_of_birth,
             email=email,
             phone=phone,
-            status=PatientPassportStatusRow.DRAFT,
+            status=PatientPassportStatus.DRAFT,
         )
         self._session.add(row)
         self._session.flush()
@@ -172,7 +170,7 @@ class SqlAlchemyPatientCardRepositoryAdapter(PatientCardRepositoryPort):
 
     @staticmethod
     def _access_context(row: PatientPassportRow, user_id: UUID) -> str:
-        if row.patient_user_id == user_id and row.status == PatientPassportStatusRow.CONFIRMED:
+        if row.patient_user_id == user_id and row.status == PatientPassportStatus.CONFIRMED:
             return 'own_confirmed'
         if row.created_by_user_id == user_id:
             return 'created'

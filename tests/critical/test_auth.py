@@ -7,14 +7,12 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from app.domain.entities.patient_passport import PatientPassportStatus
 from app.infrastructure.adapters.repositories.auth.sqlalchemy_auth_repository import SqlAlchemyAuthRepositoryAdapter
 from app.infrastructure.config.settings import clear_settings_cache
 from app.infrastructure.db.base import Base
 from app.infrastructure.db.models.auth.user import UserRow
-from app.infrastructure.db.models.medical_records.patient_passport import (
-    PatientPassportRow,
-    PatientPassportStatusRow,
-)
+from app.infrastructure.db.models.medical_records.patient_passport import PatientPassportRow
 from app.infrastructure.db.session import clear_db_session_cache, get_engine, get_session_factory
 from app.presentation.main import create_app
 
@@ -93,7 +91,7 @@ def test_register_creates_confirmed_patient_passport(auth_client: TestClient) ->
 
     assert patient_passport is not None
     assert patient_passport.created_by_user_id == user.id
-    assert patient_passport.status == PatientPassportStatusRow.CONFIRMED
+    assert patient_passport.status == PatientPassportStatus.CONFIRMED
     assert patient_passport.confirmed_at is not None
 
 

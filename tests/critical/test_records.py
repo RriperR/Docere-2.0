@@ -10,14 +10,12 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from app.domain.entities.file_attachment import FileAttachmentCategory
 from app.infrastructure.adapters.security.pbkdf2_password_hasher import Pbkdf2PasswordHasherAdapter
 from app.infrastructure.config.settings import clear_settings_cache
 from app.infrastructure.db.base import Base
 from app.infrastructure.db.models.auth.user import UserRole, UserRow, UserStatus
-from app.infrastructure.db.models.medical_records.file_attachment import (
-    FileAttachmentCategoryRow,
-    FileAttachmentRow,
-)
+from app.infrastructure.db.models.medical_records.file_attachment import FileAttachmentRow
 from app.infrastructure.db.models.medical_records.medical_record import MedicalRecordRow
 from app.infrastructure.db.models.medical_records.patient_passport import PatientPassportRow
 from app.infrastructure.db.models.medical_records.practitioner_passport import PractitionerPassportRow
@@ -349,7 +347,7 @@ def test_record_detail_returns_comments_and_attachments_separately(record_client
         attachment = FileAttachmentRow(
             record_id=UUID(created_record['id']),
             uploaded_by_user_id=doctor.id,
-            category=FileAttachmentCategoryRow.DOCUMENT,
+            category=FileAttachmentCategory.DOCUMENT,
             storage_key='records/doc-1.pdf',
             mime_type='application/pdf',
             size_bytes=1024,

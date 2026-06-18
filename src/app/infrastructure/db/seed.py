@@ -12,16 +12,15 @@ from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
 from app.application.ports.security.password_hasher import PasswordHasherPort
+from app.domain.entities.file_attachment import FileAttachmentCategory
+from app.domain.entities.medical_record import MedicalRecordStatus, MedicalRecordType
+from app.domain.entities.patient_passport import PatientPassportStatus
+from app.domain.entities.practitioner_passport import PractitionerPassportStatus
 from app.infrastructure.db.models import (
-    FileAttachmentCategoryRow,
     FileAttachmentRow,
     MedicalRecordRow,
-    MedicalRecordStatusRow,
-    MedicalRecordTypeRow,
     PatientPassportRow,
-    PatientPassportStatusRow,
     PractitionerPassportRow,
-    PractitionerPassportStatusRow,
     RecordCommentRow,
     UserRecordLinkRow,
     UserRecordLinkSourceRow,
@@ -155,7 +154,7 @@ def seed_demo_data(
         position='Врач-кардиолог высшей категории',
         email=doctor_cardio.email,
         phone=doctor_cardio.phone,
-        status=PractitionerPassportStatusRow.CONFIRMED,
+        status=PractitionerPassportStatus.CONFIRMED,
         confirmed_at=now,
     )
     passport_kim = PractitionerPassportRow(
@@ -167,7 +166,7 @@ def seed_demo_data(
         position='Врач-невролог',
         email=doctor_neuro.email,
         phone=doctor_neuro.phone,
-        status=PractitionerPassportStatusRow.CONFIRMED,
+        status=PractitionerPassportStatus.CONFIRMED,
         confirmed_at=now,
     )
     session.add_all([passport_sokolov, passport_kim])
@@ -181,7 +180,7 @@ def seed_demo_data(
         date_of_birth=patient_ivanov.date_of_birth,
         email=patient_ivanov.email,
         phone=patient_ivanov.phone,
-        status=PatientPassportStatusRow.CONFIRMED,
+        status=PatientPassportStatus.CONFIRMED,
         confirmed_at=now,
     )
     passport_petrova = PatientPassportRow(
@@ -191,7 +190,7 @@ def seed_demo_data(
         date_of_birth=patient_petrova.date_of_birth,
         email=patient_petrova.email,
         phone=patient_petrova.phone,
-        status=PatientPassportStatusRow.CONFIRMED,
+        status=PatientPassportStatus.CONFIRMED,
         confirmed_at=now,
     )
     # Черновик паспорта, заведённый врачом для пациента без учётной записи.
@@ -201,7 +200,7 @@ def seed_demo_data(
         fio='Сидорова Галина Петровна',
         date_of_birth=date(1955, 2, 8),
         phone='+79990001020',
-        status=PatientPassportStatusRow.DRAFT,
+        status=PatientPassportStatus.DRAFT,
     )
     session.add_all([passport_ivanov, passport_petrova, passport_draft])
     session.flush()
@@ -210,8 +209,8 @@ def seed_demo_data(
     record_cardio = MedicalRecordRow(
         creator_user_id=doctor_cardio.id,
         author_practitioner_passport_id=passport_sokolov.id,
-        status=MedicalRecordStatusRow.CONFIRMED,
-        record_type=MedicalRecordTypeRow.CONSULTATION_RESULT,
+        status=MedicalRecordStatus.CONFIRMED,
+        record_type=MedicalRecordType.CONSULTATION_RESULT,
         event_date=date.today() - timedelta(days=14),
         title='Первичный приём кардиолога',
         appointment_location='ГКБ №1, кабинет 312',
@@ -228,8 +227,8 @@ def seed_demo_data(
     record_lab = MedicalRecordRow(
         creator_user_id=patient_ivanov.id,
         author_practitioner_passport_id=None,
-        status=MedicalRecordStatusRow.UNCONFIRMED,
-        record_type=MedicalRecordTypeRow.LAB_RESULT,
+        status=MedicalRecordStatus.UNCONFIRMED,
+        record_type=MedicalRecordType.LAB_RESULT,
         event_date=date.today() - timedelta(days=10),
         title='Общий анализ крови',
         appointment_location='Лаборатория «Гемотест»',
@@ -244,8 +243,8 @@ def seed_demo_data(
     record_neuro = MedicalRecordRow(
         creator_user_id=doctor_neuro.id,
         author_practitioner_passport_id=passport_kim.id,
-        status=MedicalRecordStatusRow.CONFIRMED,
-        record_type=MedicalRecordTypeRow.EXAM_RESULT,
+        status=MedicalRecordStatus.CONFIRMED,
+        record_type=MedicalRecordType.EXAM_RESULT,
         event_date=date.today() - timedelta(days=5),
         title='МРТ головного мозга',
         appointment_location='Клиника «Нейромед»',
@@ -255,8 +254,8 @@ def seed_demo_data(
     record_draft = MedicalRecordRow(
         creator_user_id=patient_petrova.id,
         author_practitioner_passport_id=None,
-        status=MedicalRecordStatusRow.DRAFT,
-        record_type=MedicalRecordTypeRow.OTHER,
+        status=MedicalRecordStatus.DRAFT,
+        record_type=MedicalRecordType.OTHER,
         event_date=date.today() - timedelta(days=2),
         title='Черновик: выписка из стационара',
         clinical_summary=None,
@@ -272,7 +271,7 @@ def seed_demo_data(
             FileAttachmentRow(
                 record_id=record_lab.id,
                 uploaded_by_user_id=patient_ivanov.id,
-                category=FileAttachmentCategoryRow.LAB,
+                category=FileAttachmentCategory.LAB,
                 storage_key='demo/records/lab/oak-ivanov.pdf',
                 mime_type='application/pdf',
                 size_bytes=248_512,
@@ -280,7 +279,7 @@ def seed_demo_data(
             FileAttachmentRow(
                 record_id=record_neuro.id,
                 uploaded_by_user_id=doctor_neuro.id,
-                category=FileAttachmentCategoryRow.IMAGING,
+                category=FileAttachmentCategory.IMAGING,
                 storage_key='demo/records/imaging/mrt-petrova.dcm',
                 mime_type='application/dicom',
                 size_bytes=15_728_640,

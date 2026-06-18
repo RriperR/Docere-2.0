@@ -3,22 +3,15 @@
 from __future__ import annotations
 
 from datetime import datetime
-from enum import StrEnum
 from uuid import UUID, uuid4
 
 from sqlalchemy import DateTime, Enum, ForeignKey, func, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.domain.entities.practitioner_passport import PractitionerPassportStatus
 from app.infrastructure.db.base import Base
 from app.infrastructure.db.models._enums import enum_values
 from app.infrastructure.db.models._time import utc_now
-
-
-class PractitionerPassportStatusRow(StrEnum):
-    """Статусы ORM-модели паспорта врача."""
-
-    DRAFT = 'draft'
-    CONFIRMED = 'confirmed'
 
 
 class PractitionerPassportRow(Base):
@@ -45,15 +38,15 @@ class PractitionerPassportRow(Base):
     position: Mapped[str | None] = mapped_column(String(length=255), nullable=True)
     email: Mapped[str | None] = mapped_column(String(length=320), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(length=32), nullable=True)
-    status: Mapped[PractitionerPassportStatusRow] = mapped_column(
+    status: Mapped[PractitionerPassportStatus] = mapped_column(
         Enum(
-            PractitionerPassportStatusRow,
+            PractitionerPassportStatus,
             name='practitioner_passport_status',
             native_enum=True,
             validate_strings=True,
             values_callable=enum_values,
         ),
-        default=PractitionerPassportStatusRow.DRAFT,
+        default=PractitionerPassportStatus.DRAFT,
     )
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
