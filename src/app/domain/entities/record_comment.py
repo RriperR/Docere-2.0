@@ -14,5 +14,7 @@ class RecordComment:
     id: UUID
     record_id: UUID
     author_user_id: UUID
+    author_fio: str
+    author_role: str
     body: str
     created_at: datetime

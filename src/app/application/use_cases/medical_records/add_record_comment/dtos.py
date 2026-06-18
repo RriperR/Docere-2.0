@@ -13,4 +13,5 @@ class AddRecordCommentDTO:
     record_id: UUID
     actor_user_id: UUID
     actor_role: str
+    actor_fio: str
     body: str

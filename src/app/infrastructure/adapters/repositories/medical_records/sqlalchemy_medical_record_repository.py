@@ -15,6 +15,7 @@ from app.domain.entities.medical_record import MedicalRecord, MedicalRecordStatu
 from app.domain.entities.patient_passport import PatientPassport, PatientPassportStatus
 from app.domain.entities.practitioner_passport import PractitionerPassport, PractitionerPassportStatus
 from app.domain.entities.record_comment import RecordComment
+from app.infrastructure.db.models.auth.user import UserRow
 from app.infrastructure.db.models.medical_records.file_attachment import FileAttachmentRow
 from app.infrastructure.db.models.medical_records.medical_record import MedicalRecordRow
 from app.infrastructure.db.models.medical_records.patient_passport import PatientPassportRow
@@ -221,6 +222,8 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
         self,
         record_id: UUID,
         author_user_id: UUID,
+        author_fio: str,
+        author_role: str,
         body: str,
     ) -> RecordComment:
         """Добавить комментарий к медицинской записи.
@@ -235,7 +238,7 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
         )
         self._session.add(row)
         self._session.flush()
-        return self._to_record_comment(row)
+        return self._to_record_comment(row, author_fio=author_fio, author_role=author_role)
 
     def record_exists(self, record_id: UUID) -> bool:
         """Проверить существование медицинской записи.
@@ -264,9 +267,10 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
             Доступная проекция записи со вложенными сущностями.
         """
         comments = tuple(
-            self._to_record_comment(comment_row)
-            for comment_row in self._session.scalars(
-                select(RecordCommentRow)
+            self._to_record_comment(comment_row, author_fio=author_fio, author_role=author_role.value)
+            for comment_row, author_fio, author_role in self._session.execute(
+                select(RecordCommentRow, UserRow.fio, UserRow.role)
+                .join(UserRow, UserRow.id == RecordCommentRow.author_user_id)
                 .where(RecordCommentRow.record_id == record_row.id)
                 .order_by(RecordCommentRow.created_at.asc()),
             )
@@ -382,11 +386,13 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
         )
 
     @staticmethod
-    def _to_record_comment(row: RecordCommentRow) -> RecordComment:
+    def _to_record_comment(row: RecordCommentRow, *, author_fio: str, author_role: str) -> RecordComment:
         return RecordComment(
             id=row.id,
             record_id=row.record_id,
             author_user_id=row.author_user_id,
+            author_fio=author_fio,
+            author_role=author_role,
             body=row.body,
             created_at=row.created_at,
         )

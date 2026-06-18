@@ -82,6 +82,8 @@ class MedicalRecordRepositoryPort:
         self,
         record_id: UUID,
         author_user_id: UUID,
+        author_fio: str,
+        author_role: str,
         body: str,
     ) -> RecordComment:
         """Добавить комментарий к медицинской записи."""

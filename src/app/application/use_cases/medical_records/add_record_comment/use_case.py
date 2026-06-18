@@ -43,12 +43,16 @@ class AddRecordCommentUseCase:
         comment = self._repository.add_comment(
             record_id=input_dto.record_id,
             author_user_id=input_dto.actor_user_id,
+            author_fio=input_dto.actor_fio,
+            author_role=input_dto.actor_role,
             body=input_dto.body,
         )
         return RecordCommentDTO(
             id=comment.id,
             record_id=comment.record_id,
             author_user_id=comment.author_user_id,
+            author_fio=comment.author_fio,
+            author_role=comment.author_role,
             body=comment.body,
             created_at=comment.created_at,
         )

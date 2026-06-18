@@ -34,6 +34,8 @@ export interface RecordComment {
   id: string
   record_id: string
   author_user_id: string
+  author_fio: string
+  author_role: string
   body: string
   created_at: string
 }
@@ -117,6 +119,8 @@ interface BackendComment {
   id: string
   record_id: string
   author_user_id: string
+  author_fio: string
+  author_role: string
   body: string
   created_at: string
 }
@@ -270,6 +274,8 @@ const mapRecordDetail = (r: BackendRecordDetail): PatientRecordDetail => ({
     id: comment.id,
     record_id: comment.record_id,
     author_user_id: comment.author_user_id,
+    author_fio: comment.author_fio,
+    author_role: comment.author_role,
     body: comment.body,
     created_at: comment.created_at,
   })),

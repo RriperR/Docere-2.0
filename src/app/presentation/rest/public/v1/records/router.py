@@ -143,6 +143,7 @@ def add_record_comment(
                 record_id=record_id,
                 actor_user_id=current_user.id,
                 actor_role=current_user.role,
+                actor_fio=current_user.fio,
                 body=payload.body,
             ),
         )

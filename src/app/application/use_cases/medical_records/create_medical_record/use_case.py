@@ -107,6 +107,8 @@ def _to_medical_record_dto(accessible_record: AccessibleMedicalRecordDTO) -> Med
             id=comment.id,
             record_id=comment.record_id,
             author_user_id=comment.author_user_id,
+            author_fio=comment.author_fio,
+            author_role=comment.author_role,
             body=comment.body,
             created_at=comment.created_at,
         )

@@ -65,6 +65,12 @@ function getInitials(fio: string): string {
   return fio[0]?.toUpperCase() ?? '?'
 }
 
+const commentRoleLabel: Record<string, string> = {
+  doctor: 'Врач',
+  admin: 'Администратор',
+  patient: 'Пациент',
+}
+
 const PatientDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>()
   const { user } = useAuthStore()
@@ -408,6 +414,12 @@ const PatientDetailsPage: React.FC = () => {
                                   <div className="space-y-3">
                                     {detail.comments.map((comment) => (
                                       <div key={comment.id} className="rounded-xl border border-gray-100 bg-gray-50 p-4">
+                                        <div className="mb-1.5 flex items-center gap-2">
+                                          <span className="text-sm font-semibold text-gray-900">{comment.author_fio}</span>
+                                          <span className="rounded-full bg-primary-50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary-600">
+                                            {commentRoleLabel[comment.author_role] ?? comment.author_role}
+                                          </span>
+                                        </div>
                                         <p className="text-sm text-gray-800">{comment.body}</p>
                                         <p className="mt-1.5 text-xs text-gray-400">
                                           {format(new Date(comment.created_at), 'dd.MM.yyyy HH:mm')}
