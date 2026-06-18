@@ -11,10 +11,8 @@ from uuid import UUID
 class MedicalRecordStatus(StrEnum):
     """Поддерживаемые статусы медицинской записи."""
 
-    DRAFT = 'draft'
     UNCONFIRMED = 'unconfirmed'
     CONFIRMED = 'confirmed'
-    REJECTED = 'rejected'
 
 
 class MedicalRecordType(StrEnum):

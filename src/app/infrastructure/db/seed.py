@@ -254,7 +254,7 @@ def seed_demo_data(
     record_draft = MedicalRecordRow(
         creator_user_id=patient_petrova.id,
         author_practitioner_passport_id=None,
-        status=MedicalRecordStatus.DRAFT,
+        status=MedicalRecordStatus.UNCONFIRMED,
         record_type=MedicalRecordType.OTHER,
         event_date=date.today() - timedelta(days=2),
         title='Черновик: выписка из стационара',

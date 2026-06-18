@@ -109,7 +109,7 @@ class MedicalRecordRepositoryFake(MedicalRecordRepositoryPort):
                 id=uuid4(),
                 creator_user_id=creator_user_id,
                 author_practitioner_passport_id=author_practitioner_passport_id,
-                status=MedicalRecordStatus.DRAFT,
+                status=MedicalRecordStatus.UNCONFIRMED,
                 record_type=MedicalRecordType(record_type),
                 event_date=event_date,
                 title=title,

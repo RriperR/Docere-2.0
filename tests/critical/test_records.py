@@ -9,6 +9,7 @@ from uuid import UUID
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.application.ports.storage.file_storage import FileStoragePort
 from app.domain.entities.file_attachment import FileAttachmentCategory
@@ -180,6 +181,13 @@ def _grant_record_access(user_id: UUID, record_id: UUID, patient_passport_id: UU
         session.commit()
 
 
+def _get_first_record_link_values() -> tuple[UUID, UUID, UUID | None]:
+    with get_session_factory()() as session:
+        link = session.scalar(select(UserRecordLinkRow))
+        assert link is not None
+        return link.user_id, link.record_id, link.patient_passport_id
+
+
 def _create_record(
     client: TestClient,
     access_token: str,
@@ -295,6 +303,33 @@ def test_doctor_can_create_record_and_internal_practitioner_is_linked(record_cli
 
     assert record is not None
     assert record.author_practitioner_passport_id is not None
+
+
+@pytest.mark.critical
+def test_duplicate_user_record_link_is_rejected(record_client: TestClient) -> None:
+    _register_patient(record_client, 'patient-link-unique@example.com')
+    access_token = _login(record_client, 'patient-link-unique@example.com', TEST_PATIENT_PASSWORD)
+    patient_passport_id = _get_patient_passport_id_by_email('patient-link-unique@example.com')
+
+    _create_record(
+        record_client,
+        access_token,
+        patient_passport_id,
+        author_practitioner_full_name='Dr. External',
+    )
+    user_id, record_id, link_patient_passport_id = _get_first_record_link_values()
+
+    with get_session_factory()() as session:
+        session.add(
+            UserRecordLinkRow(
+                user_id=user_id,
+                record_id=record_id,
+                patient_passport_id=link_patient_passport_id,
+                source=UserRecordLinkSourceRow.MANUAL_ATTACH,
+            ),
+        )
+        with pytest.raises(IntegrityError):
+            session.commit()
 
 
 @pytest.mark.critical

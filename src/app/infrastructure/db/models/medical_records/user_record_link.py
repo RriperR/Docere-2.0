@@ -6,7 +6,7 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, Enum, ForeignKey, func, Uuid
+from sqlalchemy import DateTime, Enum, ForeignKey, func, Index, text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.db.base import Base
@@ -26,7 +26,6 @@ class UserRecordLinkRow(Base):
     """ORM-представление таблицы `user_record_links`."""
 
     __tablename__ = 'user_record_links'
-
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey('users.id'), index=True)
     record_id: Mapped[UUID] = mapped_column(
@@ -55,3 +54,23 @@ class UserRecordLinkRow(Base):
         nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index(
+            'uq_user_record_links_user_record_patient',
+            'user_id',
+            'record_id',
+            'patient_passport_id',
+            unique=True,
+            sqlite_where=text('patient_passport_id IS NOT NULL'),
+            postgresql_where=text('patient_passport_id IS NOT NULL'),
+        ),
+        Index(
+            'uq_user_record_links_user_record_null_patient',
+            'user_id',
+            'record_id',
+            unique=True,
+            sqlite_where=text('patient_passport_id IS NULL'),
+            postgresql_where=text('patient_passport_id IS NULL'),
+        ),
+    )
