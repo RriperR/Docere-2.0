@@ -446,6 +446,57 @@ def test_doctor_can_attach_and_download_comment_file(
 
 
 @pytest.mark.critical
+def test_patient_and_doctor_can_attach_files_to_record(
+    record_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _register_patient(record_client, 'patient-recatt@example.com')
+    patient_token = _login(record_client, 'patient-recatt@example.com', TEST_PATIENT_PASSWORD)
+    patient_passport_id = _get_patient_passport_id_by_email('patient-recatt@example.com')
+    created_record = _create_record(
+        record_client,
+        patient_token,
+        patient_passport_id,
+        author_practitioner_full_name='Dr. Outside',
+    )
+
+    storage = _InMemoryStorage()
+    monkeypatch.setattr(
+        'app.presentation.rest.public.v1.records.dependencies.get_file_storage',
+        lambda: storage,
+    )
+
+    patient_upload = record_client.post(
+        f'/api/records/{created_record["id"]}/attachments',
+        headers={'Authorization': f'Bearer {patient_token}'},
+        files={'file': ('анализ.pdf', b'patient-bytes', 'application/pdf')},
+    )
+    assert patient_upload.status_code == 201
+    assert patient_upload.json()['comment_id'] is None
+    assert patient_upload.json()['filename'] == 'анализ.pdf'
+
+    _create_doctor()
+    doctor_token = _login(record_client, 'doctor@example.com', TEST_DOCTOR_PASSWORD)
+    doctor = _get_user_by_email('doctor@example.com')
+    _grant_record_access(doctor.id, UUID(created_record['id']), patient_passport_id)
+
+    doctor_upload = record_client.post(
+        f'/api/records/{created_record["id"]}/attachments',
+        headers={'Authorization': f'Bearer {doctor_token}'},
+        files={'file': ('снимок.png', b'doctor-bytes', 'image/png')},
+    )
+    assert doctor_upload.status_code == 201
+
+    detail = record_client.get(
+        f'/api/records/{created_record["id"]}',
+        headers={'Authorization': f'Bearer {patient_token}'},
+    )
+    assert detail.status_code == 200
+    assert detail.json()['attachments_count'] == 2
+    assert len(storage.objects) == 2
+
+
+@pytest.mark.critical
 def test_patient_cannot_comment_on_record(record_client: TestClient) -> None:
     _register_patient(record_client, 'patient4@example.com')
     patient_token = _login(record_client, 'patient4@example.com', TEST_PATIENT_PASSWORD)

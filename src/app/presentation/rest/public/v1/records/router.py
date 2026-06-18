@@ -37,8 +37,11 @@ from app.application.use_cases.medical_records.errors import (
 )
 from app.application.use_cases.medical_records.get_medical_record.dtos import GetMedicalRecordDTO
 from app.application.use_cases.medical_records.get_medical_record.use_case import GetMedicalRecordUseCase
+from app.application.use_cases.medical_records.record_attachments.dtos import AddRecordAttachmentDTO
+from app.application.use_cases.medical_records.record_attachments.use_cases import AddRecordAttachmentUseCase
 from app.presentation.rest.public.v1.records.dependencies import (
     add_comment_attachment_use_case_dependency,
+    add_record_attachment_use_case_dependency,
     add_record_comment_use_case_dependency,
     create_medical_record_use_case_dependency,
     current_authenticated_user_dependency,
@@ -138,6 +141,47 @@ def get_medical_record(
         raise_not_found('Medical record not found')
     except MedicalRecordAccessDeniedError:
         raise_forbidden('You do not have access to this medical record')
+
+
+@router.post(
+    '/{record_id}/attachments',
+    response_model=FileAttachmentResponseSchema,
+    status_code=status.HTTP_201_CREATED,
+)
+def add_record_attachment(
+    record_id: UUID,
+    file: UploadFile = uploaded_file_dependency,
+    current_user: AuthenticatedUserDTO = current_authenticated_user_dependency,
+    use_case: AddRecordAttachmentUseCase = add_record_attachment_use_case_dependency,
+    session: Session = db_session_dependency,
+) -> FileAttachmentDTO:
+    """Прикрепить файл к медицинской записи.
+
+    Returns:
+        Проекция созданного вложения.
+    """
+    content = file.file.read()
+    try:
+        attachment = use_case.execute(
+            AddRecordAttachmentDTO(
+                record_id=record_id,
+                actor_user_id=current_user.id,
+                filename=file.filename or 'file',
+                content=content,
+                content_type=file.content_type or 'application/octet-stream',
+            ),
+        )
+        session.commit()
+        return attachment
+    except MedicalRecordNotFoundError:
+        session.rollback()
+        raise_not_found('Medical record not found')
+    except MedicalRecordAccessDeniedError:
+        session.rollback()
+        raise_forbidden('You do not have access to attach files to this record')
+    except Exception:
+        session.rollback()
+        raise
 
 
 @router.post(

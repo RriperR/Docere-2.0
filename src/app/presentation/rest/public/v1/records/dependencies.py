@@ -15,6 +15,7 @@ from app.application.use_cases.medical_records.comment_attachments.use_cases imp
 )
 from app.application.use_cases.medical_records.create_medical_record.use_case import CreateMedicalRecordUseCase
 from app.application.use_cases.medical_records.get_medical_record.use_case import GetMedicalRecordUseCase
+from app.application.use_cases.medical_records.record_attachments.use_cases import AddRecordAttachmentUseCase
 from app.application.use_cases.patients.create_patient import CreatePatientUseCase
 from app.application.use_cases.patients.get_patient import GetPatientUseCase
 from app.application.use_cases.patients.list_patient_records import ListPatientRecordsUseCase
@@ -130,6 +131,17 @@ def get_download_attachment_use_case(
     return DownloadAttachmentUseCase(repository=_build_repository(session), storage=get_file_storage())
 
 
+def get_add_record_attachment_use_case(
+    session: Session = db_session_dependency,
+) -> AddRecordAttachmentUseCase:
+    """Создать use case загрузки вложения к записи.
+
+    Returns:
+        Настроенный use case загрузки вложения к записи.
+    """
+    return AddRecordAttachmentUseCase(repository=_build_repository(session), storage=get_file_storage())
+
+
 def get_list_patients_use_case(session: Session = db_session_dependency) -> ListPatientsUseCase:
     """Создать use case получения списка карточек пациентов.
 
@@ -234,6 +246,7 @@ create_medical_record_use_case_dependency = Depends(get_create_medical_record_us
 get_medical_record_use_case_dependency = Depends(get_medical_record_use_case)
 add_record_comment_use_case_dependency = Depends(get_add_record_comment_use_case)
 add_comment_attachment_use_case_dependency = Depends(get_add_comment_attachment_use_case)
+add_record_attachment_use_case_dependency = Depends(get_add_record_attachment_use_case)
 download_attachment_use_case_dependency = Depends(get_download_attachment_use_case)
 list_patients_use_case_dependency = Depends(get_list_patients_use_case)
 create_patient_use_case_dependency = Depends(get_create_patient_use_case)
