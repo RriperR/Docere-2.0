@@ -25,6 +25,14 @@ class PatientSummaryDTO:
 
 
 @dataclass(frozen=True, slots=True)
+class PatientSearchResultDTO:
+    """Кандидат PatientPassport при fuzzy-поиске."""
+
+    patient: PatientSummaryDTO
+    match_score: float
+
+
+@dataclass(frozen=True, slots=True)
 class PatientRecordSummaryDTO:
     """Краткое представление записи внутри карточки пациента."""
 

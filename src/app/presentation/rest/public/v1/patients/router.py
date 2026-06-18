@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, status
 from sqlalchemy.orm import Session
 
 from app.application.ports.repositories.patient_cards.dtos import (
     PatientRecordSummaryDTO,
+    PatientSearchResultDTO,
     PatientSummaryDTO,
 )
 from app.application.use_cases.auth.common.dtos import AuthenticatedUserDTO
@@ -20,9 +22,11 @@ from app.application.use_cases.patients.errors import (
 from app.application.use_cases.patients.get_patient import GetPatientUseCase
 from app.application.use_cases.patients.list_patient_records import ListPatientRecordsUseCase
 from app.application.use_cases.patients.list_patients import ListPatientsUseCase
+from app.application.use_cases.patients.search_patients import SearchPatientsUseCase
 from app.presentation.rest.public.v1.patients.schemas import (
     CreatePatientRequestSchema,
     PatientRecordSummaryResponseSchema,
+    PatientSearchResultResponseSchema,
     PatientSummaryResponseSchema,
 )
 from app.presentation.rest.public.v1.records.dependencies import (
@@ -32,6 +36,7 @@ from app.presentation.rest.public.v1.records.dependencies import (
     get_patient_use_case_dependency,
     list_patient_records_use_case_dependency,
     list_patients_use_case_dependency,
+    search_patients_use_case_dependency,
 )
 from app.presentation.webserver.http_errors import raise_forbidden, raise_not_found
 
@@ -49,6 +54,31 @@ def list_patients(
         Список кратких карточек доступных пациентов.
     """
     return use_case.execute(user_id=current_user.id, user_role=current_user.role)
+
+
+@router.get('/search', response_model=list[PatientSearchResultResponseSchema])
+def search_patients(
+    q: str = Query(min_length=1, max_length=255),
+    date_of_birth: date | None = None,
+    limit: int = Query(default=10, ge=1, le=50),
+    current_user: AuthenticatedUserDTO = current_authenticated_user_dependency,
+    use_case: SearchPatientsUseCase = search_patients_use_case_dependency,
+) -> tuple[PatientSearchResultDTO, ...]:
+    """Найти вероятные совпадения паспортов пациентов.
+
+    Returns:
+        Список кандидатов с оценкой похожести.
+    """
+    try:
+        return use_case.execute(
+            actor_user_id=current_user.id,
+            actor_role=current_user.role,
+            query=q,
+            date_of_birth=date_of_birth,
+            limit=limit,
+        )
+    except PatientCardAccessDeniedError:
+        raise_forbidden('Only doctor or admin can search patient passports')
 
 
 @router.post('', response_model=PatientSummaryResponseSchema, status_code=status.HTTP_201_CREATED)

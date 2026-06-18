@@ -768,6 +768,48 @@ def test_doctor_can_create_patient_card_and_see_patient_records(record_client: T
 
 
 @pytest.mark.critical
+def test_doctor_can_search_patient_passport_matches(record_client: TestClient) -> None:
+    _create_doctor(email='doctor-search@example.com')
+    doctor_token = _login(record_client, 'doctor-search@example.com', TEST_DOCTOR_PASSWORD)
+    create_patient_response = record_client.post(
+        '/api/patients',
+        headers={'Authorization': f'Bearer {doctor_token}'},
+        json={
+            'fio': 'Doctor Local Patient',
+            'date_of_birth': '1988-02-01',
+            'email': 'doctor-local-patient@example.com',
+            'phone': '+79994445566',
+        },
+    )
+    assert create_patient_response.status_code == 201
+
+    search_response = record_client.get(
+        '/api/patients/search',
+        headers={'Authorization': f'Bearer {doctor_token}'},
+        params={'q': 'Doctor Local Patien', 'date_of_birth': '1988-02-01'},
+    )
+
+    assert search_response.status_code == 200
+    candidates = search_response.json()
+    assert candidates[0]['patient']['id'] == create_patient_response.json()['id']
+    assert candidates[0]['match_score'] >= 0.7
+
+
+@pytest.mark.critical
+def test_patient_cannot_search_patient_passports(record_client: TestClient) -> None:
+    _register_patient(record_client, 'patient-search-forbidden@example.com')
+    patient_token = _login(record_client, 'patient-search-forbidden@example.com', TEST_PATIENT_PASSWORD)
+
+    response = record_client.get(
+        '/api/patients/search',
+        headers={'Authorization': f'Bearer {patient_token}'},
+        params={'q': 'Ivan'},
+    )
+
+    assert response.status_code == 403
+
+
+@pytest.mark.critical
 def test_doctor_created_empty_patient_card_is_not_visible_to_other_doctor(record_client: TestClient) -> None:
     _create_doctor(email='doctor-card-owner@example.com')
     _create_doctor(email='doctor-card-stranger@example.com')

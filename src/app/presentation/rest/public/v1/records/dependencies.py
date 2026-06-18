@@ -20,6 +20,7 @@ from app.application.use_cases.patients.create_patient import CreatePatientUseCa
 from app.application.use_cases.patients.get_patient import GetPatientUseCase
 from app.application.use_cases.patients.list_patient_records import ListPatientRecordsUseCase
 from app.application.use_cases.patients.list_patients import ListPatientsUseCase
+from app.application.use_cases.patients.search_patients import SearchPatientsUseCase
 from app.application.use_cases.share_requests.use_cases import (
     AcceptShareRequestUseCase,
     CancelShareRequestUseCase,
@@ -178,6 +179,15 @@ def get_list_patient_records_use_case(session: Session = db_session_dependency) 
     return ListPatientRecordsUseCase(repository=_build_patient_card_repository(session))
 
 
+def get_search_patients_use_case(session: Session = db_session_dependency) -> SearchPatientsUseCase:
+    """Создать use case fuzzy-поиска карточек пациентов.
+
+    Returns:
+        Настроенный use case поиска карточек пациентов.
+    """
+    return SearchPatientsUseCase(repository=_build_patient_card_repository(session))
+
+
 def get_create_share_request_use_case(session: Session = db_session_dependency) -> CreateShareRequestUseCase:
     """Создать use case создания sharing-запроса.
 
@@ -252,6 +262,7 @@ list_patients_use_case_dependency = Depends(get_list_patients_use_case)
 create_patient_use_case_dependency = Depends(get_create_patient_use_case)
 get_patient_use_case_dependency = Depends(get_get_patient_use_case)
 list_patient_records_use_case_dependency = Depends(get_list_patient_records_use_case)
+search_patients_use_case_dependency = Depends(get_search_patients_use_case)
 create_share_request_use_case_dependency = Depends(get_create_share_request_use_case)
 list_inbox_share_requests_use_case_dependency = Depends(get_list_inbox_share_requests_use_case)
 list_outbox_share_requests_use_case_dependency = Depends(get_list_outbox_share_requests_use_case)

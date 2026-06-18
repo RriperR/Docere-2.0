@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from difflib import SequenceMatcher
 from uuid import UUID
 
 from sqlalchemy import func, or_, Select, select
@@ -11,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.application.ports.repositories.medical_records.dtos import AccessibleMedicalRecordDTO
 from app.application.ports.repositories.patient_cards.dtos import (
     PatientRecordSummaryDTO,
+    PatientSearchResultDTO,
     PatientSummaryDTO,
 )
 from app.application.ports.repositories.patient_cards.port import PatientCardRepositoryPort
@@ -70,6 +72,38 @@ class SqlAlchemyPatientCardRepositoryAdapter(PatientCardRepositoryPort):
         self._session.add(row)
         self._session.flush()
         return self._to_patient_summary(row, created_by_user_id)
+
+    def search_patient_passports(
+        self,
+        *,
+        query: str,
+        date_of_birth: date | None,
+        requested_by_user_id: UUID,
+        limit: int,
+    ) -> tuple[PatientSearchResultDTO, ...]:
+        """Найти вероятные совпадения PatientPassport.
+
+        Returns:
+            Кандидаты, отсортированные по убыванию похожести.
+        """
+        rows = self._session.scalars(
+            select(PatientPassportRow).order_by(PatientPassportRow.updated_at.desc()).limit(500),
+        ).all()
+        normalized_query = self._normalize_search_text(query)
+        results: list[PatientSearchResultDTO] = []
+        for row in rows:
+            score = self._patient_match_score(row, normalized_query, date_of_birth)
+            if score < 0.45:
+                continue
+            results.append(
+                PatientSearchResultDTO(
+                    patient=self._to_patient_summary(row, requested_by_user_id),
+                    match_score=round(score, 3),
+                ),
+            )
+
+        results.sort(key=lambda item: item.match_score, reverse=True)
+        return tuple(results[:limit])
 
     def get_accessible_patient(
         self,
@@ -189,6 +223,36 @@ class SqlAlchemyPatientCardRepositoryAdapter(PatientCardRepositoryPort):
             ),
         ).one()
         return int(stats[0] or 0), stats[1]
+
+    @classmethod
+    def _patient_match_score(
+        cls,
+        row: PatientPassportRow,
+        normalized_query: str,
+        date_of_birth: date | None,
+    ) -> float:
+        fields = [
+            row.fio,
+            row.email or '',
+            row.phone or '',
+        ]
+        field_scores = [cls._text_match_score(normalized_query, cls._normalize_search_text(value)) for value in fields]
+        score = max(field_scores)
+        if date_of_birth is not None and row.date_of_birth == date_of_birth:
+            score = min(1.0, score + 0.2)
+        return score
+
+    @staticmethod
+    def _text_match_score(query: str, value: str) -> float:
+        if not value:
+            return 0.0
+        if query in value:
+            return 1.0
+        return SequenceMatcher(None, query, value).ratio()
+
+    @staticmethod
+    def _normalize_search_text(value: str) -> str:
+        return ' '.join(value.casefold().split())
 
     @staticmethod
     def _to_record_summary(accessible_record: AccessibleMedicalRecordDTO) -> PatientRecordSummaryDTO:

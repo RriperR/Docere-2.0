@@ -7,6 +7,7 @@ from uuid import UUID
 
 from app.application.ports.repositories.patient_cards.dtos import (
     PatientRecordSummaryDTO,
+    PatientSearchResultDTO,
     PatientSummaryDTO,
 )
 
@@ -35,6 +36,21 @@ class PatientCardRepositoryPort:
 
         Returns:
             Краткое представление созданной карточки.
+        """
+        raise NotImplementedError
+
+    def search_patient_passports(
+        self,
+        *,
+        query: str,
+        date_of_birth: date | None,
+        requested_by_user_id: UUID,
+        limit: int,
+    ) -> tuple[PatientSearchResultDTO, ...]:
+        """Найти вероятные совпадения паспортов пациентов.
+
+        Returns:
+            Список кандидатов с оценкой похожести.
         """
         raise NotImplementedError
 

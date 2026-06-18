@@ -36,6 +36,15 @@ class PatientSummaryResponseSchema(BaseModel):
     last_record_date: date | None
 
 
+class PatientSearchResultResponseSchema(BaseModel):
+    """Результат fuzzy-поиска PatientPassport."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    patient: PatientSummaryResponseSchema
+    match_score: float
+
+
 class PatientRecordSummaryResponseSchema(BaseModel):
     """Краткая схема медицинской записи внутри карточки пациента."""
 
