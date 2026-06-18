@@ -141,7 +141,7 @@
       "id": "TASK-002",
       "category": "infrastructure",
       "priority": "critical",
-      "description": "Создать базовую миграцию БД через Alembic под PostgreSQL 16 с таблицами User, Patient, MedicalRecord, RecordShare, UserPatientAccess, FileAttachment, ImportJob, AuditEvent.",
+      "description": "Создать базовую миграцию БД через Alembic под PostgreSQL 16 с таблицами User, PatientPassport, MedicalRecord, RecordShareRequest, RecordShare, UserRecordLink, FileAttachment, ImportJob, AuditEvent.",
       "acceptance_criteria": [
         "Все сущности из PRD представлены таблицами с корректными типами",
         "Внешние ключи соответствуют описанным связям",
@@ -163,15 +163,15 @@
       "id": "TASK-003",
       "category": "infrastructure",
       "priority": "high",
-      "description": "Добавить индексы и ограничения целостности для критичных полей (email, patient_id, event_date, статусы share, уникальность доступа user+patient).",
+      "description": "Добавить индексы и ограничения целостности для критичных полей (email, patient_passport_id, event_date, статусы share, уникальность доступа user+record+patient context).",
       "acceptance_criteria": [
         "Уникальность User.email обеспечена на уровне БД",
-        "Индексы созданы для Patient/MedicalRecord/RecordShare выборок по PRD",
-        "Дублирующая связь UserPatientAccess (user_id, patient_id) блокируется"
+        "Индексы созданы для PatientPassport/MedicalRecord/RecordShare выборок по PRD",
+        "Дублирующая связь UserRecordLink (user_id, record_id, patient_passport_id) блокируется"
       ],
       "test_steps": [
         "Шаг 1: Применить миграцию с индексами и ограничениями",
-        "Шаг 2: Попытаться вставить дубликат email и дубликат user+patient access",
+        "Шаг 2: Попытаться вставить дубликат email и дубликат user+record+patient context access",
         "Шаг 3: Убедиться, что БД отклоняет дубликаты и индексы существуют"
       ],
       "dependencies": [
@@ -433,16 +433,16 @@
       "id": "TASK-016",
       "category": "functional",
       "priority": "high",
-      "description": "Реализовать поток привязки Patient к аккаунту пользователя (запрос пациента и подтверждение админом).",
+      "description": "Зафиксировать MVP-логику PatientPassport без автоматической привязки врачебных карточек к аккаунту пациента.",
       "acceptance_criteria": [
-        "Пациент может создать запрос на link существующего Patient",
-        "Админ может подтвердить запрос и установить linked_user_id",
-        "Повторная привязка уже связанного Patient отклоняется"
+        "При регистрации пациента создается собственный подтвержденный PatientPassport",
+        "PatientPassport, созданный врачом, не привязывается автоматически к аккаунту пациента",
+        "Доступ пациента к врачебным записям выдается через accepted share и UserRecordLink"
       ],
       "test_steps": [
-        "Шаг 1: Создать link-запрос от пользователя patient",
-        "Шаг 2: Подтвердить запрос админом",
-        "Шаг 3: Проверить, что linked_user_id установлен и повторный link невозможен"
+        "Шаг 1: Зарегистрировать пациента и проверить создание собственного PatientPassport",
+        "Шаг 2: Создать врачебный PatientPassport с похожими данными",
+        "Шаг 3: Принять share и проверить, что доступ появился через UserRecordLink без автопривязки паспорта"
       ],
       "dependencies": [
         "TASK-015",
@@ -454,7 +454,7 @@
       "id": "TASK-017",
       "category": "functional",
       "priority": "critical",
-      "description": "Реализовать создание MedicalRecord с обязательными полями creator_user_id, patient_id, event_date.",
+      "description": "Реализовать создание MedicalRecord с обязательными полями creator_user_id, patient_passport_id, event_date.",
       "acceptance_criteria": [
         "Создание доступно ролям doctor/patient",
         "При отсутствии обязательных полей API возвращает валидационную ошибку",
@@ -463,7 +463,7 @@
       "test_steps": [
         "Шаг 1: Создать запись валидным запросом",
         "Шаг 2: Повторить запрос без event_date и получить ошибку",
-        "Шаг 3: Проверить сохраненные creator_user_id и patient_id в БД"
+        "Шаг 3: Проверить сохраненные creator_user_id и patient_passport_id в БД"
       ],
       "dependencies": [
         "TASK-009",
@@ -475,14 +475,14 @@
       "id": "TASK-018",
       "category": "functional",
       "priority": "high",
-      "description": "Реализовать endpoint переходов статуса записи (draft/unconfirmed/confirmed/rejected) по разрешенной схеме.",
+      "description": "Реализовать endpoint перехода статуса записи из unconfirmed в confirmed по разрешенной схеме.",
       "acceptance_criteria": [
-        "Разрешены только валидные переходы статусов",
+        "Разрешен только валидный переход unconfirmed -> confirmed",
         "Переход в confirmed отражается в записи",
         "Невалидные переходы отклоняются с понятной ошибкой"
       ],
       "test_steps": [
-        "Шаг 1: Перевести запись по валидному сценарию статусов",
+        "Шаг 1: Подтвердить запись по валидному сценарию статусов",
         "Шаг 2: Попробовать невалидный переход",
         "Шаг 3: Проверить фактический статус в БД"
       ],
@@ -516,10 +516,10 @@
       "id": "TASK-020",
       "category": "functional",
       "priority": "critical",
-      "description": "Реализовать endpoint accept/reject для RecordShare только получателем.",
+      "description": "Реализовать endpoint accept/decline для RecordShareRequest только получателем.",
       "acceptance_criteria": [
         "Только granted_to_user_id может менять статус share",
-        "Статус меняется только из pending в accepted/rejected",
+        "Статус меняется только из pending в accepted/declined",
         "responded_at заполняется при решении"
       ],
       "test_steps": [
@@ -537,15 +537,15 @@
       "id": "TASK-021",
       "category": "functional",
       "priority": "high",
-      "description": "Автоматически создавать UserPatientAccess при accepted share (если связи user-patient еще нет).",
+      "description": "Автоматически создавать UserRecordLink при accepted share (если связи user-record-context еще нет).",
       "acceptance_criteria": [
-        "При первом accepted share создается UserPatientAccess со source=share_accepted",
+        "При первом accepted share создается UserRecordLink со source=share_accepted",
         "source_record_share_id ссылается на исходный RecordShare",
-        "Повторные accepted share для той же пары user и patient не создают дубль"
+        "Повторные accepted share для той же пары user, record и patient context не создают дубль"
       ],
       "test_steps": [
         "Шаг 1: Принять share для пациента, которого нет у пользователя",
-        "Шаг 2: Проверить появление UserPatientAccess",
+        "Шаг 2: Проверить появление UserRecordLink",
         "Шаг 3: Принять вторую запись того же пациента и убедиться, что дубль связи не создан"
       ],
       "dependencies": [
@@ -580,7 +580,7 @@
       "id": "TASK-023",
       "category": "functional",
       "priority": "medium",
-      "description": "Реализовать endpoint списка пациентов пользователя на основе UserPatientAccess и собственных созданных записей.",
+      "description": "Реализовать endpoint списка пациентов пользователя на основе UserRecordLink и собственных созданных записей.",
       "acceptance_criteria": [
         "Пациент попадает в список после first accepted share",
         "Пациент попадает в список после первой собственной записи пользователя по patient_id",
@@ -645,7 +645,7 @@
       "id": "TASK-026",
       "category": "functional",
       "priority": "high",
-      "description": "Реализовать централизованную запись AuditEvent для действий create/share/accept/reject/login/import.",
+      "description": "Реализовать централизованную запись AuditEvent для действий create/share/accept/decline/login/import.",
       "acceptance_criteria": [
         "Для каждого целевого действия создается AuditEvent",
         "Поля actor/event_type/entity_type/entity_id/created_at заполняются",
@@ -692,11 +692,11 @@
       "id": "TASK-028",
       "category": "integration",
       "priority": "high",
-      "description": "Интегрировать frontend-флоу share: отправка запроса, входящие pending, accept/reject.",
+      "description": "Интегрировать frontend-флоу share: отправка запроса, входящие pending, accept/decline.",
       "acceptance_criteria": [
         "Из UI можно отправить share по записи",
         "Входящие запросы отображают pending элементы",
-        "Accept/reject в UI изменяет серверный статус и локальное состояние"
+        "Accept/decline в UI изменяет серверный статус и локальное состояние"
       ],
       "test_steps": [
         "Шаг 1: Отправить share из аккаунта A в аккаунт B",
@@ -757,11 +757,11 @@
       "id": "TASK-031",
       "category": "ui",
       "priority": "high",
-      "description": "Реализовать экран входящих share-запросов с карточками pending и действиями accept/reject.",
+      "description": "Реализовать экран входящих share-запросов с карточками pending и действиями accept/decline.",
       "acceptance_criteria": [
         "Показываются все pending share текущего пользователя",
         "Для каждого запроса видны ключевые метаданные записи и отправитель",
-        "Кнопки accept/reject доступны прямо в списке"
+        "Кнопки accept/decline доступны прямо в списке"
       ],
       "test_steps": [
         "Шаг 1: Создать несколько pending share на пользователя",

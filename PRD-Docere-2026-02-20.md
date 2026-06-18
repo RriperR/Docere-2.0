@@ -97,6 +97,8 @@ Docere нужна для контролируемого обмена медиц�
 2. В системе может быть несколько паспортов на похожие ФИО.
 3. Подтвержденный паспорт (`status=confirmed` и `patient_user_id != null`) считается более приоритетным для отображения.
 4. Если пациент принимает запись, `UserRecordLink` создается в контексте паспорта, с которым запись была доступна отправителю.
+5. Паспорт, созданный врачом, не привязывается автоматически к зарегистрировавшемуся пациенту; пациент получает собственный подтвержденный паспорт при регистрации, а доступ к врачебным записям получает через share.
+6. Дубли паспортов допустимы как следствие независимых контекстов работы; объединение/merge паспортов не входит в MVP.
 
 ### 4.4 RecordComment
 
@@ -135,7 +137,7 @@ Docere нужна для контролируемого обмена медиц�
 Дополнительно:
 
 1. Пациент может делиться записью, которую не создавал.
-2. В MVP revoke отсутствует.
+2. `cancel`, `decline` и `revoke` входят в MVP sharing flow.
 
 ### 4.7 UserRecordLink и фактическая видимость
 
@@ -220,8 +222,11 @@ Acceptance criteria:
 
 Acceptance criteria:
 
-1. Статусы: `draft`, `unconfirmed`, `confirmed`, `rejected`.
+1. Статусы: `unconfirmed`, `confirmed`.
 2. Статус `confirmed` означает верификацию записи по бизнес-процессу, но не снимает ACL-проверки доступа.
+3. Если запись создана пациентом, подтвердить ее может врач с доступом к записи.
+4. Если запись создана врачом, подтвердить ее может пациент, к которому относится запись.
+5. Если врач поделился записью с пациентом, к которому она относится, и пациент принял share, запись автоматически становится `confirmed`.
 
 ### FR-REC-3 Комментарии к записи
 
@@ -336,7 +341,7 @@ Acceptance criteria:
 1. `id: uuid`
 2. `creator_user_id: uuid (fk -> User.id, indexed)`
 3. `author_practitioner_passport_id: uuid (nullable, fk -> PractitionerPassport.id, indexed)`
-4. `status: enum(draft|unconfirmed|confirmed|rejected)`
+4. `status: enum(unconfirmed|confirmed)`
 5. `record_type: enum(consultation_result|exam_result|lab_result|other)`
 6. `event_date: date (indexed)`
 7. `title: string`
