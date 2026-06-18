@@ -24,6 +24,7 @@ import { Button } from '../../components/common/Button'
 import { useAuthStore } from '../../stores/authStore'
 import { PatientRecordSummary, usePatientsStore } from '../../stores/patientsStore'
 import { CreateShareResult, useShareRequestsStore } from '../../stores/shareRequestsStore'
+import { attachmentSizeError } from '../../utils/files'
 
 type ApiError = {
   response?: { data?: { detail?: string } }
@@ -106,6 +107,7 @@ const PatientDetailsPage: React.FC = () => {
   const [commentSubmitting, setCommentSubmitting] = useState(false)
   const [uploadingCommentId, setUploadingCommentId] = useState<string | null>(null)
   const [uploadingRecordId, setUploadingRecordId] = useState<string | null>(null)
+  const [attachmentError, setAttachmentError] = useState<string | null>(null)
 
   useEffect(() => {
     if (id) {
@@ -152,6 +154,11 @@ const PatientDetailsPage: React.FC = () => {
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file) return
+    const sizeError = attachmentSizeError(file)
+    if (sizeError) {
+      setCommentError(sizeError)
+      return
+    }
     setUploadingCommentId(commentId)
     setCommentError(null)
     try {
@@ -167,12 +174,17 @@ const PatientDetailsPage: React.FC = () => {
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file) return
+    const sizeError = attachmentSizeError(file)
+    if (sizeError) {
+      setAttachmentError(sizeError)
+      return
+    }
     setUploadingRecordId(recordId)
-    setCommentError(null)
+    setAttachmentError(null)
     try {
       await uploadRecordAttachment(recordId, file)
     } catch (e: unknown) {
-      setCommentError(getErrorMessage(e, 'Не удалось загрузить файл'))
+      setAttachmentError(getErrorMessage(e, 'Не удалось загрузить файл'))
     } finally {
       setUploadingRecordId(null)
     }
@@ -542,6 +554,9 @@ const PatientDetailsPage: React.FC = () => {
                                     />
                                   </label>
                                 </div>
+                                {attachmentError && (
+                                  <p className="mb-2 text-xs text-error-600">{attachmentError}</p>
+                                )}
                                 {detail.attachments.length === 0 ? (
                                   <p className="text-sm text-gray-400">Вложений пока нет.</p>
                                 ) : (

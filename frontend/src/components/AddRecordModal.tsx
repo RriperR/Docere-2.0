@@ -19,6 +19,7 @@ import {
 
 import { useAuthStore } from '../stores/authStore'
 import { usePatientsStore } from '../stores/patientsStore'
+import { attachmentSizeError } from '../utils/files'
 import { Button } from './common/Button'
 
 interface Props {
@@ -249,7 +250,15 @@ export const AddRecordModal: React.FC<Props> = ({ patientId, onClose }) => {
                       onChange={(e) => {
                         const selected = Array.from(e.target.files ?? [])
                         e.target.value = ''
-                        if (selected.length) setFiles((prev) => [...prev, ...selected])
+                        const oversized = selected.map(attachmentSizeError).find(Boolean)
+                        if (oversized) {
+                          setError(oversized)
+                          return
+                        }
+                        if (selected.length) {
+                          setError(null)
+                          setFiles((prev) => [...prev, ...selected])
+                        }
                       }}
                     />
                   </label>
