@@ -21,6 +21,8 @@ def create_celery_app() -> Celery:
     app.conf.update(
         task_default_queue='docere.default',
         task_ignore_result=False,
+        task_publish_retry=False,
+        broker_connection_timeout=1,
     )
     return app
 

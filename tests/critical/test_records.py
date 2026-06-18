@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from io import BytesIO
 from pathlib import Path
 from uuid import UUID
+from zipfile import ZipFile
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,11 +15,13 @@ from sqlalchemy.exc import IntegrityError
 
 from app.application.ports.storage.file_storage import FileStoragePort
 from app.domain.entities.file_attachment import FileAttachmentCategory
+from app.infrastructure.adapters.queue.tasks import process_import_job
 from app.infrastructure.adapters.security.pbkdf2_password_hasher import Pbkdf2PasswordHasherAdapter
 from app.infrastructure.config.settings import clear_settings_cache
 from app.infrastructure.db.base import Base
 from app.infrastructure.db.models.auth.user import UserRole, UserRow, UserStatus
 from app.infrastructure.db.models.medical_records.file_attachment import FileAttachmentRow
+from app.infrastructure.db.models.medical_records.import_job import ImportJobRow
 from app.infrastructure.db.models.medical_records.medical_record import MedicalRecordRow
 from app.infrastructure.db.models.medical_records.patient_passport import PatientPassportRow
 from app.infrastructure.db.models.medical_records.practitioner_passport import PractitionerPassportRow
@@ -414,6 +418,76 @@ class _InMemoryStorage(FileStoragePort):
 
     def download(self, *, key: str) -> bytes:
         return self.objects[key]
+
+
+def _build_zip_bytes() -> bytes:
+    buffer = BytesIO()
+    with ZipFile(buffer, mode='w') as archive:
+        archive.writestr('readme.txt', 'archive payload')
+    return buffer.getvalue()
+
+
+@pytest.mark.critical
+def test_import_job_upload_status_and_worker_completion(
+    record_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage = _InMemoryStorage()
+    monkeypatch.setattr(
+        'app.presentation.rest.public.v1.archives.router.get_file_storage',
+        lambda: storage,
+    )
+    monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.process_import_job.delay', lambda _: None)
+    _register_patient(record_client, 'import-owner@example.com')
+    token = _login(record_client, 'import-owner@example.com', TEST_PATIENT_PASSWORD)
+    archive_content = _build_zip_bytes()
+
+    upload_response = record_client.post(
+        '/api/archives/imports',
+        headers={'Authorization': f'Bearer {token}'},
+        files={'file': ('records.zip', archive_content, 'application/zip')},
+    )
+
+    assert upload_response.status_code == 201
+    uploaded_job = upload_response.json()
+    assert uploaded_job['status'] == 'queued'
+    assert uploaded_job['original_filename'] == 'records.zip'
+    assert uploaded_job['size_bytes'] == len(archive_content)
+    assert len(storage.objects) == 1
+
+    status_response = record_client.get(
+        f'/api/archives/imports/{uploaded_job["id"]}',
+        headers={'Authorization': f'Bearer {token}'},
+    )
+    assert status_response.status_code == 200
+    assert status_response.json()['archive_storage_key'] == uploaded_job['archive_storage_key']
+
+    process_import_job(str(uploaded_job['id']))
+    completed_response = record_client.get(
+        f'/api/archives/imports/{uploaded_job["id"]}',
+        headers={'Authorization': f'Bearer {token}'},
+    )
+
+    assert completed_response.status_code == 200
+    assert completed_response.json()['status'] == 'completed'
+    with get_session_factory()() as session:
+        job = session.get(ImportJobRow, UUID(uploaded_job['id']))
+    assert job is not None
+    assert job.archive_storage_key in storage.objects
+
+
+@pytest.mark.critical
+def test_import_job_requires_zip_archive(record_client: TestClient) -> None:
+    _register_patient(record_client, 'import-invalid@example.com')
+    token = _login(record_client, 'import-invalid@example.com', TEST_PATIENT_PASSWORD)
+
+    response = record_client.post(
+        '/api/archives/imports',
+        headers={'Authorization': f'Bearer {token}'},
+        files={'file': ('records.txt', b'not a zip', 'text/plain')},
+    )
+
+    assert response.status_code == 422
 
 
 @pytest.mark.critical
