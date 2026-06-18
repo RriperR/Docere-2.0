@@ -10,8 +10,8 @@ from sqlalchemy import DateTime, Enum, ForeignKey, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.db.base import Base
+from app.infrastructure.db.models._enums import enum_values
 from app.infrastructure.db.models._time import utc_now
-from app.infrastructure.db.models.auth.user import _enum_values
 
 
 class PractitionerPassportStatusRow(StrEnum):
@@ -51,7 +51,7 @@ class PractitionerPassportRow(Base):
             name='practitioner_passport_status',
             native_enum=True,
             validate_strings=True,
-            values_callable=_enum_values,
+            values_callable=enum_values,
         ),
         default=PractitionerPassportStatusRow.DRAFT,
     )

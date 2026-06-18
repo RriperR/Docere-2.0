@@ -10,6 +10,7 @@ from sqlalchemy import Date, DateTime, Enum, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.db.base import Base
+from app.infrastructure.db.models._enums import enum_values
 from app.infrastructure.db.models._time import utc_now
 
 
@@ -26,10 +27,6 @@ class UserStatus(StrEnum):
 
     ACTIVE = 'active'
     BLOCKED = 'blocked'
-
-
-def _enum_values(enum_class: type[StrEnum]) -> list[str]:
-    return [item.value for item in enum_class]
 
 
 class UserRow(Base):
@@ -49,7 +46,7 @@ class UserRow(Base):
             name='user_role',
             native_enum=True,
             validate_strings=True,
-            values_callable=_enum_values,
+            values_callable=enum_values,
         )
     )
     status: Mapped[UserStatus] = mapped_column(
@@ -58,7 +55,7 @@ class UserRow(Base):
             name='user_status',
             native_enum=True,
             validate_strings=True,
-            values_callable=_enum_values,
+            values_callable=enum_values,
         )
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
