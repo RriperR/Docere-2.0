@@ -63,6 +63,8 @@ export interface PatientRecordSummary {
   title?: string
   appointmentLocation?: string
   clinicalSummary?: string
+  creatorUserId: string
+  creatorFio: string
   practitioner?: PractitionerInfo
   commentsCount: number
   attachmentsCount: number
@@ -152,6 +154,8 @@ interface BackendRecordSummary {
   title: string | null
   appointment_location: string | null
   clinical_summary: string | null
+  creator_user_id: string
+  creator_fio: string
   author_practitioner_passport: BackendPractitioner | null
   comments_count: number
   attachments_count: number
@@ -268,6 +272,8 @@ const mapRecordSummary = (r: BackendRecordSummary): PatientRecordSummary => ({
   title: r.title ?? undefined,
   appointmentLocation: r.appointment_location ?? undefined,
   clinicalSummary: r.clinical_summary ?? undefined,
+  creatorUserId: r.creator_user_id,
+  creatorFio: r.creator_fio,
   practitioner: mapPractitioner(r.author_practitioner_passport),
   commentsCount: r.comments_count,
   attachmentsCount: r.attachments_count,

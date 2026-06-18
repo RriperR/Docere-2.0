@@ -23,7 +23,7 @@ import { AddRecordModal } from '../../components/AddRecordModal'
 import { Button } from '../../components/common/Button'
 import { useAuthStore } from '../../stores/authStore'
 import { PatientRecordSummary, usePatientsStore } from '../../stores/patientsStore'
-import { CreateShareResult, useShareRequestsStore } from '../../stores/shareRequestsStore'
+import { CreateShareResult, ShareRecipient, useShareRequestsStore } from '../../stores/shareRequestsStore'
 import { attachmentSizeError } from '../../utils/files'
 
 type ApiError = {
@@ -92,6 +92,9 @@ const PatientDetailsPage: React.FC = () => {
     clearActiveRecord,
   } = usePatientsStore()
   const createShareRequest = useShareRequestsStore((s) => s.createShareRequest)
+  const recipients = useShareRequestsStore((s) => s.recipients)
+  const searchRecipients = useShareRequestsStore((s) => s.searchRecipients)
+  const clearRecipients = useShareRequestsStore((s) => s.clearRecipients)
 
   const [showAddModal, setShowAddModal] = useState(false)
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null)
@@ -122,6 +125,14 @@ const PatientDetailsPage: React.FC = () => {
   useEffect(() => {
     if (selectedRecordId) void fetchRecordDetail(selectedRecordId)
   }, [selectedRecordId, fetchRecordDetail])
+
+  useEffect(() => {
+    if (!isShareModalOpen) return
+    const timer = window.setTimeout(() => {
+      void searchRecipients(shareEmail)
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [isShareModalOpen, shareEmail, searchRecipients])
 
   const canComment = user?.role === 'doctor' || user?.role === 'admin'
 
@@ -218,6 +229,7 @@ const PatientDetailsPage: React.FC = () => {
     setShareMessage('')
     setShareResult(null)
     setShareError(null)
+    clearRecipients()
   }
 
   if (!id) return null
@@ -435,6 +447,11 @@ const PatientDetailsPage: React.FC = () => {
                           </span>
                         )}
                         <span className="flex items-center gap-1">
+                          <User className="h-3.5 w-3.5" />
+                          {record.creatorFio}
+                        </span>
+                        <span>{format(new Date(record.createdAt), 'dd.MM.yyyy HH:mm')}</span>
+                        <span className="flex items-center gap-1">
                           <MessageSquare className="h-3.5 w-3.5" />
                           {record.commentsCount}
                         </span>
@@ -640,8 +657,10 @@ const PatientDetailsPage: React.FC = () => {
           result={shareResult}
           error={shareError}
           isSubmitting={shareSubmitting}
+          recipients={recipients}
           onEmailChange={setShareEmail}
           onMessageChange={setShareMessage}
+          onSelectRecipient={setShareEmail}
           onSubmit={handleShareSubmit}
           onClose={closeShareModal}
         />
@@ -651,8 +670,8 @@ const PatientDetailsPage: React.FC = () => {
 }
 
 function ShareRecordsModal({
-  selectedCount, email, message, result, error, isSubmitting,
-  onEmailChange, onMessageChange, onSubmit, onClose,
+  selectedCount, email, message, result, error, isSubmitting, recipients,
+  onEmailChange, onMessageChange, onSelectRecipient, onSubmit, onClose,
 }: {
   selectedCount: number
   email: string
@@ -660,8 +679,10 @@ function ShareRecordsModal({
   result: CreateShareResult | null
   error: string | null
   isSubmitting: boolean
+  recipients: ShareRecipient[]
   onEmailChange: (v: string) => void
   onMessageChange: (v: string) => void
+  onSelectRecipient: (email: string) => void
   onSubmit: (e: FormEvent) => void
   onClose: () => void
 }) {
@@ -704,12 +725,30 @@ function ShareRecordsModal({
           <div>
             <label className="block text-sm font-medium text-gray-700">Email получателя</label>
             <input
-              type="email"
+              type="text"
               value={email}
               onChange={(e) => onEmailChange(e.target.value)}
               className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-200"
-              placeholder="doctor@example.com"
+              placeholder="email или ФИО получателя"
             />
+            {recipients.length > 0 && (
+              <div className="mt-2 max-h-44 overflow-y-auto rounded-xl border border-gray-200 bg-white">
+                {recipients.map((recipient) => (
+                  <button
+                    key={recipient.id}
+                    type="button"
+                    onClick={() => onSelectRecipient(recipient.email)}
+                    className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-primary-50"
+                  >
+                    <span>
+                      <span className="block font-medium text-gray-900">{recipient.fio}</span>
+                      <span className="text-xs text-gray-500">{recipient.email}</span>
+                    </span>
+                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">{recipient.role}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700">Сообщение (необязательно)</label>

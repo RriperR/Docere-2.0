@@ -1096,6 +1096,56 @@ def test_share_request_accept_grants_record_access_to_registered_user(record_cli
 
 
 @pytest.mark.critical
+def test_share_recipient_search_finds_active_users_by_email_or_fio(record_client: TestClient) -> None:
+    _register_patient(record_client, 'recipient-search-owner@example.com', fio='Search Owner')
+    _register_patient(record_client, 'recipient-search-patient@example.com', fio='Recipient Search Patient')
+    _create_doctor(email='recipient-search-doctor@example.com')
+    _create_user(
+        email='recipient-search-blocked@example.com',
+        password=TEST_PATIENT_PASSWORD,
+        role=UserRole.PATIENT,
+        fio='Blocked Recipient',
+    )
+    with get_session_factory()() as session:
+        blocked_user = session.scalar(select(UserRow).where(UserRow.email == 'recipient-search-blocked@example.com'))
+        assert blocked_user is not None
+        blocked_user.status = UserStatus.BLOCKED
+        session.commit()
+
+    owner_token = _login(record_client, 'recipient-search-owner@example.com', TEST_PATIENT_PASSWORD)
+
+    fio_response = record_client.get(
+        '/api/share-requests/recipients',
+        headers={'Authorization': f'Bearer {owner_token}'},
+        params={'q': 'Recipient Search'},
+    )
+    email_response = record_client.get(
+        '/api/share-requests/recipients',
+        headers={'Authorization': f'Bearer {owner_token}'},
+        params={'q': 'recipient-search-doctor'},
+    )
+    self_response = record_client.get(
+        '/api/share-requests/recipients',
+        headers={'Authorization': f'Bearer {owner_token}'},
+        params={'q': 'Search Owner'},
+    )
+    blocked_response = record_client.get(
+        '/api/share-requests/recipients',
+        headers={'Authorization': f'Bearer {owner_token}'},
+        params={'q': 'Blocked Recipient'},
+    )
+
+    assert fio_response.status_code == 200
+    assert [user['email'] for user in fio_response.json()] == ['recipient-search-patient@example.com']
+    assert email_response.status_code == 200
+    assert [user['email'] for user in email_response.json()] == ['recipient-search-doctor@example.com']
+    assert self_response.status_code == 200
+    assert self_response.json() == []
+    assert blocked_response.status_code == 200
+    assert blocked_response.json() == []
+
+
+@pytest.mark.critical
 def test_record_confirmation_rules_and_share_auto_confirm(record_client: TestClient) -> None:
     _register_patient(record_client, 'confirm-patient@example.com', fio='Confirm Patient')
     _create_doctor(email='confirm-doctor@example.com')

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, status
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.application.ports.repositories.share_requests.dtos import (
@@ -28,6 +29,7 @@ from app.application.use_cases.share_requests.use_cases import (
     RevokeShareRequestUseCase,
 )
 from app.infrastructure.adapters.repositories.audit_events import AuditEventRepositoryAdapter
+from app.infrastructure.db.models.auth.user import UserRow, UserStatus
 from app.presentation.rest.public.v1.records.dependencies import (
     accept_share_request_use_case_dependency,
     cancel_share_request_use_case_dependency,
@@ -42,6 +44,7 @@ from app.presentation.rest.public.v1.records.dependencies import (
 from app.presentation.rest.public.v1.share_requests.schemas import (
     CreateShareRequestResponseSchema,
     CreateShareRequestSchema,
+    ShareRecipientResponseSchema,
     ShareRequestResponseSchema,
 )
 from app.presentation.webserver.http_errors import raise_forbidden, raise_not_found
@@ -116,6 +119,32 @@ def list_outbox_share_requests(
         Список исходящих sharing-запросов.
     """
     return use_case.execute(user_id=current_user.id)
+
+
+@router.get('/recipients', response_model=list[ShareRecipientResponseSchema])
+def search_share_recipients(
+    q: str = Query(min_length=1, max_length=255),
+    current_user: AuthenticatedUserDTO = current_authenticated_user_dependency,
+    session: Session = db_session_dependency,
+) -> list[UserRow]:
+    """Найти пользователей-кандидатов для sharing по ФИО или email.
+
+    Returns:
+        Список активных пользователей без текущего пользователя.
+    """
+    query = f'%{q.strip().lower()}%'
+    return list(
+        session.scalars(
+            select(UserRow)
+            .where(
+                UserRow.id != current_user.id,
+                UserRow.status == UserStatus.ACTIVE,
+                or_(UserRow.email.ilike(query), UserRow.fio.ilike(query)),
+            )
+            .order_by(UserRow.fio.asc())
+            .limit(10),
+        ),
+    )
 
 
 @router.post('/{request_id}/accept', response_model=ShareRequestResponseSchema)

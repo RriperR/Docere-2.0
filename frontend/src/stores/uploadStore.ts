@@ -1,25 +1,16 @@
-// src/stores/uploadStore.ts
 import { create } from 'zustand'
+
 import api from '../api/api'
 
 export interface UploadJob {
-  // поля из API
   id: string
-  status: 'pending' | 'processing' | 'done' | 'failed'
-  log: string
-  raw_extracted: {
-    fios:   string[]
-    dobs:   string[]
-    phones: string[]
-    emails: string[]
-  }
-  uploaded_at:  string
-  completed_at?: string
-  record_id?:   number
-  patient_id?:  number
-  file_name:    string
-
-  // наше локальное расширение
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'completed_with_warnings'
+  original_filename: string | null
+  archive_storage_key: string | null
+  size_bytes: number | null
+  report_json: Record<string, unknown>
+  created_at: string
+  finished_at: string | null
   file?: {
     name: string
     size: number
@@ -29,91 +20,76 @@ export interface UploadJob {
 
 interface UploadState {
   currentUpload: File | null
-  currentJob:    UploadJob | null
-  isUploading:   boolean
-  error:         string | null
+  currentJob: UploadJob | null
+  isUploading: boolean
+  error: string | null
 
-  setCurrentUpload:   (file: File | null) => void
-  uploadFile:         (file: File) => Promise<string>
-  getJobById:         (id: string) => Promise<void>
-  updateExtractedData:(
-    jobId: string,
-    data: Partial<UploadJob['raw_extracted']>
-  ) => void
-  clearUpload:        () => void
+  setCurrentUpload: (file: File | null) => void
+  uploadFile: (file: File) => Promise<string>
+  getJobById: (id: string) => Promise<void>
+  clearUpload: () => void
+}
+
+type ApiError = {
+  response?: { data?: { detail?: string } }
+  message?: string
+}
+
+const normalizeError = (error: unknown, fallback: string): string => {
+  if (typeof error !== 'object' || error === null) return fallback
+  const apiError = error as ApiError
+  return apiError.response?.data?.detail || apiError.message || fallback
 }
 
 export const useUploadStore = create<UploadState>((set, get) => ({
   currentUpload: null,
-  currentJob:    null,
-  isUploading:   false,
-  error:         null,
+  currentJob: null,
+  isUploading: false,
+  error: null,
 
-  setCurrentUpload: file =>
-    set({ currentUpload: file }),
+  setCurrentUpload: (file) => set({ currentUpload: file }),
 
-  uploadFile: async file => {
+  uploadFile: async (file) => {
     set({ isUploading: true, error: null })
     const form = new FormData()
-    form.append('archive_file', file)
+    form.append('file', file)
 
-    const { data } = await api.post<{ job_id: string }>(
-      '/process-zip/',
-      form,
-      { headers: { 'Content-Type': 'multipart/form-data' } }
-    )
-
-    // создаём «скелет» записи
-    const now = new Date().toISOString()
-    const newJob: UploadJob = {
-      id: data.job_id,
-      status: 'pending',
-      log: '',
-      raw_extracted: { fios: [], dobs: [], phones: [], emails: [] },
-      uploaded_at: now,
-      file_name: file.name,
-      file: { name: file.name, size: file.size, type: file.type },
+    try {
+      const { data } = await api.post<UploadJob>('/archives/imports', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      const job = {
+        ...data,
+        file: { name: file.name, size: file.size, type: file.type },
+      }
+      set({ currentJob: job, isUploading: false })
+      return data.id
+    } catch (error: unknown) {
+      set({ error: normalizeError(error, 'Не удалось загрузить архив'), isUploading: false })
+      throw error
     }
-
-    set({ currentJob: newJob, isUploading: false })
-    return data.job_id
   },
 
-  getJobById: async id => {
+  getJobById: async (id) => {
     set({ error: null })
     try {
-      // весь ответ сразу в UploadJob
-      const { data: job } = await api.get<UploadJob>(`/task-status/${id}/`)
-      // сохраняем серверные поля + не трогаем локальный file
+      const { data } = await api.get<UploadJob>(`/archives/imports/${id}`)
       set({
         currentJob: {
-          ...job,
-          file: get().currentJob?.file
-        }
+          ...data,
+          file: get().currentJob?.file,
+        },
       })
-    } catch (e: any) {
-      const msg = e.response?.data?.detail || e.message || 'Failed to fetch job'
-      set({ error: msg })
+    } catch (error: unknown) {
+      set({ error: normalizeError(error, 'Не удалось получить статус импорта') })
     }
   },
-
-  updateExtractedData: (jobId, upd) =>
-    set(state => {
-      const j = state.currentJob
-      if (!j || j.id !== jobId) return {}
-      return {
-        currentJob: {
-          ...j,
-          raw_extracted: { ...j.raw_extracted, ...upd }
-        }
-      }
-    }),
 
   clearUpload: () =>
     set({
       currentUpload: null,
-      currentJob:    null,
-      isUploading:   false,
-      error:         null,
+      currentJob: null,
+      isUploading: false,
+      error: null,
     }),
 }))

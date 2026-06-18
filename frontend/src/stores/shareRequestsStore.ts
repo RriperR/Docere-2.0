@@ -39,6 +39,8 @@ export interface CreateShareResult {
   skipped_record_ids: string[]
 }
 
+export type ShareRecipient = ShareUser
+
 type ApiError = {
   response?: {
     data?: {
@@ -53,6 +55,7 @@ interface ShareRequestsState {
   outbox: ShareRequest[]
   isLoading: boolean
   error: string | null
+  recipients: ShareRecipient[]
 
   createShareRequest: (payload: {
     to_user_email: string
@@ -65,6 +68,8 @@ interface ShareRequestsState {
   declineRequest: (requestId: string) => Promise<void>
   cancelRequest: (requestId: string) => Promise<void>
   revokeRequest: (requestId: string) => Promise<void>
+  searchRecipients: (query: string) => Promise<void>
+  clearRecipients: () => void
 }
 
 const normalizeError = (error: unknown, fallback: string): string => {
@@ -79,6 +84,7 @@ const normalizeError = (error: unknown, fallback: string): string => {
 export const useShareRequestsStore = create<ShareRequestsState>((set, get) => ({
   inbox: [],
   outbox: [],
+  recipients: [],
   isLoading: false,
   error: null,
 
@@ -171,4 +177,21 @@ export const useShareRequestsStore = create<ShareRequestsState>((set, get) => ({
       throw error
     }
   },
+
+  searchRecipients: async (query) => {
+    if (!query.trim()) {
+      set({ recipients: [] })
+      return
+    }
+    try {
+      const { data } = await api.get<ShareRecipient[]>('/share-requests/recipients', {
+        params: { q: query.trim() },
+      })
+      set({ recipients: data })
+    } catch (error: unknown) {
+      set({ error: normalizeError(error, 'Не удалось найти получателей'), recipients: [] })
+    }
+  },
+
+  clearRecipients: () => set({ recipients: [] }),
 }))

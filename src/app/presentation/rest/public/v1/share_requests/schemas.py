@@ -28,6 +28,17 @@ class ShareUserResponseSchema(BaseModel):
     role: str
 
 
+class ShareRecipientResponseSchema(BaseModel):
+    """Пользователь-кандидат для выбора получателя sharing."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    fio: str
+    email: str
+    role: str
+
+
 class RecordShareResponseSchema(BaseModel):
     """Проекция отдельной записи внутри sharing request."""
 

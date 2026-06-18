@@ -1,23 +1,19 @@
-// src/pages/upload/UploadStatusPage.tsx
 import React, { useEffect, useRef } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import {
-  CheckCircle,
-  AlertTriangle,
-  FileText,
-  ArrowLeft,
-} from 'lucide-react'
+import { AlertTriangle, ArrowLeft, CheckCircle, FileText } from 'lucide-react'
+
 import { Card } from '../../components/common/Card'
 import { useUploadStore } from '../../stores/uploadStore'
 
 const POLL_INTERVAL = 3000
 
-const FIELD_LABELS: Record<string, string> = {
-  fios:   'ФИО',
-  dobs:   'Даты рождения',
-  phones: 'Телефоны',
-  emails: 'Email-адреса',
+const statusLabel: Record<string, string> = {
+  queued: 'В очереди',
+  running: 'Обработка',
+  completed: 'Завершено',
+  completed_with_warnings: 'Завершено с предупреждениями',
+  failed: 'Ошибка',
 }
 
 const UploadStatusPage: React.FC = () => {
@@ -29,11 +25,11 @@ const UploadStatusPage: React.FC = () => {
     async function fetchStatus() {
       if (jobId) await getJobById(jobId)
     }
-    fetchStatus()
+    void fetchStatus()
 
     timerRef.current = window.setInterval(async () => {
       if (!currentJob) return
-      if (currentJob.status === 'done' || currentJob.status === 'failed') {
+      if (['completed', 'completed_with_warnings', 'failed'].includes(currentJob.status)) {
         if (timerRef.current !== null) {
           clearInterval(timerRef.current)
           timerRef.current = null
@@ -44,36 +40,21 @@ const UploadStatusPage: React.FC = () => {
     }, POLL_INTERVAL)
 
     return () => {
-      if (timerRef.current !== null) {
-        clearInterval(timerRef.current)
-      }
+      if (timerRef.current !== null) clearInterval(timerRef.current)
     }
   }, [jobId, getJobById, currentJob?.status])
 
   if (!currentJob) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <p className="text-gray-500">Loading job status…</p>
+      <div className="flex h-64 items-center justify-center">
+        <p className="text-gray-500">Загрузка статуса импорта…</p>
       </div>
     )
   }
 
-  // Деструктурируем поля в snake_case, как они приходят из API
-  const {
-    file,
-    status,
-    log,
-    raw_extracted,
-    uploaded_at,
-    completed_at,
-    patient_id,
-  } = currentJob
-
-  const isDone = status === 'done'
-  const isFailed = status === 'failed'
-  const isProcessing = status === 'processing'
-
-  const statusIcon = isDone ? (
+  const isDone = currentJob.status === 'completed' || currentJob.status === 'completed_with_warnings'
+  const isFailed = currentJob.status === 'failed'
+  const icon = isDone ? (
     <CheckCircle className="h-16 w-16 text-success-500" />
   ) : isFailed ? (
     <AlertTriangle className="h-16 w-16 text-error-500" />
@@ -81,108 +62,56 @@ const UploadStatusPage: React.FC = () => {
     <FileText className="h-16 w-16 text-primary-500" />
   )
 
-  const statusTitle = isDone
-    ? 'Processing Complete'
-    : isFailed
-    ? 'Processing Failed'
-    : isProcessing
-    ? 'Processing…'
-    : 'Pending'
-
-  const statusDesc = isDone
-    ? 'The file was processed successfully.'
-    : isFailed
-    ? `Processing failed: ${log ?? 'Unknown error'}`
-    : isProcessing
-    ? 'Your file is being processed…'
-    : 'Waiting to start.'
-
-  const fileName = file?.name ?? '—'
-  const uploadedLabel = new Date(uploaded_at).toLocaleString()
-  const completedLabel = completed_at
-    ? new Date(completed_at).toLocaleString()
-    : null
+  const reportEntries = Object.entries(currentJob.report_json ?? {})
 
   return (
     <div className="space-y-8">
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
-      >
-        <Link
-          to="/upload"
-          className="flex items-center text-sm text-primary-600 hover:underline mb-2"
-        >
-          <ArrowLeft className="h-4 w-4 mr-1" /> Back to Upload
+      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
+        <Link to="/upload" className="mb-2 flex items-center text-sm text-primary-600 hover:underline">
+          <ArrowLeft className="mr-1 h-4 w-4" />
+          Назад к загрузке
         </Link>
-        <h1 className="text-2xl font-bold">Upload Status</h1>
-        <p className="text-gray-500">
-          Track your file and review extracted info.
-        </p>
+        <h1 className="text-2xl font-bold">Статус импорта</h1>
+        <p className="text-gray-500">Архив сохранён; обработка содержимого будет расширена позже.</p>
       </motion.div>
 
       <Card>
-        <div className="flex flex-col md:flex-row items-center md:items-start">
-          <div className="p-4">{statusIcon}</div>
-          <div className="md:ml-6 text-center md:text-left">
-            <h3 className="text-lg font-medium">{statusTitle}</h3>
-            <p className="text-gray-500">{statusDesc}</p>
+        <div className="flex flex-col items-center md:flex-row md:items-start">
+          <div className="p-4">{icon}</div>
+          <div className="text-center md:ml-6 md:text-left">
+            <h3 className="text-lg font-medium">{statusLabel[currentJob.status] ?? currentJob.status}</h3>
+            <p className="text-gray-500">{String(currentJob.report_json?.message ?? 'Ожидание обработки')}</p>
             <div className="mt-4 flex flex-wrap gap-4 text-sm">
-              <div className="bg-gray-100 px-3 py-2 rounded">
-                <p className="text-gray-500">File</p>
-                <p className="font-medium">{fileName}</p>
-              </div>
-              <div className="bg-gray-100 px-3 py-2 rounded">
-                <p className="text-gray-500">Uploaded</p>
-                <p className="font-medium">{uploadedLabel}</p>
-              </div>
-              {completedLabel && (
-                <div className="bg-gray-100 px-3 py-2 rounded">
-                  <p className="text-gray-500">Completed</p>
-                  <p className="font-medium">{completedLabel}</p>
-                </div>
-              )}
-              {patient_id != null && (
-                <div className="bg-gray-100 px-3 py-2 rounded">
-                  <p className="text-gray-500">Patient</p>
-                  <Link
-                    to={`/patients/${patient_id}`}
-                    className="font-medium text-primary-600 hover:underline"
-                  >
-                    View Patient Details
-                  </Link>
-                </div>
-              )}
+              <Info label="Файл" value={currentJob.original_filename ?? currentJob.file?.name ?? '—'} />
+              <Info label="Размер" value={currentJob.size_bytes ? `${Math.ceil(currentJob.size_bytes / 1024)} КБ` : '—'} />
+              <Info label="Загружено" value={new Date(currentJob.created_at).toLocaleString()} />
+              {currentJob.finished_at && <Info label="Завершено" value={new Date(currentJob.finished_at).toLocaleString()} />}
             </div>
           </div>
         </div>
       </Card>
 
-      {isDone && raw_extracted && (
-        <Card title="Extracted Information">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {Object.entries(raw_extracted).map(([key, values]) => (
-              <div key={key}>
-                <p className="text-sm font-medium text-gray-500">
-                  {FIELD_LABELS[key] ?? key}
-                </p>
-                {values.length > 0 ? (
-                  <ul className="list-disc list-inside">
-                    {values.map((v, i) => (
-                      <li key={i} className="text-gray-900">
-                        {v}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="mt-1 text-gray-500">—</p>
-                )}
+      {reportEntries.length > 0 && (
+        <Card title="Отчёт">
+          <dl className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {reportEntries.map(([key, value]) => (
+              <div key={key} className="rounded-lg bg-gray-50 px-3 py-2">
+                <dt className="text-xs text-gray-500">{key}</dt>
+                <dd className="break-words text-sm font-medium text-gray-900">{String(value)}</dd>
               </div>
             ))}
-          </div>
+          </dl>
         </Card>
       )}
+    </div>
+  )
+}
+
+function Info({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded bg-gray-100 px-3 py-2">
+      <p className="text-gray-500">{label}</p>
+      <p className="font-medium">{value}</p>
     </div>
   )
 }

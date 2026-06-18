@@ -8,6 +8,20 @@
   - Границы слоев фиксируем тестами, чтобы случайные зависимости не попадали в domain.
   - Проверка health через presentation (`/api/health`) покрывает интеграцию application+domain+infrastructure.
 ---
+## [2026-06-18] - TASK-029, TASK-032, TASK-033
+- Интегрирован frontend-экран пациента с актуальным backend-контрактом timeline: история записей отображает creator, record_type, event_date и created_at.
+- Добавлен поиск получателей sharing по email или ФИО: endpoint `GET /api/share-requests/recipients` и выбор пользователя в модальном окне отправки share.
+- Обновлен frontend загрузки архивов под ImportJob API: создание job через `/api/archives/imports` и просмотр статуса/report_json.
+- Все задачи в `tasks.json` переведены в `done`.
+- Файлы: `frontend/src/pages/patients/PatientDetailsPage.tsx`, `frontend/src/pages/upload/UploadStatusPage.tsx`, `frontend/src/stores/patientsStore.ts`, `frontend/src/stores/shareRequestsStore.ts`, `frontend/src/stores/uploadStore.ts`, `src/app/presentation/rest/public/v1/share_requests/router.py`, `src/app/presentation/rest/public/v1/share_requests/schemas.py`, `tests/critical/test_records.py`, `tasks.json`.
+- Проверки:
+  - `uv run ruff check tests/critical/test_records.py src/app/presentation/rest/public/v1/share_requests/router.py src/app/presentation/rest/public/v1/share_requests/schemas.py`
+  - `uv run pytest tests/critical/test_records.py -q -p no:cacheprovider`
+  - `npm run build`
+- Learnings for future iterations:
+  - Для frontend-модалок sharing полезно иметь отдельный lightweight endpoint поиска пользователей, чтобы не смешивать UI-подсказки с созданием share request.
+  - Search endpoint нужно держать до динамических маршрутов `/{request_id}`, иначе регрессия проявится как неожиданный 422.
+---
 ## [2026-02-23 13:48:41] - TASK-001
 - Реализован централизованный модуль конфигурации на Pydantic Settings с обязательными секциями `database`, `auth`, `storage`, `queue`.
 - Добавлены `get_settings()`, `clear_settings_cache()` и `validate_settings()`; валидация конфигурации выполняется на старте FastAPI через lifespan.
