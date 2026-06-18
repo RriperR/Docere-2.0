@@ -1136,6 +1136,77 @@ def test_record_confirmation_rules_and_share_auto_confirm(record_client: TestCli
 
 
 @pytest.mark.critical
+def test_doctor_patient_doctor_share_chain_preserves_creator(record_client: TestClient) -> None:
+    _create_doctor(email='chain-doctor-a@example.com')
+    _create_doctor(email='chain-doctor-b@example.com')
+    _register_patient(record_client, 'chain-patient@example.com', fio='Chain Patient')
+    doctor_a_token = _login(record_client, 'chain-doctor-a@example.com', TEST_DOCTOR_PASSWORD)
+    doctor_b_token = _login(record_client, 'chain-doctor-b@example.com', TEST_DOCTOR_PASSWORD)
+    patient_token = _login(record_client, 'chain-patient@example.com', TEST_PATIENT_PASSWORD)
+
+    create_patient_response = record_client.post(
+        '/api/patients',
+        headers={'Authorization': f'Bearer {doctor_a_token}'},
+        json={
+            'fio': 'Doctor A Local Patient',
+            'date_of_birth': '1991-05-01',
+            'email': 'doctor-a-local-patient@example.com',
+            'phone': '+79990004455',
+        },
+    )
+    assert create_patient_response.status_code == 201
+    local_patient_id = UUID(create_patient_response.json()['id'])
+    record = _create_record(
+        record_client,
+        doctor_a_token,
+        local_patient_id,
+        title='Chain source record',
+    )
+    doctor_a = _get_user_by_email('chain-doctor-a@example.com')
+
+    doctor_to_patient_share = _create_share_request(
+        record_client,
+        doctor_a_token,
+        to_user_email='chain-patient@example.com',
+        record_ids=[record['id']],
+    )
+    patient_accept_response = record_client.post(
+        f'/api/share-requests/{doctor_to_patient_share["request"]["id"]}/accept',
+        headers={'Authorization': f'Bearer {patient_token}'},
+    )
+    patient_record_response = record_client.get(
+        f'/api/records/{record["id"]}',
+        headers={'Authorization': f'Bearer {patient_token}'},
+    )
+    patient_to_doctor_share = _create_share_request(
+        record_client,
+        patient_token,
+        to_user_email='chain-doctor-b@example.com',
+        record_ids=[record['id']],
+    )
+    doctor_b_accept_response = record_client.post(
+        f'/api/share-requests/{patient_to_doctor_share["request"]["id"]}/accept',
+        headers={'Authorization': f'Bearer {doctor_b_token}'},
+    )
+    doctor_b_record_response = record_client.get(
+        f'/api/records/{record["id"]}',
+        headers={'Authorization': f'Bearer {doctor_b_token}'},
+    )
+    doctor_b_patients_response = record_client.get(
+        '/api/patients',
+        headers={'Authorization': f'Bearer {doctor_b_token}'},
+    )
+
+    assert patient_accept_response.status_code == 200
+    assert patient_record_response.status_code == 200
+    assert doctor_b_accept_response.status_code == 200
+    assert doctor_b_record_response.status_code == 200
+    assert doctor_b_record_response.json()['creator_user_id'] == str(doctor_a.id)
+    assert doctor_b_record_response.json()['patient_passport_id'] == str(local_patient_id)
+    assert any(patient['id'] == str(local_patient_id) for patient in doctor_b_patients_response.json())
+
+
+@pytest.mark.critical
 def test_doctor_patient_share_comment_and_revoke_flow_for_foreign_patient_card(record_client: TestClient) -> None:
     _create_doctor(email='flow-doctor@example.com')
     _register_patient(record_client, 'flow-recipient@example.com', fio='Recipient Patient')
