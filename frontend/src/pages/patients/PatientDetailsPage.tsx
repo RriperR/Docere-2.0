@@ -1,64 +1,68 @@
 import React, { FormEvent, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { motion } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import {
   ArrowLeft,
   Building2,
   Calendar,
+  ChevronDown,
+  ChevronUp,
   FileText,
   MessageSquare,
+  Paperclip,
+  Send,
   Share2,
   Stethoscope,
+  User,
+  X,
 } from 'lucide-react'
 import { format } from 'date-fns'
 
 import { AddRecordModal } from '../../components/AddRecordModal'
 import { Button } from '../../components/common/Button'
-import { Card } from '../../components/common/Card'
 import { useAuthStore } from '../../stores/authStore'
 import { PatientRecordSummary, usePatientsStore } from '../../stores/patientsStore'
 import { CreateShareResult, useShareRequestsStore } from '../../stores/shareRequestsStore'
 
 type ApiError = {
-  response?: {
-    data?: {
-      detail?: string
-    }
-  }
+  response?: { data?: { detail?: string } }
   message?: string
 }
 
 const getErrorMessage = (error: unknown, fallback: string): string => {
-  if (typeof error !== 'object' || error === null) {
-    return fallback
-  }
-
-  const apiError = error as ApiError
-  return apiError.response?.data?.detail || apiError.message || fallback
+  if (typeof error !== 'object' || error === null) return fallback
+  const e = error as ApiError
+  return e.response?.data?.detail ?? e.message ?? fallback
 }
 
-const accessContextLabel = (accessContext: string): string => {
-  if (accessContext === 'shared') {
-    return 'Sharing'
-  }
+const accessContextLabel = (ctx: string) =>
+  ctx === 'shared' ? 'Sharing' : ctx === 'created' ? 'Локальная карточка' : 'Моя карточка'
 
-  if (accessContext === 'created') {
-    return 'Локальная карточка'
-  }
+const accessContextClasses = (ctx: string) =>
+  ctx === 'shared'
+    ? 'bg-warning-50 text-warning-700 border-warning-200'
+    : ctx === 'created'
+      ? 'bg-accent-50 text-accent-700 border-accent-200'
+      : 'bg-success-50 text-success-700 border-success-200'
 
-  return 'Моя карточка'
+const typeLabel: Record<string, string> = {
+  consultation_result: 'Консультация',
+  exam_result: 'Обследование',
+  lab_result: 'Лаборатория',
+  other: 'Другое',
 }
 
-const accessContextClasses = (accessContext: string): string => {
-  if (accessContext === 'shared') {
-    return 'bg-amber-50 text-amber-700'
-  }
+const typeColors: Record<string, string> = {
+  consultation_result: 'bg-accent-100 text-accent-700',
+  exam_result: 'bg-secondary-100 text-secondary-700',
+  lab_result: 'bg-warning-100 text-warning-700',
+  other: 'bg-gray-100 text-gray-600',
+}
 
-  if (accessContext === 'created') {
-    return 'bg-sky-50 text-sky-700'
-  }
-
-  return 'bg-emerald-50 text-emerald-700'
+function getInitials(fio: string): string {
+  const parts = fio.trim().split(' ')
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase()
+  return fio[0]?.toUpperCase() ?? '?'
 }
 
 const PatientDetailsPage: React.FC = () => {
@@ -76,7 +80,7 @@ const PatientDetailsPage: React.FC = () => {
     addRecordComment,
     clearActiveRecord,
   } = usePatientsStore()
-  const createShareRequest = useShareRequestsStore((state) => state.createShareRequest)
+  const createShareRequest = useShareRequestsStore((s) => s.createShareRequest)
 
   const [showAddModal, setShowAddModal] = useState(false)
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null)
@@ -102,40 +106,27 @@ const PatientDetailsPage: React.FC = () => {
   }, [id, fetchPatientById, fetchPatientRecords, clearActiveRecord])
 
   useEffect(() => {
-    if (selectedRecordId) {
-      void fetchRecordDetail(selectedRecordId)
-    }
+    if (selectedRecordId) void fetchRecordDetail(selectedRecordId)
   }, [selectedRecordId, fetchRecordDetail])
 
   const canComment = user?.role === 'doctor' || user?.role === 'admin'
 
   const handleOpenRecord = (record: PatientRecordSummary) => {
-    setSelectedRecordId((current) => (current === record.id ? null : record.id))
+    setSelectedRecordId((c) => (c === record.id ? null : record.id))
     setCommentBody('')
     setCommentError(null)
   }
 
-  const handleToggleShareRecord = (recordId: string) => {
-    setSelectedShareRecordIds((current) =>
-      current.includes(recordId)
-        ? current.filter((selectedRecordId) => selectedRecordId !== recordId)
-        : [...current, recordId],
-    )
-  }
-
   const handleAddComment = async () => {
-    if (!selectedRecordId || !commentBody.trim()) {
-      return
-    }
-
+    if (!selectedRecordId || !commentBody.trim()) return
     setCommentSubmitting(true)
     setCommentError(null)
     try {
       await addRecordComment(selectedRecordId, commentBody.trim())
       await fetchRecordDetail(selectedRecordId)
       setCommentBody('')
-    } catch (submitError: unknown) {
-      setCommentError(getErrorMessage(submitError, 'Не удалось добавить комментарий'))
+    } catch (e: unknown) {
+      setCommentError(getErrorMessage(e, 'Не удалось добавить комментарий'))
     } finally {
       setCommentSubmitting(false)
     }
@@ -145,17 +136,8 @@ const PatientDetailsPage: React.FC = () => {
     event.preventDefault()
     setShareError(null)
     setShareResult(null)
-
-    if (!shareEmail.trim()) {
-      setShareError('Укажите email зарегистрированного пользователя')
-      return
-    }
-
-    if (selectedShareRecordIds.length === 0) {
-      setShareError('Выберите хотя бы одну запись')
-      return
-    }
-
+    if (!shareEmail.trim()) { setShareError('Укажите email получателя'); return }
+    if (selectedShareRecordIds.length === 0) { setShareError('Выберите хотя бы одну запись'); return }
     setShareSubmitting(true)
     try {
       const result = await createShareRequest({
@@ -164,12 +146,9 @@ const PatientDetailsPage: React.FC = () => {
         message: shareMessage.trim() || undefined,
       })
       setShareResult(result)
-
-      if (result.request) {
-        setSelectedShareRecordIds([])
-      }
-    } catch (submitError: unknown) {
-      setShareError(getErrorMessage(submitError, 'Не удалось отправить sharing-запрос'))
+      if (result.request) setSelectedShareRecordIds([])
+    } catch (e: unknown) {
+      setShareError(getErrorMessage(e, 'Не удалось отправить запрос'))
     } finally {
       setShareSubmitting(false)
     }
@@ -183,43 +162,50 @@ const PatientDetailsPage: React.FC = () => {
     setShareError(null)
   }
 
-  if (!id) {
-    return null
-  }
+  if (!id) return null
 
   if (isLoading && !currentPatient) {
-    return <p className="mt-8 text-center text-gray-500">Загружаю карточку пациента...</p>
+    return (
+      <div className="space-y-4 animate-pulse">
+        <div className="h-6 w-40 rounded bg-gray-200" />
+        <div className="h-10 w-80 rounded bg-gray-200" />
+        <div className="grid grid-cols-3 gap-4">
+          {[1, 2, 3].map((i) => <div key={i} className="h-32 rounded-xl bg-gray-200" />)}
+        </div>
+      </div>
+    )
   }
 
-  if (error) {
-    return <p className="mt-8 text-center text-red-600">{error}</p>
-  }
+  if (error) return <p className="mt-8 text-center text-error-600">{error}</p>
+  if (!currentPatient) return null
 
-  if (!currentPatient) {
-    return null
-  }
+  const patientInitials = getInitials(currentPatient.fio)
 
   return (
-    <div className="space-y-8">
-      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
+    <div className="space-y-6">
+      {/* Breadcrumb + Header */}
+      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
         <Link
           to="/patients"
-          className="mb-4 inline-flex items-center text-sm font-medium text-primary-600 hover:text-primary-700"
+          className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-primary-600"
         >
-          <ArrowLeft className="mr-1 h-4 w-4" />
+          <ArrowLeft className="h-4 w-4" />
           Назад к списку пациентов
         </Link>
 
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">{currentPatient.fio}</h1>
-            <div className="mt-1 flex flex-wrap items-center gap-2">
-              <p className="text-gray-500">ID карточки: {currentPatient.id}</p>
-              <span
-                className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${accessContextClasses(currentPatient.accessContext)}`}
-              >
-                {accessContextLabel(currentPatient.accessContext)}
-              </span>
+          <div className="flex items-center gap-4">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-primary-600 text-xl font-bold text-white">
+              {patientInitials}
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">{currentPatient.fio}</h1>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-medium ${accessContextClasses(currentPatient.accessContext)}`}>
+                  {accessContextLabel(currentPatient.accessContext)}
+                </span>
+                <span className="text-xs text-gray-400">ID: {currentPatient.id}</span>
+              </div>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -228,26 +214,277 @@ const PatientDetailsPage: React.FC = () => {
               icon={<Share2 className="h-4 w-4" />}
               disabled={selectedShareRecordIds.length === 0}
               onClick={() => setIsShareModalOpen(true)}
+              size="sm"
             >
-              Поделиться выбранными
+              Поделиться ({selectedShareRecordIds.length})
             </Button>
-            <Button onClick={() => setShowAddModal(true)}>Добавить запись</Button>
+            <Button onClick={() => setShowAddModal(true)} size="sm">
+              + Добавить запись
+            </Button>
           </div>
         </div>
       </motion.div>
 
       {currentPatient.accessContext === 'shared' && (
-        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <div className="rounded-xl border border-warning-200 bg-warning-50 px-4 py-3 text-sm text-warning-800">
           Эта карточка доступна вам по sharing. Она может относиться к другому пациенту.
         </div>
       )}
 
+      {/* Patient info cards */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-card">
+          <div className="mb-3 flex items-center gap-2 text-primary-600">
+            <User className="h-4 w-4" />
+            <span className="text-sm font-semibold">Пациент</span>
+          </div>
+          <div className="space-y-2.5 text-sm">
+            {[
+              { label: 'ФИО', value: currentPatient.fio },
+              { label: 'Тип доступа', value: accessContextLabel(currentPatient.accessContext) },
+              { label: 'Дата рождения', value: currentPatient.birthday ? format(new Date(currentPatient.birthday), 'dd.MM.yyyy') : 'Не указана' },
+              { label: 'Email', value: currentPatient.email || 'Не указан' },
+              { label: 'Телефон', value: currentPatient.phone || 'Не указан' },
+            ].map((row) => (
+              <div key={row.label} className="flex justify-between gap-2">
+                <span className="text-gray-400">{row.label}</span>
+                <span className="text-right font-medium text-gray-900">{row.value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-card">
+          <div className="mb-3 flex items-center gap-2 text-primary-600">
+            <FileText className="h-4 w-4" />
+            <span className="text-sm font-semibold">Сводка</span>
+          </div>
+          <div className="space-y-3">
+            <div className="rounded-lg bg-primary-50 p-3 text-center">
+              <p className="text-3xl font-bold text-primary-600">{patientRecords.length}</p>
+              <p className="mt-0.5 text-xs text-gray-500">Всего записей</p>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-500">Последняя запись</span>
+              <span className="font-medium">{currentPatient.lastVisit ? format(new Date(currentPatient.lastVisit), 'dd.MM.yyyy') : '—'}</span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-500">Статус</span>
+              <span className="font-medium capitalize">{currentPatient.status}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-card">
+          <div className="mb-3 flex items-center gap-2 text-primary-600">
+            <Share2 className="h-4 w-4" />
+            <span className="text-sm font-semibold">Sharing</span>
+          </div>
+          <p className="text-sm text-gray-500">
+            Отметьте нужные записи галочкой и нажмите «Поделиться» — получатель получит доступ
+            после принятия запроса.
+          </p>
+        </div>
+      </div>
+
+      {/* Records */}
+      <div className="rounded-xl border border-gray-100 bg-white shadow-card">
+        <div className="border-b border-gray-100 px-6 py-4">
+          <h2 className="font-semibold text-gray-900">Медицинские записи</h2>
+          <p className="mt-0.5 text-xs text-gray-400">Нажмите на запись, чтобы раскрыть детали</p>
+        </div>
+
+        {patientRecords.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-14 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gray-100">
+              <FileText className="h-6 w-6 text-gray-400" />
+            </div>
+            <p className="mt-3 text-sm font-medium text-gray-900">Записей пока нет</p>
+            <p className="mt-1 text-xs text-gray-500">Нажмите «Добавить запись» чтобы создать первую</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-50">
+            {patientRecords.map((record) => {
+              const isOpen = selectedRecordId === record.id
+              const detail = isOpen && activeRecord?.id === record.id ? activeRecord : null
+              const isSelectedForShare = selectedShareRecordIds.includes(record.id)
+
+              return (
+                <div key={record.id} className={`transition-colors ${isOpen ? 'bg-primary-50/30' : 'hover:bg-gray-50'}`}>
+                  <div className="flex items-center gap-3 border-b border-gray-50 px-6 py-2.5">
+                    <label className="flex cursor-pointer items-center gap-2 text-xs text-gray-500">
+                      <input
+                        type="checkbox"
+                        checked={isSelectedForShare}
+                        onChange={() => setSelectedShareRecordIds((c) =>
+                          c.includes(record.id) ? c.filter((x) => x !== record.id) : [...c, record.id]
+                        )}
+                        className="h-3.5 w-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                      />
+                      Выбрать для sharing
+                    </label>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleOpenRecord(record)}
+                    className="flex w-full items-start justify-between gap-4 px-6 py-4 text-left"
+                  >
+                    <div className="flex flex-col gap-2 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${typeColors[record.recordType] ?? 'bg-gray-100 text-gray-600'}`}>
+                          {typeLabel[record.recordType] ?? record.recordType}
+                        </span>
+                        <span className="flex items-center gap-1 text-xs text-gray-400">
+                          <Calendar className="h-3 w-3" />
+                          {format(new Date(record.eventDate), 'dd.MM.yyyy')}
+                        </span>
+                        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs capitalize text-gray-600">
+                          {record.status}
+                        </span>
+                      </div>
+                      <p className="text-base font-semibold text-gray-900">
+                        {record.title || 'Медицинская запись'}
+                      </p>
+                      {record.clinicalSummary && (
+                        <p className="text-sm text-gray-500 line-clamp-2">{record.clinicalSummary}</p>
+                      )}
+                      <div className="flex flex-wrap gap-4 text-xs text-gray-400">
+                        {record.appointmentLocation && (
+                          <span className="flex items-center gap-1">
+                            <Building2 className="h-3.5 w-3.5" />
+                            {record.appointmentLocation}
+                          </span>
+                        )}
+                        {record.practitioner?.full_name && (
+                          <span className="flex items-center gap-1">
+                            <Stethoscope className="h-3.5 w-3.5" />
+                            {record.practitioner.full_name}
+                          </span>
+                        )}
+                        <span className="flex items-center gap-1">
+                          <MessageSquare className="h-3.5 w-3.5" />
+                          {record.commentsCount}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Paperclip className="h-3.5 w-3.5" />
+                          {record.attachmentsCount}
+                        </span>
+                      </div>
+                    </div>
+                    <span className="shrink-0 text-gray-400">
+                      {isOpen ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+                    </span>
+                  </button>
+
+                  <AnimatePresence>
+                    {isOpen && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="border-t border-primary-100 bg-white px-6 py-5">
+                          {detail ? (
+                            <div className="space-y-6">
+                              <div>
+                                <h4 className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-400">
+                                  Данные записи (JSON)
+                                </h4>
+                                <pre className="overflow-x-auto rounded-xl bg-gray-50 p-4 text-xs text-gray-700 border border-gray-100">
+                                  {JSON.stringify(detail.payloadJson, null, 2)}
+                                </pre>
+                              </div>
+
+                              <div>
+                                <h4 className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-400">
+                                  Комментарии ({detail.comments.length})
+                                </h4>
+                                {detail.comments.length === 0 ? (
+                                  <p className="text-sm text-gray-400">Комментариев пока нет.</p>
+                                ) : (
+                                  <div className="space-y-3">
+                                    {detail.comments.map((comment) => (
+                                      <div key={comment.id} className="rounded-xl border border-gray-100 bg-gray-50 p-4">
+                                        <p className="text-sm text-gray-800">{comment.body}</p>
+                                        <p className="mt-1.5 text-xs text-gray-400">
+                                          {format(new Date(comment.created_at), 'dd.MM.yyyy HH:mm')}
+                                        </p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {canComment && (
+                                  <div className="mt-4 space-y-2">
+                                    <div className="flex gap-2">
+                                      <textarea
+                                        value={commentBody}
+                                        onChange={(e) => setCommentBody(e.target.value)}
+                                        rows={2}
+                                        className="flex-1 resize-none rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm placeholder-gray-400 focus:border-primary-300 focus:outline-none focus:ring-2 focus:ring-primary-200"
+                                        placeholder="Добавить комментарий к записи..."
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={handleAddComment}
+                                        disabled={commentSubmitting || !commentBody.trim()}
+                                        className="flex h-10 w-10 shrink-0 items-center justify-center self-end rounded-xl bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-40"
+                                      >
+                                        <Send className="h-4 w-4" />
+                                      </button>
+                                    </div>
+                                    {commentError && <p className="text-xs text-error-600">{commentError}</p>}
+                                  </div>
+                                )}
+                              </div>
+
+                              {detail.attachments.length > 0 && (
+                                <div>
+                                  <h4 className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-400">
+                                    Вложения ({detail.attachments.length})
+                                  </h4>
+                                  <div className="space-y-2">
+                                    {detail.attachments.map((a) => (
+                                      <div key={a.id} className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
+                                        <Paperclip className="h-4 w-4 shrink-0 text-gray-400" />
+                                        <div className="min-w-0">
+                                          <p className="truncate text-sm font-medium text-gray-900">{a.storage_key}</p>
+                                          <p className="text-xs text-gray-400">
+                                            {a.category} · {a.mime_type} · {a.size_bytes} байт
+                                          </p>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="space-y-2 animate-pulse">
+                              <div className="h-4 w-40 rounded bg-gray-200" />
+                              <div className="h-20 w-full rounded-xl bg-gray-200" />
+                            </div>
+                          )}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
       {showAddModal && (
         <AddRecordModal
-          patientId={id}
+          patientId={id!}
           onClose={() => {
             setShowAddModal(false)
-            void fetchPatientRecords(id)
+            void fetchPatientRecords(id!)
           }}
         />
       )}
@@ -266,226 +503,13 @@ const PatientDetailsPage: React.FC = () => {
           onClose={closeShareModal}
         />
       )}
-
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-        <Card title="Пациент">
-          <div className="space-y-3 text-sm">
-            <div>
-              <p className="text-gray-500">ФИО</p>
-              <p className="font-medium text-gray-900">{currentPatient.fio}</p>
-            </div>
-            <div>
-              <p className="text-gray-500">Тип доступа</p>
-              <p>{accessContextLabel(currentPatient.accessContext)}</p>
-            </div>
-            <div>
-              <p className="text-gray-500">Дата рождения</p>
-              <p>{currentPatient.birthday ? format(new Date(currentPatient.birthday), 'dd.MM.yyyy') : 'Не указана'}</p>
-            </div>
-            <div>
-              <p className="text-gray-500">Email</p>
-              <p>{currentPatient.email || 'Не указан'}</p>
-            </div>
-            <div>
-              <p className="text-gray-500">Телефон</p>
-              <p>{currentPatient.phone || 'Не указан'}</p>
-            </div>
-          </div>
-        </Card>
-
-        <Card title="Сводка">
-          <div className="space-y-3 text-sm">
-            <div>
-              <p className="text-gray-500">Всего записей</p>
-              <p className="text-2xl font-bold text-primary-600">{patientRecords.length}</p>
-            </div>
-            <div>
-              <p className="text-gray-500">Последняя запись</p>
-              <p>{currentPatient.lastVisit ? format(new Date(currentPatient.lastVisit), 'dd.MM.yyyy') : 'Не указана'}</p>
-            </div>
-            <div>
-              <p className="text-gray-500">Статус карточки</p>
-              <p className="capitalize">{currentPatient.status}</p>
-            </div>
-          </div>
-        </Card>
-
-        <Card title="Подсказка">
-          <p className="text-sm text-gray-600">
-            Выберите одну или несколько записей, чтобы отправить sharing-запрос зарегистрированному
-            пользователю. Доступ появится только после принятия запроса.
-          </p>
-        </Card>
-      </div>
-
-      <Card title="Медицинские записи">
-        {patientRecords.length === 0 ? (
-          <p className="py-12 text-center text-gray-500">У этой карточки пока нет записей.</p>
-        ) : (
-          <div className="space-y-4">
-            {patientRecords.map((record) => {
-              const isOpen = selectedRecordId === record.id
-              const detail = isOpen && activeRecord?.id === record.id ? activeRecord : null
-              const isSelectedForShare = selectedShareRecordIds.includes(record.id)
-
-              return (
-                <div key={record.id} className="rounded-lg border border-gray-200">
-                  <div className="border-b border-gray-100 px-5 py-2">
-                    <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-gray-600">
-                      <input
-                        type="checkbox"
-                        checked={isSelectedForShare}
-                        onChange={() => handleToggleShareRecord(record.id)}
-                        className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                      />
-                      Выбрать для sharing
-                    </label>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => handleOpenRecord(record)}
-                    className="flex w-full items-start justify-between gap-4 px-5 py-4 text-left"
-                  >
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2 text-sm text-gray-500">
-                        <span className="inline-flex items-center gap-1">
-                          <Calendar className="h-4 w-4" />
-                          {format(new Date(record.eventDate), 'dd.MM.yyyy')}
-                        </span>
-                        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs capitalize">
-                          {record.recordType}
-                        </span>
-                        <span className="rounded-full bg-primary-50 px-2 py-0.5 text-xs capitalize text-primary-700">
-                          {record.status}
-                        </span>
-                      </div>
-                      <h3 className="text-lg font-semibold text-gray-900">
-                        {record.title || 'Медицинская запись'}
-                      </h3>
-                      {record.clinicalSummary && <p className="text-sm text-gray-700">{record.clinicalSummary}</p>}
-                      <div className="flex flex-wrap gap-4 text-sm text-gray-500">
-                        <span className="inline-flex items-center gap-1">
-                          <Building2 className="h-4 w-4" />
-                          {record.appointmentLocation || 'Место не указано'}
-                        </span>
-                        <span className="inline-flex items-center gap-1">
-                          <Stethoscope className="h-4 w-4" />
-                          {record.practitioner?.full_name || 'Врач не указан'}
-                        </span>
-                        <span className="inline-flex items-center gap-1">
-                          <MessageSquare className="h-4 w-4" />
-                          {record.commentsCount}
-                        </span>
-                        <span className="inline-flex items-center gap-1">
-                          <FileText className="h-4 w-4" />
-                          {record.attachmentsCount}
-                        </span>
-                      </div>
-                    </div>
-                    <span className="text-sm font-medium text-primary-600">
-                      {isOpen ? 'Скрыть детали' : 'Открыть детали'}
-                    </span>
-                  </button>
-
-                  {isOpen && (
-                    <div className="border-t border-gray-200 px-5 py-4">
-                      {detail ? (
-                        <div className="space-y-6">
-                          <div>
-                            <h4 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">
-                              Типоспецифичные данные
-                            </h4>
-                            <pre className="overflow-x-auto rounded-lg bg-gray-50 p-4 text-sm text-gray-800">
-                              {JSON.stringify(detail.payloadJson, null, 2)}
-                            </pre>
-                          </div>
-
-                          <div>
-                            <h4 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">
-                              Комментарии
-                            </h4>
-                            {detail.comments.length === 0 ? (
-                              <p className="text-sm text-gray-500">Комментариев пока нет.</p>
-                            ) : (
-                              <div className="space-y-3">
-                                {detail.comments.map((comment) => (
-                                  <div key={comment.id} className="rounded-lg bg-gray-50 px-4 py-3">
-                                    <p className="text-sm text-gray-800">{comment.body}</p>
-                                    <p className="mt-1 text-xs text-gray-500">
-                                      Автор: {comment.author_user_id} ·{' '}
-                                      {format(new Date(comment.created_at), 'dd.MM.yyyy HH:mm')}
-                                    </p>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-
-                            {canComment && (
-                              <div className="mt-4 space-y-2">
-                                <textarea
-                                  value={commentBody}
-                                  onChange={(event) => setCommentBody(event.target.value)}
-                                  rows={3}
-                                  className="w-full rounded border p-2"
-                                  placeholder="Добавить комментарий к записи"
-                                />
-                                {commentError && <p className="text-sm text-red-600">{commentError}</p>}
-                                <div className="flex justify-end">
-                                  <Button onClick={handleAddComment} disabled={commentSubmitting || !commentBody.trim()}>
-                                    {commentSubmitting ? 'Отправляю...' : 'Добавить комментарий'}
-                                  </Button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-
-                          <div>
-                            <h4 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">
-                              Вложения
-                            </h4>
-                            {detail.attachments.length === 0 ? (
-                              <p className="text-sm text-gray-500">Вложений пока нет.</p>
-                            ) : (
-                              <div className="space-y-2">
-                                {detail.attachments.map((attachment) => (
-                                  <div key={attachment.id} className="rounded-lg bg-gray-50 px-4 py-3 text-sm text-gray-700">
-                                    <p className="font-medium">{attachment.storage_key}</p>
-                                    <p className="text-gray-500">
-                                      {attachment.category} · {attachment.mime_type} · {attachment.size_bytes} байт
-                                    </p>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      ) : (
-                        <p className="text-sm text-gray-500">Загружаю детали записи...</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </Card>
     </div>
   )
 }
 
 function ShareRecordsModal({
-  selectedCount,
-  email,
-  message,
-  result,
-  error,
-  isSubmitting,
-  onEmailChange,
-  onMessageChange,
-  onSubmit,
-  onClose,
+  selectedCount, email, message, result, error, isSubmitting,
+  onEmailChange, onMessageChange, onSubmit, onClose,
 }: {
   selectedCount: number
   email: string
@@ -493,72 +517,75 @@ function ShareRecordsModal({
   result: CreateShareResult | null
   error: string | null
   isSubmitting: boolean
-  onEmailChange: (value: string) => void
-  onMessageChange: (value: string) => void
-  onSubmit: (event: FormEvent) => void
+  onEmailChange: (v: string) => void
+  onMessageChange: (v: string) => void
+  onSubmit: (e: FormEvent) => void
   onClose: () => void
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <form onSubmit={onSubmit} className="w-full max-w-lg rounded-lg bg-white p-6 shadow-lg">
-        <div className="mb-6 flex items-center justify-between">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 p-4 backdrop-blur-sm"
+    >
+      <motion.form
+        initial={{ opacity: 0, scale: 0.96, y: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        onSubmit={onSubmit}
+        className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl"
+      >
+        <div className="mb-5 flex items-start justify-between">
           <div>
-            <h2 className="text-xl font-semibold">Поделиться записями</h2>
-            <p className="mt-1 text-sm text-gray-500">Выбрано записей: {selectedCount}</p>
+            <h2 className="text-lg font-bold text-gray-900">Поделиться записями</h2>
+            <p className="mt-0.5 text-sm text-gray-500">Выбрано: {selectedCount} запис{selectedCount === 1 ? 'ь' : 'ей'}</p>
           </div>
-          <button type="button" onClick={onClose} className="text-sm text-gray-500 hover:text-gray-800">
-            Закрыть
+          <button type="button" onClick={onClose} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100">
+            <X className="h-5 w-5" />
           </button>
         </div>
 
-        {error && <p className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+        {error && <div className="mb-4 rounded-xl bg-error-50 px-4 py-3 text-sm text-error-700">{error}</div>}
         {result && (
-          <div className="mb-4 rounded-md bg-green-50 px-3 py-2 text-sm text-green-800">
-            {result.request ? (
-              <p>Sharing-запрос создан. Получатель увидит его во входящих.</p>
-            ) : (
-              <p>Новые записи не добавлены: у получателя уже есть доступ или активный запрос.</p>
-            )}
+          <div className="mb-4 rounded-xl bg-success-50 px-4 py-3 text-sm text-success-800">
+            {result.request
+              ? 'Sharing-запрос создан. Получатель увидит его во входящих.'
+              : 'Новые записи не добавлены: у получателя уже есть доступ или активный запрос.'}
             {result.skipped_record_ids.length > 0 && (
-              <p className="mt-1">Пропущено записей: {result.skipped_record_ids.length}</p>
+              <p className="mt-1 text-xs">Пропущено: {result.skipped_record_ids.length}</p>
             )}
           </div>
         )}
 
         <div className="space-y-4">
-          <label className="block">
-            <span className="text-sm font-medium text-gray-700">Email получателя</span>
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Email получателя</label>
             <input
               type="email"
               value={email}
-              onChange={(event) => onEmailChange(event.target.value)}
-              className="mt-1 w-full rounded border p-2"
+              onChange={(e) => onEmailChange(e.target.value)}
+              className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-200"
               placeholder="doctor@example.com"
             />
-          </label>
-
-          <label className="block">
-            <span className="text-sm font-medium text-gray-700">Сообщение</span>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Сообщение (необязательно)</label>
             <textarea
               value={message}
-              onChange={(event) => onMessageChange(event.target.value)}
-              rows={4}
-              className="mt-1 w-full rounded border p-2"
-              placeholder="Короткий контекст для получателя"
+              onChange={(e) => onMessageChange(e.target.value)}
+              rows={3}
+              className="mt-1.5 w-full resize-none rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-200"
+              placeholder="Контекст для получателя..."
             />
-          </label>
+          </div>
         </div>
 
-        <div className="mt-6 flex justify-end space-x-2">
-          <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting}>
-            Отмена
-          </Button>
-          <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? 'Отправляю...' : 'Отправить запрос'}
-          </Button>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting}>Отмена</Button>
+          <Button type="submit" isLoading={isSubmitting}>Отправить запрос</Button>
         </div>
-      </form>
-    </div>
+      </motion.form>
+    </motion.div>
   )
 }
 
