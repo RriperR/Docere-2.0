@@ -30,6 +30,19 @@ export interface PractitionerInfo {
   status: string
 }
 
+export interface FileAttachment {
+  id: string
+  record_id: string
+  comment_id?: string
+  uploaded_by_user_id: string
+  category: string
+  filename?: string
+  storage_key: string
+  mime_type: string
+  size_bytes: number
+  uploaded_at: string
+}
+
 export interface RecordComment {
   id: string
   record_id: string
@@ -37,18 +50,8 @@ export interface RecordComment {
   author_fio: string
   author_role: string
   body: string
+  attachments: FileAttachment[]
   created_at: string
-}
-
-export interface FileAttachment {
-  id: string
-  record_id: string
-  uploaded_by_user_id: string
-  category: string
-  storage_key: string
-  mime_type: string
-  size_bytes: number
-  uploaded_at: string
 }
 
 export interface PatientRecordSummary {
@@ -115,6 +118,19 @@ interface BackendPractitioner {
   status: string
 }
 
+interface BackendAttachment {
+  id: string
+  record_id: string
+  comment_id: string | null
+  uploaded_by_user_id: string
+  category: string
+  filename: string | null
+  storage_key: string
+  mime_type: string
+  size_bytes: number
+  uploaded_at: string
+}
+
 interface BackendComment {
   id: string
   record_id: string
@@ -122,18 +138,8 @@ interface BackendComment {
   author_fio: string
   author_role: string
   body: string
+  attachments: BackendAttachment[]
   created_at: string
-}
-
-interface BackendAttachment {
-  id: string
-  record_id: string
-  uploaded_by_user_id: string
-  category: string
-  storage_key: string
-  mime_type: string
-  size_bytes: number
-  uploaded_at: string
 }
 
 interface BackendRecordSummary {
@@ -176,6 +182,8 @@ interface PatientsState {
   fetchRecordDetail: (recordId: string) => Promise<PatientRecordDetail>
   createPatientRecord: (patientId: string, payload: CreatePatientRecordPayload) => Promise<void>
   addRecordComment: (recordId: string, body: string) => Promise<void>
+  uploadCommentAttachment: (recordId: string, commentId: string, file: File) => Promise<void>
+  downloadAttachment: (recordId: string, attachmentId: string, filename: string) => Promise<void>
   clearActiveRecord: () => void
   searchPatients: (query: string) => void
   filterPatientsByDate: (startDate?: string, endDate?: string) => void
@@ -264,6 +272,19 @@ const mapRecordSummary = (r: BackendRecordSummary): PatientRecordSummary => ({
   updatedAt: r.updated_at,
 })
 
+const mapAttachment = (attachment: BackendAttachment): FileAttachment => ({
+  id: attachment.id,
+  record_id: attachment.record_id,
+  comment_id: attachment.comment_id ?? undefined,
+  uploaded_by_user_id: attachment.uploaded_by_user_id,
+  category: attachment.category,
+  filename: attachment.filename ?? undefined,
+  storage_key: attachment.storage_key,
+  mime_type: attachment.mime_type,
+  size_bytes: attachment.size_bytes,
+  uploaded_at: attachment.uploaded_at,
+})
+
 const mapRecordDetail = (r: BackendRecordDetail): PatientRecordDetail => ({
   ...mapRecordSummary(r),
   creatorUserId: r.creator_user_id,
@@ -277,18 +298,10 @@ const mapRecordDetail = (r: BackendRecordDetail): PatientRecordDetail => ({
     author_fio: comment.author_fio,
     author_role: comment.author_role,
     body: comment.body,
+    attachments: comment.attachments.map(mapAttachment),
     created_at: comment.created_at,
   })),
-  attachments: r.attachments.map((attachment) => ({
-    id: attachment.id,
-    record_id: attachment.record_id,
-    uploaded_by_user_id: attachment.uploaded_by_user_id,
-    category: attachment.category,
-    storage_key: attachment.storage_key,
-    mime_type: attachment.mime_type,
-    size_bytes: attachment.size_bytes,
-    uploaded_at: attachment.uploaded_at,
-  })),
+  attachments: r.attachments.map(mapAttachment),
 })
 
 export const usePatientsStore = create<PatientsState>((set, get) => ({
@@ -414,6 +427,39 @@ export const usePatientsStore = create<PatientsState>((set, get) => ({
         error: normalizeError(error, 'Не удалось добавить комментарий'),
         isLoading: false,
       })
+      throw error
+    }
+  },
+
+  uploadCommentAttachment: async (recordId, commentId, file) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    try {
+      await api.post(`/records/${recordId}/comments/${commentId}/attachments`, formData)
+      if (get().activeRecord?.id === recordId) {
+        await get().fetchRecordDetail(recordId)
+      }
+    } catch (error: unknown) {
+      set({ error: normalizeError(error, 'Не удалось загрузить файл') })
+      throw error
+    }
+  },
+
+  downloadAttachment: async (recordId, attachmentId, filename) => {
+    try {
+      const { data } = await api.get<Blob>(`/records/${recordId}/attachments/${attachmentId}`, {
+        responseType: 'blob',
+      })
+      const url = URL.createObjectURL(data)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } catch (error: unknown) {
+      set({ error: normalizeError(error, 'Не удалось скачать файл') })
       throw error
     }
   },

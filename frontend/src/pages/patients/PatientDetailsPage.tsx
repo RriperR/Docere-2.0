@@ -1,4 +1,4 @@
-import React, { FormEvent, useEffect, useState } from 'react'
+import React, { ChangeEvent, FormEvent, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
@@ -7,6 +7,7 @@ import {
   Calendar,
   ChevronDown,
   ChevronUp,
+  Download,
   FileText,
   MessageSquare,
   Paperclip,
@@ -84,6 +85,8 @@ const PatientDetailsPage: React.FC = () => {
     fetchPatientRecords,
     fetchRecordDetail,
     addRecordComment,
+    uploadCommentAttachment,
+    downloadAttachment,
     clearActiveRecord,
   } = usePatientsStore()
   const createShareRequest = useShareRequestsStore((s) => s.createShareRequest)
@@ -100,6 +103,7 @@ const PatientDetailsPage: React.FC = () => {
   const [commentBody, setCommentBody] = useState('')
   const [commentError, setCommentError] = useState<string | null>(null)
   const [commentSubmitting, setCommentSubmitting] = useState(false)
+  const [uploadingCommentId, setUploadingCommentId] = useState<string | null>(null)
 
   useEffect(() => {
     if (id) {
@@ -135,6 +139,25 @@ const PatientDetailsPage: React.FC = () => {
       setCommentError(getErrorMessage(e, 'Не удалось добавить комментарий'))
     } finally {
       setCommentSubmitting(false)
+    }
+  }
+
+  const handleUploadCommentFile = async (
+    recordId: string,
+    commentId: string,
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    setUploadingCommentId(commentId)
+    setCommentError(null)
+    try {
+      await uploadCommentAttachment(recordId, commentId, file)
+    } catch (e: unknown) {
+      setCommentError(getErrorMessage(e, 'Не удалось загрузить файл'))
+    } finally {
+      setUploadingCommentId(null)
     }
   }
 
@@ -421,9 +444,42 @@ const PatientDetailsPage: React.FC = () => {
                                           </span>
                                         </div>
                                         <p className="text-sm text-gray-800">{comment.body}</p>
-                                        <p className="mt-1.5 text-xs text-gray-400">
-                                          {format(new Date(comment.created_at), 'dd.MM.yyyy HH:mm')}
-                                        </p>
+                                        {comment.attachments.length > 0 && (
+                                          <div className="mt-2 space-y-1.5">
+                                            {comment.attachments.map((att) => (
+                                              <button
+                                                key={att.id}
+                                                type="button"
+                                                onClick={() =>
+                                                  void downloadAttachment(detail.id, att.id, att.filename ?? 'file')
+                                                }
+                                                className="flex w-full items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-left text-xs text-gray-700 hover:border-primary-300 hover:bg-primary-50"
+                                              >
+                                                <Paperclip className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                                                <span className="flex-1 truncate">{att.filename ?? 'Файл'}</span>
+                                                <span className="text-gray-400">{Math.ceil(att.size_bytes / 1024)} КБ</span>
+                                                <Download className="h-3.5 w-3.5 shrink-0 text-primary-600" />
+                                              </button>
+                                            ))}
+                                          </div>
+                                        )}
+                                        <div className="mt-1.5 flex items-center justify-between">
+                                          <p className="text-xs text-gray-400">
+                                            {format(new Date(comment.created_at), 'dd.MM.yyyy HH:mm')}
+                                          </p>
+                                          {canComment && (
+                                            <label className="flex cursor-pointer items-center gap-1 text-xs font-medium text-primary-600 hover:text-primary-700">
+                                              <Paperclip className="h-3.5 w-3.5" />
+                                              {uploadingCommentId === comment.id ? 'Загрузка…' : 'Прикрепить файл'}
+                                              <input
+                                                type="file"
+                                                className="hidden"
+                                                disabled={uploadingCommentId === comment.id}
+                                                onChange={(e) => void handleUploadCommentFile(detail.id, comment.id, e)}
+                                              />
+                                            </label>
+                                          )}
+                                        </div>
                                       </div>
                                     ))}
                                   </div>
