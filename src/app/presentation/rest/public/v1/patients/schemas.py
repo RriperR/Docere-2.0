@@ -57,6 +57,8 @@ class PatientRecordSummaryResponseSchema(BaseModel):
     title: str | None
     appointment_location: str | None
     clinical_summary: str | None
+    creator_user_id: UUID
+    creator_fio: str
     author_practitioner_passport: PractitionerPassportResponseSchema | None
     comments_count: int
     attachments_count: int

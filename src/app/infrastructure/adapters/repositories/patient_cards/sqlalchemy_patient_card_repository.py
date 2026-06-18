@@ -21,6 +21,7 @@ from app.domain.entities.patient_passport import PatientPassportStatus
 from app.infrastructure.adapters.repositories.medical_records.sqlalchemy_medical_record_repository import (
     SqlAlchemyMedicalRecordRepositoryAdapter,
 )
+from app.infrastructure.db.models.auth.user import UserRow
 from app.infrastructure.db.models.medical_records.medical_record import MedicalRecordRow
 from app.infrastructure.db.models.medical_records.patient_passport import PatientPassportRow
 from app.infrastructure.db.models.medical_records.user_record_link import UserRecordLinkRow
@@ -254,10 +255,10 @@ class SqlAlchemyPatientCardRepositoryAdapter(PatientCardRepositoryPort):
     def _normalize_search_text(value: str) -> str:
         return ' '.join(value.casefold().split())
 
-    @staticmethod
-    def _to_record_summary(accessible_record: AccessibleMedicalRecordDTO) -> PatientRecordSummaryDTO:
+    def _to_record_summary(self, accessible_record: AccessibleMedicalRecordDTO) -> PatientRecordSummaryDTO:
         record = accessible_record.record
         practitioner = accessible_record.author_practitioner_passport
+        creator = self._session.get(UserRow, record.creator_user_id)
         return PatientRecordSummaryDTO(
             id=record.id,
             status=record.status.value,
@@ -266,6 +267,8 @@ class SqlAlchemyPatientCardRepositoryAdapter(PatientCardRepositoryPort):
             title=record.title,
             appointment_location=record.appointment_location,
             clinical_summary=record.clinical_summary,
+            creator_user_id=record.creator_user_id,
+            creator_fio=creator.fio if creator is not None else '',
             author_practitioner_passport=(
                 PractitionerPassportDTO(
                     id=practitioner.id,

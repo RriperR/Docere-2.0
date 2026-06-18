@@ -765,6 +765,9 @@ def test_doctor_can_create_patient_card_and_see_patient_records(record_client: T
     assert patient_records_response.status_code == 200
     assert len(patient_records_response.json()) == 1
     assert patient_records_response.json()[0]['title'] == 'Visible record'
+    assert patient_records_response.json()[0]['creator_user_id']
+    assert patient_records_response.json()[0]['creator_fio'] == 'Ivan Ivanov'
+    assert patient_records_response.json()[0]['created_at']
 
 
 @pytest.mark.critical
