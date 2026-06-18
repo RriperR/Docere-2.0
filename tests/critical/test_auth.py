@@ -15,6 +15,7 @@ from app.infrastructure.db.models.auth.user import UserRow
 from app.infrastructure.db.models.medical_records.patient_passport import PatientPassportRow
 from app.infrastructure.db.session import clear_db_session_cache, get_engine, get_session_factory
 from app.presentation.main import create_app
+from app.presentation.webserver.rate_limit import clear_auth_rate_limits
 
 
 def _set_required_auth_env(monkeypatch: pytest.MonkeyPatch, sqlite_path: Path) -> None:
@@ -35,6 +36,7 @@ def auth_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[Tes
     _set_required_auth_env(monkeypatch, sqlite_path)
     clear_settings_cache()
     clear_db_session_cache()
+    clear_auth_rate_limits()
     Base.metadata.create_all(bind=get_engine())
 
     with TestClient(create_app()) as client:
@@ -42,6 +44,7 @@ def auth_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[Tes
 
     clear_db_session_cache()
     clear_settings_cache()
+    clear_auth_rate_limits()
 
 
 def _build_registration_payload() -> dict[str, str]:
@@ -167,6 +170,24 @@ def test_login_returns_access_token(auth_client: TestClient) -> None:
     assert login_payload['access_token']
     assert isinstance(login_payload['refresh_token'], str)
     assert login_payload['refresh_token']
+
+
+@pytest.mark.critical
+def test_login_rate_limit_blocks_repeated_attempts(auth_client: TestClient) -> None:
+    payload = _build_registration_payload()
+    register_response = auth_client.post('/api/auth/register', json=payload)
+    assert register_response.status_code == 201
+
+    responses = [
+        auth_client.post(
+            '/api/auth/login',
+            json={'email': payload['email'], 'password': 'wrong-password'},
+        )
+        for _ in range(6)
+    ]
+
+    assert [response.status_code for response in responses[:5]] == [401, 401, 401, 401, 401]
+    assert responses[5].status_code == 429
 
 
 @pytest.mark.critical

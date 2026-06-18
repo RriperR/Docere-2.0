@@ -36,6 +36,7 @@ from app.infrastructure.db.models.medical_records.user_record_link import (
 )
 from app.infrastructure.db.session import clear_db_session_cache, get_engine, get_session_factory
 from app.presentation.main import create_app
+from app.presentation.webserver.rate_limit import clear_auth_rate_limits
 
 TEST_PATIENT_PASSWORD = 'VeryStrongPass123'  # noqa: S105
 TEST_DOCTOR_PASSWORD = 'DoctorStrongPass123'  # noqa: S105
@@ -59,6 +60,7 @@ def record_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[T
     _set_required_env(monkeypatch, sqlite_path)
     clear_settings_cache()
     clear_db_session_cache()
+    clear_auth_rate_limits()
     Base.metadata.create_all(bind=get_engine())
 
     with TestClient(create_app()) as client:
@@ -66,6 +68,7 @@ def record_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[T
 
     clear_db_session_cache()
     clear_settings_cache()
+    clear_auth_rate_limits()
 
 
 def _register_patient(

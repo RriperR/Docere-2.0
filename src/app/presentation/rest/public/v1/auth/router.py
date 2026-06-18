@@ -38,6 +38,7 @@ from app.presentation.webserver.http_errors import (
     raise_invalid_credentials,
     raise_unauthorized,
 )
+from app.presentation.webserver.rate_limit import check_auth_rate_limit
 
 router = APIRouter(prefix='/auth', tags=['auth'])
 
@@ -75,11 +76,13 @@ def register_user(
     Raises:
         IntegrityError: Если БД вернула непредусмотренную ошибку целостности.
     """
+    normalized_email = str(payload.email).lower()
+    check_auth_rate_limit(f'register:{normalized_email}')
     try:
         with session.begin():
             return use_case.execute(
                 fio=payload.fio,
-                email=str(payload.email).lower(),
+                email=normalized_email,
                 phone=payload.phone,
                 password=payload.password,
                 date_of_birth=payload.date_of_birth,
@@ -106,8 +109,10 @@ def login(
     Returns:
         Пара access- и refresh-токенов.
     """
+    normalized_email = str(payload.email).lower()
+    check_auth_rate_limit(f'login:{normalized_email}')
     try:
-        return use_case.execute(email=str(payload.email).lower(), password=payload.password)
+        return use_case.execute(email=normalized_email, password=payload.password)
     except InvalidCredentialsError:
         raise_invalid_credentials()
 
