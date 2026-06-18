@@ -1,4 +1,4 @@
-﻿{
+{
   "agent_instructions": {
     "before_start": [
       "Прочитай этот файл и git log --oneline -20",
@@ -135,7 +135,7 @@
       "dependencies": [
         "TASK-034"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-002",
@@ -221,7 +221,7 @@
         "TASK-001",
         "TASK-002"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-006",
@@ -282,7 +282,7 @@
       "dependencies": [
         "TASK-007"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-009",
@@ -303,7 +303,7 @@
         "TASK-008",
         "TASK-002"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-010",
@@ -343,7 +343,7 @@
       "dependencies": [
         "TASK-009"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-012",
@@ -385,7 +385,7 @@
         "TASK-007",
         "TASK-012"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-014",
@@ -469,7 +469,7 @@
         "TASK-009",
         "TASK-002"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-018",
@@ -510,7 +510,7 @@
         "TASK-017",
         "TASK-009"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-020",
@@ -531,7 +531,7 @@
         "TASK-019",
         "TASK-009"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-021",
@@ -552,7 +552,7 @@
         "TASK-020",
         "TASK-003"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-022",
@@ -595,7 +595,7 @@
         "TASK-021",
         "TASK-015"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-024",
@@ -617,7 +617,7 @@
         "TASK-017",
         "TASK-009"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-025",
@@ -686,7 +686,7 @@
         "TASK-012",
         "TASK-013"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-028",
@@ -707,7 +707,7 @@
         "TASK-019",
         "TASK-020"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-029",
@@ -771,7 +771,7 @@
       "dependencies": [
         "TASK-028"
       ],
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "TASK-032",
