@@ -13,6 +13,7 @@ from app.application.use_cases.import_jobs.dtos import ImportJobDTO
 from app.application.use_cases.import_jobs.errors import ImportJobNotFoundError, ImportJobValidationError
 from app.application.use_cases.import_jobs.use_cases import CreateImportJobUseCase, GetImportJobUseCase
 from app.infrastructure.adapters.queue.tasks import process_import_job
+from app.infrastructure.adapters.repositories.audit_events import AuditEventRepositoryAdapter
 from app.infrastructure.adapters.repositories.import_jobs.sqlalchemy_import_job_repository import (
     SqlAlchemyImportJobRepositoryAdapter,
 )
@@ -76,6 +77,13 @@ def create_import_job(
             original_filename=file.filename or 'archive.zip',
             content=content,
             content_type=file.content_type or 'application/zip',
+        )
+        AuditEventRepositoryAdapter(session).record(
+            actor_user_id=current_user.id,
+            event_type='import',
+            entity_type='import_job',
+            entity_id=job.id,
+            metadata_json={'original_filename': job.original_filename, 'size_bytes': job.size_bytes},
         )
         session.commit()
         with suppress(Exception):

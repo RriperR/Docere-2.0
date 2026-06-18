@@ -18,6 +18,8 @@ from app.application.use_cases.auth.get_authenticated_user.use_case import GetAu
 from app.application.use_cases.auth.login_user.use_case import LoginUserUseCase
 from app.application.use_cases.auth.refresh_access_token.use_case import RefreshAccessTokenUseCase
 from app.application.use_cases.auth.register_user.use_case import RegisterUserUseCase
+from app.infrastructure.adapters.repositories.audit_events import AuditEventRepositoryAdapter
+from app.infrastructure.adapters.repositories.auth.sqlalchemy_auth_repository import SqlAlchemyAuthRepositoryAdapter
 from app.presentation.rest.public.v1.auth.dependencies import (
     authenticated_user_use_case_dependency,
     bearer_token_extraction_dependency,
@@ -99,12 +101,14 @@ def register_user(
 def login(
     payload: LoginRequestSchema,
     use_case: LoginUserUseCase = login_user_dependency,
+    session: Session = db_session_dependency,
 ) -> AuthTokenDTO:
     """Выполнить вход пользователя.
 
     Args:
         payload: Тело запроса входа.
         use_case: Use case аутентификации.
+        session: Активная сессия БД для записи аудита.
 
     Returns:
         Пара access- и refresh-токенов.
@@ -112,8 +116,20 @@ def login(
     normalized_email = str(payload.email).lower()
     check_auth_rate_limit(f'login:{normalized_email}')
     try:
-        return use_case.execute(email=normalized_email, password=payload.password)
+        token = use_case.execute(email=normalized_email, password=payload.password)
+        current_user = SqlAlchemyAuthRepositoryAdapter(session=session).find_by_email(email=normalized_email)
+        if current_user is not None:
+            AuditEventRepositoryAdapter(session).record(
+                actor_user_id=current_user.id,
+                event_type='login',
+                entity_type='user',
+                entity_id=current_user.id,
+                metadata_json={'email': normalized_email},
+            )
+            session.commit()
+        return token
     except InvalidCredentialsError:
+        session.rollback()
         raise_invalid_credentials()
 
 

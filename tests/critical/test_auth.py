@@ -11,6 +11,7 @@ from app.domain.entities.patient_passport import PatientPassportStatus
 from app.infrastructure.adapters.repositories.auth.sqlalchemy_auth_repository import SqlAlchemyAuthRepositoryAdapter
 from app.infrastructure.config.settings import clear_settings_cache
 from app.infrastructure.db.base import Base
+from app.infrastructure.db.models.audit_event import AuditEventRow
 from app.infrastructure.db.models.auth.user import UserRow
 from app.infrastructure.db.models.medical_records.patient_passport import PatientPassportRow
 from app.infrastructure.db.session import clear_db_session_cache, get_engine, get_session_factory
@@ -170,6 +171,11 @@ def test_login_returns_access_token(auth_client: TestClient) -> None:
     assert login_payload['access_token']
     assert isinstance(login_payload['refresh_token'], str)
     assert login_payload['refresh_token']
+
+    with get_session_factory()() as session:
+        audit_event = session.scalar(select(AuditEventRow).where(AuditEventRow.event_type == 'login'))
+    assert audit_event is not None
+    assert audit_event.entity_type == 'user'
 
 
 @pytest.mark.critical

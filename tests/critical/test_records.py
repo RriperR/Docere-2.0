@@ -19,6 +19,7 @@ from app.infrastructure.adapters.queue.tasks import process_import_job
 from app.infrastructure.adapters.security.pbkdf2_password_hasher import Pbkdf2PasswordHasherAdapter
 from app.infrastructure.config.settings import clear_settings_cache
 from app.infrastructure.db.base import Base
+from app.infrastructure.db.models.audit_event import AuditEventRow
 from app.infrastructure.db.models.auth.user import UserRole, UserRow, UserStatus
 from app.infrastructure.db.models.medical_records.file_attachment import FileAttachmentRow
 from app.infrastructure.db.models.medical_records.import_job import ImportJobRow
@@ -268,6 +269,12 @@ def test_patient_can_create_record_for_own_passport_with_external_practitioner(r
             PractitionerPassportRow,
             UUID(response_body['author_practitioner_passport']['id']),
         )
+        audit_event = session.scalar(
+            select(AuditEventRow).where(
+                AuditEventRow.event_type == 'create_record',
+                AuditEventRow.entity_id == UUID(response_body['id']),
+            ),
+        )
 
     assert record is not None
     assert record.appointment_location == 'Clinic A'
@@ -276,6 +283,8 @@ def test_patient_can_create_record_for_own_passport_with_external_practitioner(r
     assert access_link.patient_passport_id == patient_passport_id
     assert practitioner is not None
     assert practitioner.user_id is None
+    assert audit_event is not None
+    assert audit_event.entity_type == 'medical_record'
 
 
 @pytest.mark.critical
@@ -475,8 +484,16 @@ def test_import_job_upload_status_and_worker_completion(
     assert completed_response.json()['status'] == 'completed'
     with get_session_factory()() as session:
         job = session.get(ImportJobRow, UUID(uploaded_job['id']))
+        audit_event = session.scalar(
+            select(AuditEventRow).where(
+                AuditEventRow.event_type == 'import',
+                AuditEventRow.entity_id == UUID(uploaded_job['id']),
+            ),
+        )
     assert job is not None
     assert job.archive_storage_key in storage.objects
+    assert audit_event is not None
+    assert audit_event.entity_type == 'import_job'
 
 
 @pytest.mark.critical
@@ -1070,8 +1087,12 @@ def test_share_request_accept_grants_record_access_to_registered_user(record_cli
                 UserRecordLinkRow.source == UserRecordLinkSourceRow.SHARE_ACCEPTED,
             ),
         )
+        audit_events = session.scalars(
+            select(AuditEventRow.event_type).where(AuditEventRow.entity_id == UUID(share_response['request']['id'])),
+        ).all()
     assert link is not None
     assert link.source_record_share_id == UUID(accept_response.json()['shares'][0]['id'])
+    assert {'share', 'accept'}.issubset(set(audit_events))
 
 
 @pytest.mark.critical

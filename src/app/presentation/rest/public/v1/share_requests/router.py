@@ -27,6 +27,7 @@ from app.application.use_cases.share_requests.use_cases import (
     ListOutboxShareRequestsUseCase,
     RevokeShareRequestUseCase,
 )
+from app.infrastructure.adapters.repositories.audit_events import AuditEventRepositoryAdapter
 from app.presentation.rest.public.v1.records.dependencies import (
     accept_share_request_use_case_dependency,
     cancel_share_request_use_case_dependency,
@@ -67,6 +68,14 @@ def create_share_request(
             record_ids=tuple(payload.record_ids),
             message=payload.message,
         )
+        if result.request is not None:
+            AuditEventRepositoryAdapter(session).record(
+                actor_user_id=current_user.id,
+                event_type='share',
+                entity_type='record_share_request',
+                entity_id=result.request.id,
+                metadata_json={'record_ids': [str(record_id) for record_id in payload.record_ids]},
+            )
         session.commit()
         return result
     except ShareTargetNotFoundError:
@@ -123,6 +132,12 @@ def accept_share_request(
     """
     try:
         request = use_case.execute(request_id=request_id, user_id=current_user.id)
+        AuditEventRepositoryAdapter(session).record(
+            actor_user_id=current_user.id,
+            event_type='accept',
+            entity_type='record_share_request',
+            entity_id=request.id,
+        )
         session.commit()
         return request
     except ShareRequestNotFoundError:
@@ -150,6 +165,12 @@ def decline_share_request(
     """
     try:
         request = use_case.execute(request_id=request_id, user_id=current_user.id)
+        AuditEventRepositoryAdapter(session).record(
+            actor_user_id=current_user.id,
+            event_type='decline',
+            entity_type='record_share_request',
+            entity_id=request.id,
+        )
         session.commit()
         return request
     except ShareRequestNotFoundError:
@@ -177,6 +198,12 @@ def cancel_share_request(
     """
     try:
         request = use_case.execute(request_id=request_id, user_id=current_user.id)
+        AuditEventRepositoryAdapter(session).record(
+            actor_user_id=current_user.id,
+            event_type='cancel',
+            entity_type='record_share_request',
+            entity_id=request.id,
+        )
         session.commit()
         return request
     except ShareRequestNotFoundError:
@@ -204,6 +231,12 @@ def revoke_share_request(
     """
     try:
         request = use_case.execute(request_id=request_id, user_id=current_user.id)
+        AuditEventRepositoryAdapter(session).record(
+            actor_user_id=current_user.id,
+            event_type='revoke',
+            entity_type='record_share_request',
+            entity_id=request.id,
+        )
         session.commit()
         return request
     except ShareRequestNotFoundError:
