@@ -86,6 +86,7 @@ const PatientDetailsPage: React.FC = () => {
     fetchRecordDetail,
     addRecordComment,
     uploadCommentAttachment,
+    uploadRecordAttachment,
     downloadAttachment,
     clearActiveRecord,
   } = usePatientsStore()
@@ -104,6 +105,7 @@ const PatientDetailsPage: React.FC = () => {
   const [commentError, setCommentError] = useState<string | null>(null)
   const [commentSubmitting, setCommentSubmitting] = useState(false)
   const [uploadingCommentId, setUploadingCommentId] = useState<string | null>(null)
+  const [uploadingRecordId, setUploadingRecordId] = useState<string | null>(null)
 
   useEffect(() => {
     if (id) {
@@ -158,6 +160,21 @@ const PatientDetailsPage: React.FC = () => {
       setCommentError(getErrorMessage(e, 'Не удалось загрузить файл'))
     } finally {
       setUploadingCommentId(null)
+    }
+  }
+
+  const handleUploadRecordFile = async (recordId: string, event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    setUploadingRecordId(recordId)
+    setCommentError(null)
+    try {
+      await uploadRecordAttachment(recordId, file)
+    } catch (e: unknown) {
+      setCommentError(getErrorMessage(e, 'Не удалось загрузить файл'))
+    } finally {
+      setUploadingRecordId(null)
     }
   }
 
@@ -509,26 +526,47 @@ const PatientDetailsPage: React.FC = () => {
                                 )}
                               </div>
 
-                              {detail.attachments.length > 0 && (
-                                <div>
-                                  <h4 className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-400">
+                              <div>
+                                <div className="mb-3 flex items-center justify-between">
+                                  <h4 className="text-xs font-bold uppercase tracking-wider text-gray-400">
                                     Вложения ({detail.attachments.length})
                                   </h4>
+                                  <label className="flex cursor-pointer items-center gap-1 text-xs font-medium text-primary-600 hover:text-primary-700">
+                                    <Paperclip className="h-3.5 w-3.5" />
+                                    {uploadingRecordId === detail.id ? 'Загрузка…' : 'Прикрепить файл'}
+                                    <input
+                                      type="file"
+                                      className="hidden"
+                                      disabled={uploadingRecordId === detail.id}
+                                      onChange={(e) => void handleUploadRecordFile(detail.id, e)}
+                                    />
+                                  </label>
+                                </div>
+                                {detail.attachments.length === 0 ? (
+                                  <p className="text-sm text-gray-400">Вложений пока нет.</p>
+                                ) : (
                                   <div className="space-y-2">
                                     {detail.attachments.map((a) => (
-                                      <div key={a.id} className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
+                                      <button
+                                        key={a.id}
+                                        type="button"
+                                        onClick={() => void downloadAttachment(detail.id, a.id, a.filename ?? 'file')}
+                                        className="flex w-full items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-left hover:border-primary-300 hover:bg-primary-50"
+                                      >
                                         <Paperclip className="h-4 w-4 shrink-0 text-gray-400" />
-                                        <div className="min-w-0">
-                                          <p className="truncate text-sm font-medium text-gray-900">{a.storage_key}</p>
+                                        <div className="min-w-0 flex-1">
+                                          <p className="truncate text-sm font-medium text-gray-900">{a.filename ?? 'Файл'}</p>
                                           <p className="text-xs text-gray-400">
-                                            {a.category} · {a.mime_type} · {a.size_bytes} байт
+                                            {a.uploaded_by_fio} · {format(new Date(a.uploaded_at), 'dd.MM.yyyy HH:mm')} ·{' '}
+                                            {Math.ceil(a.size_bytes / 1024)} КБ
                                           </p>
                                         </div>
-                                      </div>
+                                        <Download className="h-4 w-4 shrink-0 text-primary-600" />
+                                      </button>
                                     ))}
                                   </div>
-                                </div>
-                              )}
+                                )}
+                              </div>
                             </div>
                           ) : (
                             <div className="space-y-2 animate-pulse">

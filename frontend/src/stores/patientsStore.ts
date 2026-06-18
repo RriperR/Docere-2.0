@@ -35,6 +35,7 @@ export interface FileAttachment {
   record_id: string
   comment_id?: string
   uploaded_by_user_id: string
+  uploaded_by_fio: string
   category: string
   filename?: string
   storage_key: string
@@ -123,6 +124,7 @@ interface BackendAttachment {
   record_id: string
   comment_id: string | null
   uploaded_by_user_id: string
+  uploaded_by_fio: string
   category: string
   filename: string | null
   storage_key: string
@@ -278,6 +280,7 @@ const mapAttachment = (attachment: BackendAttachment): FileAttachment => ({
   record_id: attachment.record_id,
   comment_id: attachment.comment_id ?? undefined,
   uploaded_by_user_id: attachment.uploaded_by_user_id,
+  uploaded_by_fio: attachment.uploaded_by_fio,
   category: attachment.category,
   filename: attachment.filename ?? undefined,
   storage_key: attachment.storage_key,
