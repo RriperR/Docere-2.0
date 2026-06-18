@@ -346,14 +346,19 @@ const PatientDetailsPage: React.FC = () => {
       </div>
 
       {/* Records */}
-      <div className="rounded-xl border border-gray-100 bg-white shadow-card">
-        <div className="border-b border-gray-100 px-6 py-4">
-          <h2 className="font-semibold text-gray-900">Медицинские записи</h2>
-          <p className="mt-0.5 text-xs text-gray-400">Нажмите на запись, чтобы раскрыть детали</p>
+      <div>
+        <div className="mb-3 flex items-end justify-between px-1">
+          <div>
+            <h2 className="font-semibold text-gray-900">Медицинские записи</h2>
+            <p className="mt-0.5 text-xs text-gray-400">Нажмите на запись, чтобы раскрыть детали</p>
+          </div>
+          {patientRecords.length > 0 && (
+            <span className="text-xs text-gray-400">{patientRecords.length} всего</span>
+          )}
         </div>
 
         {patientRecords.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-14 text-center">
+          <div className="flex flex-col items-center justify-center rounded-xl border border-gray-100 bg-white py-14 text-center shadow-card">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gray-100">
               <FileText className="h-6 w-6 text-gray-400" />
             </div>
@@ -361,32 +366,41 @@ const PatientDetailsPage: React.FC = () => {
             <p className="mt-1 text-xs text-gray-500">Нажмите «Добавить запись» чтобы создать первую</p>
           </div>
         ) : (
-          <div className="divide-y divide-gray-50">
+          <div className="space-y-3">
             {patientRecords.map((record) => {
               const isOpen = selectedRecordId === record.id
               const detail = isOpen && activeRecord?.id === record.id ? activeRecord : null
               const isSelectedForShare = selectedShareRecordIds.includes(record.id)
 
               return (
-                <div key={record.id} className={`transition-colors ${isOpen ? 'bg-primary-50/30' : 'hover:bg-gray-50'}`}>
-                  <div className="flex items-center gap-3 border-b border-gray-50 px-6 py-2.5">
-                    <label className="flex cursor-pointer items-center gap-2 text-xs text-gray-500">
-                      <input
-                        type="checkbox"
-                        checked={isSelectedForShare}
-                        onChange={() => setSelectedShareRecordIds((c) =>
-                          c.includes(record.id) ? c.filter((x) => x !== record.id) : [...c, record.id]
-                        )}
-                        className="h-3.5 w-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                      />
-                      Выбрать для sharing
-                    </label>
-                  </div>
+                <div
+                  key={record.id}
+                  className={`relative overflow-hidden rounded-xl border bg-white transition-all ${
+                    isSelectedForShare
+                      ? 'border-primary-300 ring-1 ring-primary-200'
+                      : isOpen
+                        ? 'border-primary-200 shadow-card'
+                        : 'border-gray-200 hover:border-gray-300 hover:shadow-card'
+                  }`}
+                >
+                  <label
+                    className="absolute left-4 top-5 z-10 flex cursor-pointer items-center"
+                    title="Выбрать запись для sharing"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelectedForShare}
+                      onChange={() => setSelectedShareRecordIds((c) =>
+                        c.includes(record.id) ? c.filter((x) => x !== record.id) : [...c, record.id]
+                      )}
+                      className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                    />
+                  </label>
 
                   <button
                     type="button"
                     onClick={() => handleOpenRecord(record)}
-                    className="flex w-full items-start justify-between gap-4 px-6 py-4 text-left"
+                    className="flex w-full items-start justify-between gap-4 py-4 pl-12 pr-6 text-left"
                   >
                     <div className="flex flex-col gap-2 min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
@@ -447,17 +461,59 @@ const PatientDetailsPage: React.FC = () => {
                         <div className="border-t border-primary-100 bg-white px-6 py-5">
                           {detail ? (
                             <div className="space-y-6">
+                              {/* Вложения — действие наверху, чтобы не листать до конца */}
                               <div>
-                                <h4 className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-400">
-                                  Данные записи (JSON)
-                                </h4>
-                                <pre className="overflow-x-auto rounded-xl bg-gray-50 p-4 text-xs text-gray-700 border border-gray-100">
-                                  {JSON.stringify(detail.payloadJson, null, 2)}
-                                </pre>
+                                <div className="mb-3 flex items-center justify-between">
+                                  <h4 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-gray-400">
+                                    <Paperclip className="h-3.5 w-3.5" />
+                                    Вложения ({detail.attachments.length})
+                                  </h4>
+                                  <label className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-primary-200 bg-primary-50 px-3 py-1.5 text-xs font-medium text-primary-700 hover:bg-primary-100">
+                                    <Paperclip className="h-3.5 w-3.5" />
+                                    {uploadingRecordId === detail.id ? 'Загрузка…' : 'Прикрепить файл'}
+                                    <input
+                                      type="file"
+                                      className="hidden"
+                                      disabled={uploadingRecordId === detail.id}
+                                      onChange={(e) => void handleUploadRecordFile(detail.id, e)}
+                                    />
+                                  </label>
+                                </div>
+                                {attachmentError && (
+                                  <p className="mb-2 text-xs text-error-600">{attachmentError}</p>
+                                )}
+                                {detail.attachments.length === 0 ? (
+                                  <p className="rounded-xl border border-dashed border-gray-200 px-4 py-3 text-sm text-gray-400">
+                                    Вложений пока нет. Нажмите «Прикрепить файл», чтобы добавить.
+                                  </p>
+                                ) : (
+                                  <div className="space-y-2">
+                                    {detail.attachments.map((a) => (
+                                      <button
+                                        key={a.id}
+                                        type="button"
+                                        onClick={() => void downloadAttachment(detail.id, a.id, a.filename ?? 'file')}
+                                        className="flex w-full items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-left hover:border-primary-300 hover:bg-primary-50"
+                                      >
+                                        <Paperclip className="h-4 w-4 shrink-0 text-gray-400" />
+                                        <div className="min-w-0 flex-1">
+                                          <p className="truncate text-sm font-medium text-gray-900">{a.filename ?? 'Файл'}</p>
+                                          <p className="text-xs text-gray-400">
+                                            {a.uploaded_by_fio} · {format(new Date(a.uploaded_at), 'dd.MM.yyyy HH:mm')} ·{' '}
+                                            {Math.ceil(a.size_bytes / 1024)} КБ
+                                          </p>
+                                        </div>
+                                        <Download className="h-4 w-4 shrink-0 text-primary-600" />
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
 
+                              {/* Комментарии */}
                               <div>
-                                <h4 className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-400">
+                                <h4 className="mb-3 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-gray-400">
+                                  <MessageSquare className="h-3.5 w-3.5" />
                                   Комментарии ({detail.comments.length})
                                 </h4>
                                 {detail.comments.length === 0 ? (
@@ -538,50 +594,16 @@ const PatientDetailsPage: React.FC = () => {
                                 )}
                               </div>
 
-                              <div>
-                                <div className="mb-3 flex items-center justify-between">
-                                  <h4 className="text-xs font-bold uppercase tracking-wider text-gray-400">
-                                    Вложения ({detail.attachments.length})
-                                  </h4>
-                                  <label className="flex cursor-pointer items-center gap-1 text-xs font-medium text-primary-600 hover:text-primary-700">
-                                    <Paperclip className="h-3.5 w-3.5" />
-                                    {uploadingRecordId === detail.id ? 'Загрузка…' : 'Прикрепить файл'}
-                                    <input
-                                      type="file"
-                                      className="hidden"
-                                      disabled={uploadingRecordId === detail.id}
-                                      onChange={(e) => void handleUploadRecordFile(detail.id, e)}
-                                    />
-                                  </label>
-                                </div>
-                                {attachmentError && (
-                                  <p className="mb-2 text-xs text-error-600">{attachmentError}</p>
-                                )}
-                                {detail.attachments.length === 0 ? (
-                                  <p className="text-sm text-gray-400">Вложений пока нет.</p>
-                                ) : (
-                                  <div className="space-y-2">
-                                    {detail.attachments.map((a) => (
-                                      <button
-                                        key={a.id}
-                                        type="button"
-                                        onClick={() => void downloadAttachment(detail.id, a.id, a.filename ?? 'file')}
-                                        className="flex w-full items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-left hover:border-primary-300 hover:bg-primary-50"
-                                      >
-                                        <Paperclip className="h-4 w-4 shrink-0 text-gray-400" />
-                                        <div className="min-w-0 flex-1">
-                                          <p className="truncate text-sm font-medium text-gray-900">{a.filename ?? 'Файл'}</p>
-                                          <p className="text-xs text-gray-400">
-                                            {a.uploaded_by_fio} · {format(new Date(a.uploaded_at), 'dd.MM.yyyy HH:mm')} ·{' '}
-                                            {Math.ceil(a.size_bytes / 1024)} КБ
-                                          </p>
-                                        </div>
-                                        <Download className="h-4 w-4 shrink-0 text-primary-600" />
-                                      </button>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
+                              {/* Данные записи — сворачиваемый JSON внизу, как тех. детали */}
+                              <details className="group rounded-xl border border-gray-100 bg-gray-50">
+                                <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-gray-400 [&::-webkit-details-marker]:hidden">
+                                  <span>Данные записи (JSON)</span>
+                                  <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
+                                </summary>
+                                <pre className="overflow-x-auto border-t border-gray-100 p-4 text-xs text-gray-700">
+                                  {JSON.stringify(detail.payloadJson, null, 2)}
+                                </pre>
+                              </details>
                             </div>
                           ) : (
                             <div className="space-y-2 animate-pulse">
