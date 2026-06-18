@@ -20,9 +20,11 @@ from app.application.use_cases.share_requests.errors import (
     ShareRequestNotFoundError,
     ShareTargetNotFoundError,
 )
+from app.domain.entities.medical_record import MedicalRecordStatus
 from app.infrastructure.db.models._time import utc_now
 from app.infrastructure.db.models.auth.user import UserRole, UserRow, UserStatus
 from app.infrastructure.db.models.medical_records.medical_record import MedicalRecordRow
+from app.infrastructure.db.models.medical_records.patient_passport import PatientPassportRow
 from app.infrastructure.db.models.medical_records.record_share import (
     RecordShareRequestRow,
     RecordShareRow,
@@ -165,6 +167,7 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
                 )
             share_row.status = RecordShareStatusRow.ACCEPTED
             share_row.responded_at = now
+            self._confirm_record_if_patient_accepts_own_doctor_record(share_row=share_row, recipient_user_id=user_id)
 
         request_row.status = RecordShareStatusRow.ACCEPTED
         request_row.responded_at = now
@@ -294,6 +297,27 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
                 ),
             ),
         )
+
+    def _confirm_record_if_patient_accepts_own_doctor_record(
+        self,
+        *,
+        share_row: RecordShareRow,
+        recipient_user_id: UUID,
+    ) -> None:
+        if share_row.patient_passport_id is None:
+            return
+
+        patient_passport = self._session.get(PatientPassportRow, share_row.patient_passport_id)
+        if patient_passport is None or patient_passport.patient_user_id != recipient_user_id:
+            return
+
+        record_row = self._session.get(MedicalRecordRow, share_row.record_id)
+        if record_row is None or record_row.status == MedicalRecordStatus.CONFIRMED:
+            return
+
+        creator = self._session.get(UserRow, record_row.creator_user_id)
+        if creator is not None and creator.role == UserRole.DOCTOR:
+            record_row.status = MedicalRecordStatus.CONFIRMED
 
     def _get_request_for_recipient(self, request_id: UUID, user_id: UUID) -> RecordShareRequestRow:
         request_row = self._session.scalar(

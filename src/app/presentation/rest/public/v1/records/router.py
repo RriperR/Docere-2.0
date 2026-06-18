@@ -24,6 +24,7 @@ from app.application.use_cases.medical_records.common.dtos import (
     MedicalRecordDTO,
     RecordCommentDTO,
 )
+from app.application.use_cases.medical_records.confirm_medical_record.use_case import ConfirmMedicalRecordUseCase
 from app.application.use_cases.medical_records.create_medical_record.dtos import CreateMedicalRecordDTO
 from app.application.use_cases.medical_records.create_medical_record.use_case import CreateMedicalRecordUseCase
 from app.application.use_cases.medical_records.errors import (
@@ -43,6 +44,7 @@ from app.presentation.rest.public.v1.records.dependencies import (
     add_comment_attachment_use_case_dependency,
     add_record_attachment_use_case_dependency,
     add_record_comment_use_case_dependency,
+    confirm_medical_record_use_case_dependency,
     create_medical_record_use_case_dependency,
     current_authenticated_user_dependency,
     db_session_dependency,
@@ -161,6 +163,45 @@ def get_medical_record(
         raise_not_found('Medical record not found')
     except MedicalRecordAccessDeniedError:
         raise_forbidden('You do not have access to this medical record')
+
+
+@router.post('/{record_id}/confirm', response_model=MedicalRecordResponseSchema)
+def confirm_medical_record(
+    record_id: UUID,
+    current_user: AuthenticatedUserDTO = current_authenticated_user_dependency,
+    use_case: ConfirmMedicalRecordUseCase = confirm_medical_record_use_case_dependency,
+    session: Session = db_session_dependency,
+) -> MedicalRecordDTO:
+    """Подтвердить медицинскую запись по разрешенной бизнес-схеме.
+
+    Returns:
+        Обновленная detail-проекция медицинской записи.
+
+    Raises:
+        HTTPException: Если запись не найдена, недоступна или переход статуса запрещен.
+    """
+    try:
+        record = use_case.execute(
+            record_id=record_id,
+            actor_user_id=current_user.id,
+            actor_role=current_user.role,
+        )
+        session.commit()
+        return record
+    except MedicalRecordNotFoundError:
+        session.rollback()
+        raise_not_found('Medical record not found')
+    except MedicalRecordValidationError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail='Invalid record status transition'
+        ) from exc
+    except MedicalRecordAccessDeniedError:
+        session.rollback()
+        raise_forbidden('You cannot confirm this medical record')
+    except Exception:
+        session.rollback()
+        raise
 
 
 @router.post(

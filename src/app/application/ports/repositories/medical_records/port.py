@@ -79,6 +79,16 @@ class MedicalRecordRepositoryPort:
         """Вернуть медицинскую запись, если у пользователя есть ссылка доступа."""
         raise NotImplementedError
 
+    def confirm_record(
+        self,
+        *,
+        record_id: UUID,
+        actor_user_id: UUID,
+        actor_role: str,
+    ) -> AccessibleMedicalRecordDTO | None:
+        """Подтвердить запись, если пользователь имеет право верификации."""
+        raise NotImplementedError
+
     def add_comment(
         self,
         record_id: UUID,

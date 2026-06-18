@@ -16,7 +16,7 @@ from app.domain.entities.medical_record import MedicalRecord, MedicalRecordStatu
 from app.domain.entities.patient_passport import PatientPassport, PatientPassportStatus
 from app.domain.entities.practitioner_passport import PractitionerPassport, PractitionerPassportStatus
 from app.domain.entities.record_comment import RecordComment
-from app.infrastructure.db.models.auth.user import UserRow
+from app.infrastructure.db.models.auth.user import UserRole, UserRow
 from app.infrastructure.db.models.medical_records.file_attachment import FileAttachmentRow
 from app.infrastructure.db.models.medical_records.medical_record import MedicalRecordRow
 from app.infrastructure.db.models.medical_records.patient_passport import PatientPassportRow
@@ -219,6 +219,41 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
             author_practitioner_row=author_practitioner_row,
         )
 
+    def confirm_record(
+        self,
+        *,
+        record_id: UUID,
+        actor_user_id: UUID,
+        actor_role: str,
+    ) -> AccessibleMedicalRecordDTO | None:
+        """Подтвердить запись, если пользователь имеет право верификации.
+
+        Returns:
+            Обновленная доступная проекция или ``None``.
+        """
+        row = self._session.execute(
+            self._accessible_record_query(record_id=record_id, user_id=actor_user_id),
+        ).first()
+        if row is None:
+            return None
+
+        record_row, patient_passport_id, author_practitioner_row = row
+        if not self._can_confirm_record(
+            record_row=record_row,
+            patient_passport_id=patient_passport_id,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+        ):
+            return None
+
+        record_row.status = MedicalRecordStatus.CONFIRMED
+        self._session.flush()
+        return self._assemble_accessible_record(
+            record_row=record_row,
+            patient_passport_id=patient_passport_id,
+            author_practitioner_row=author_practitioner_row,
+        )
+
     def add_comment(
         self,
         record_id: UUID,
@@ -408,6 +443,25 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
             .order_by(priority_expression, UserRecordLinkRow.created_at.desc())
             .limit(1)
         )
+
+    def _can_confirm_record(
+        self,
+        *,
+        record_row: MedicalRecordRow,
+        patient_passport_id: UUID | None,
+        actor_user_id: UUID,
+        actor_role: str,
+    ) -> bool:
+        creator = self._session.get(UserRow, record_row.creator_user_id)
+        if creator is None:
+            return False
+        if actor_role == 'doctor':
+            return creator.role == UserRole.PATIENT
+        if actor_role != 'patient' or creator.role != UserRole.DOCTOR or patient_passport_id is None:
+            return False
+
+        patient_passport = self._session.get(PatientPassportRow, patient_passport_id)
+        return patient_passport is not None and patient_passport.patient_user_id == actor_user_id
 
     @staticmethod
     def _to_medical_record(row: MedicalRecordRow) -> MedicalRecord:

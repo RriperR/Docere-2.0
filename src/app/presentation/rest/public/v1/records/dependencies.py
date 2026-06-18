@@ -13,6 +13,7 @@ from app.application.use_cases.medical_records.comment_attachments.use_cases imp
     AddCommentAttachmentUseCase,
     DownloadAttachmentUseCase,
 )
+from app.application.use_cases.medical_records.confirm_medical_record.use_case import ConfirmMedicalRecordUseCase
 from app.application.use_cases.medical_records.create_medical_record.use_case import CreateMedicalRecordUseCase
 from app.application.use_cases.medical_records.get_medical_record.use_case import GetMedicalRecordUseCase
 from app.application.use_cases.medical_records.record_attachments.use_cases import AddRecordAttachmentUseCase
@@ -97,6 +98,17 @@ def get_medical_record_use_case(
         Настроенный use case чтения записи.
     """
     return GetMedicalRecordUseCase(repository=_build_repository(session))
+
+
+def get_confirm_medical_record_use_case(
+    session: Session = db_session_dependency,
+) -> ConfirmMedicalRecordUseCase:
+    """Создать use case подтверждения медицинской записи.
+
+    Returns:
+        Настроенный use case подтверждения записи.
+    """
+    return ConfirmMedicalRecordUseCase(repository=_build_repository(session))
 
 
 def get_add_record_comment_use_case(
@@ -254,6 +266,7 @@ def get_revoke_share_request_use_case(session: Session = db_session_dependency) 
 current_authenticated_user_dependency = Depends(get_current_authenticated_user)
 create_medical_record_use_case_dependency = Depends(get_create_medical_record_use_case)
 get_medical_record_use_case_dependency = Depends(get_medical_record_use_case)
+confirm_medical_record_use_case_dependency = Depends(get_confirm_medical_record_use_case)
 add_record_comment_use_case_dependency = Depends(get_add_record_comment_use_case)
 add_comment_attachment_use_case_dependency = Depends(get_add_comment_attachment_use_case)
 add_record_attachment_use_case_dependency = Depends(get_add_record_attachment_use_case)

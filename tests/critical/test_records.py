@@ -926,6 +926,70 @@ def test_share_request_accept_grants_record_access_to_registered_user(record_cli
 
 
 @pytest.mark.critical
+def test_record_confirmation_rules_and_share_auto_confirm(record_client: TestClient) -> None:
+    _register_patient(record_client, 'confirm-patient@example.com', fio='Confirm Patient')
+    _create_doctor(email='confirm-doctor@example.com')
+    patient_token = _login(record_client, 'confirm-patient@example.com', TEST_PATIENT_PASSWORD)
+    doctor_token = _login(record_client, 'confirm-doctor@example.com', TEST_DOCTOR_PASSWORD)
+    patient_passport_id = _get_patient_passport_id_by_email('confirm-patient@example.com')
+
+    patient_record = _create_record(
+        record_client,
+        patient_token,
+        patient_passport_id,
+        author_practitioner_full_name='Dr. External',
+        title='Patient-created unconfirmed record',
+    )
+    patient_to_doctor_share = _create_share_request(
+        record_client,
+        patient_token,
+        to_user_email='confirm-doctor@example.com',
+        record_ids=[patient_record['id']],
+    )
+    accept_patient_record_response = record_client.post(
+        f'/api/share-requests/{patient_to_doctor_share["request"]["id"]}/accept',
+        headers={'Authorization': f'Bearer {doctor_token}'},
+    )
+    confirm_patient_record_response = record_client.post(
+        f'/api/records/{patient_record["id"]}/confirm',
+        headers={'Authorization': f'Bearer {doctor_token}'},
+    )
+    repeat_confirm_response = record_client.post(
+        f'/api/records/{patient_record["id"]}/confirm',
+        headers={'Authorization': f'Bearer {doctor_token}'},
+    )
+
+    doctor_record = _create_record(
+        record_client,
+        doctor_token,
+        patient_passport_id,
+        title='Doctor-created unconfirmed record',
+    )
+    doctor_to_patient_share = _create_share_request(
+        record_client,
+        doctor_token,
+        to_user_email='confirm-patient@example.com',
+        record_ids=[doctor_record['id']],
+    )
+    accept_doctor_record_response = record_client.post(
+        f'/api/share-requests/{doctor_to_patient_share["request"]["id"]}/accept',
+        headers={'Authorization': f'Bearer {patient_token}'},
+    )
+
+    assert accept_patient_record_response.status_code == 200
+    assert confirm_patient_record_response.status_code == 200
+    assert confirm_patient_record_response.json()['status'] == 'confirmed'
+    assert repeat_confirm_response.status_code == 422
+    assert doctor_record['status'] == 'unconfirmed'
+    assert accept_doctor_record_response.status_code == 200
+
+    with get_session_factory()() as session:
+        confirmed_doctor_record = session.get(MedicalRecordRow, UUID(doctor_record['id']))
+    assert confirmed_doctor_record is not None
+    assert confirmed_doctor_record.status.value == 'confirmed'
+
+
+@pytest.mark.critical
 def test_doctor_patient_share_comment_and_revoke_flow_for_foreign_patient_card(record_client: TestClient) -> None:
     _create_doctor(email='flow-doctor@example.com')
     _register_patient(record_client, 'flow-recipient@example.com', fio='Recipient Patient')

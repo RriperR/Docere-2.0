@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from app.application.ports.repositories.medical_records.port import MedicalRecordRepositoryPort
 from app.application.use_cases.medical_records.common.dtos import MedicalRecordDTO
-from app.application.use_cases.medical_records.create_medical_record.use_case import _to_medical_record_dto
+from app.application.use_cases.medical_records.common.mappers import to_medical_record_dto
 from app.application.use_cases.medical_records.errors import (
     MedicalRecordAccessDeniedError,
     MedicalRecordNotFoundError,
@@ -38,4 +38,4 @@ class GetMedicalRecordUseCase:
                 raise MedicalRecordAccessDeniedError
             raise MedicalRecordNotFoundError
 
-        return _to_medical_record_dto(accessible_record)
+        return to_medical_record_dto(accessible_record)

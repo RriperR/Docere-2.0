@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from app.application.use_cases.medical_records.common.dtos import FileAttachmentDTO, RecordCommentDTO
+from app.application.ports.repositories.medical_records.dtos import AccessibleMedicalRecordDTO
+from app.application.use_cases.medical_records.common.dtos import (
+    FileAttachmentDTO,
+    MedicalRecordDTO,
+    PractitionerPassportDTO,
+    RecordCommentDTO,
+)
 from app.domain.entities.file_attachment import FileAttachment
 from app.domain.entities.record_comment import RecordComment
 
@@ -49,4 +55,53 @@ def to_record_comment_dto(comment: RecordComment) -> RecordCommentDTO:
         body=comment.body,
         attachments=tuple(to_file_attachment_dto(attachment) for attachment in comment.attachments),
         created_at=comment.created_at,
+    )
+
+
+def to_medical_record_dto(accessible_record: AccessibleMedicalRecordDTO) -> MedicalRecordDTO:
+    """Преобразовать доступную запись в API-проекцию.
+
+    Args:
+        accessible_record: Запись с контекстом доступа пользователя.
+
+    Returns:
+        Проекция медицинской записи.
+    """
+    record = accessible_record.record
+    author_practitioner = accessible_record.author_practitioner_passport
+    comments = tuple(to_record_comment_dto(comment) for comment in accessible_record.comments)
+    attachments = tuple(to_file_attachment_dto(attachment) for attachment in accessible_record.attachments)
+    return MedicalRecordDTO(
+        id=record.id,
+        creator_user_id=record.creator_user_id,
+        author_practitioner_passport_id=record.author_practitioner_passport_id,
+        status=record.status.value,
+        record_type=record.record_type.value,
+        event_date=record.event_date,
+        title=record.title,
+        appointment_location=record.appointment_location,
+        clinical_summary=record.clinical_summary,
+        payload_json=record.payload_json,
+        patient_passport_id=accessible_record.patient_passport_id,
+        author_practitioner_passport=(
+            PractitionerPassportDTO(
+                id=author_practitioner.id,
+                user_id=author_practitioner.user_id,
+                full_name=author_practitioner.full_name,
+                specialty=author_practitioner.specialty,
+                organization=author_practitioner.organization,
+                position=author_practitioner.position,
+                email=author_practitioner.email,
+                phone=author_practitioner.phone,
+                status=author_practitioner.status.value,
+            )
+            if author_practitioner is not None
+            else None
+        ),
+        comments=comments,
+        attachments=attachments,
+        comments_count=len(comments),
+        attachments_count=len(attachments),
+        created_at=record.created_at,
+        updated_at=record.updated_at,
     )
