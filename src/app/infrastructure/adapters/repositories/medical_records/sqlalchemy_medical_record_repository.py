@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import cast
 from uuid import UUID
 
 from sqlalchemy import case, exists, or_, Select, select
@@ -306,11 +305,12 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
         self,
         record_id: UUID,
         user_id: UUID,
-    ) -> Select[tuple[MedicalRecordRow, UUID | None, PractitionerPassportRow | None]]:
+    ) -> Select[tuple[MedicalRecordRow, UUID | None, PractitionerPassportRow]]:
         """Собрать запрос записи с фильтрацией по доступу.
 
         Паспорт автора подтягивается тем же запросом через outer join, чтобы не
-        делать отдельную выборку при сборке проекции.
+        делать отдельную выборку при сборке проекции. Из-за outer join в строке
+        результата он может быть ``None`` — потребители принимают это значение.
 
         Returns:
             SQLAlchemy-запрос для поиска доступной записи.
@@ -323,7 +323,7 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
             ),
             else_=1,
         )
-        query = (
+        return (
             select(MedicalRecordRow, UserRecordLinkRow.patient_passport_id, PractitionerPassportRow)
             .join(UserRecordLinkRow, UserRecordLinkRow.record_id == MedicalRecordRow.id)
             .outerjoin(
@@ -341,8 +341,6 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
             .order_by(priority_expression, UserRecordLinkRow.created_at.desc())
             .limit(1)
         )
-        # author-паспорт приходит через outer join, поэтому на уровне типов он nullable.
-        return cast('Select[tuple[MedicalRecordRow, UUID | None, PractitionerPassportRow | None]]', query)
 
     @staticmethod
     def _to_medical_record(row: MedicalRecordRow) -> MedicalRecord:
