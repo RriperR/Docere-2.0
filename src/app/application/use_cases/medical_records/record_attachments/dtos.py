@@ -12,6 +12,7 @@ class AddRecordAttachmentDTO:
 
     record_id: UUID
     actor_user_id: UUID
+    actor_fio: str
     filename: str
     content: bytes
     content_type: str

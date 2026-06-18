@@ -21,6 +21,7 @@ def to_file_attachment_dto(attachment: FileAttachment) -> FileAttachmentDTO:
         record_id=attachment.record_id,
         comment_id=attachment.comment_id,
         uploaded_by_user_id=attachment.uploaded_by_user_id,
+        uploaded_by_fio=attachment.uploaded_by_fio,
         category=attachment.category.value,
         filename=attachment.filename,
         storage_key=attachment.storage_key,

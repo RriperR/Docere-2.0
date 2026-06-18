@@ -73,6 +73,7 @@ class AddCommentAttachmentUseCase:
             record_id=input_dto.record_id,
             comment_id=input_dto.comment_id,
             uploaded_by_user_id=input_dto.actor_user_id,
+            uploaded_by_fio=input_dto.actor_fio,
             category=_COMMENT_ATTACHMENT_CATEGORY,
             filename=input_dto.filename,
             storage_key=storage_key,

@@ -166,6 +166,7 @@ def add_record_attachment(
             AddRecordAttachmentDTO(
                 record_id=record_id,
                 actor_user_id=current_user.id,
+                actor_fio=current_user.fio,
                 filename=file.filename or 'file',
                 content=content,
                 content_type=file.content_type or 'application/octet-stream',
@@ -250,6 +251,7 @@ def add_comment_attachment(
                 comment_id=comment_id,
                 actor_user_id=current_user.id,
                 actor_role=current_user.role,
+                actor_fio=current_user.fio,
                 filename=file.filename or 'file',
                 content=content,
                 content_type=file.content_type or 'application/octet-stream',

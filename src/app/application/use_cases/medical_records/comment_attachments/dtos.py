@@ -14,6 +14,7 @@ class AddCommentAttachmentDTO:
     comment_id: UUID
     actor_user_id: UUID
     actor_role: str
+    actor_fio: str
     filename: str
     content: bytes
     content_type: str
