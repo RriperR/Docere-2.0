@@ -76,3 +76,18 @@ def raise_not_found(detail: str) -> NoReturn:
         status_code=status.HTTP_404_NOT_FOUND,
         detail=detail,
     )
+
+
+def raise_payload_too_large(detail: str) -> NoReturn:
+    """Выбросить HTTP 413 с заданным описанием.
+
+    Args:
+        detail: Текст ошибки превышения размера.
+
+    Raises:
+        HTTPException: Если тело запроса превышает лимит.
+    """
+    raise HTTPException(
+        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+        detail=detail,
+    )

@@ -497,6 +497,33 @@ def test_patient_and_doctor_can_attach_files_to_record(
 
 
 @pytest.mark.critical
+def test_oversized_attachment_returns_413(
+    record_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _register_patient(record_client, 'patient-big@example.com')
+    patient_token = _login(record_client, 'patient-big@example.com', TEST_PATIENT_PASSWORD)
+    patient_passport_id = _get_patient_passport_id_by_email('patient-big@example.com')
+    created_record = _create_record(
+        record_client,
+        patient_token,
+        patient_passport_id,
+        author_practitioner_full_name='Dr. Outside',
+    )
+
+    monkeypatch.setattr('app.presentation.rest.public.v1.records.router.MAX_ATTACHMENT_SIZE_BYTES', 4)
+
+    response = record_client.post(
+        f'/api/records/{created_record["id"]}/attachments',
+        headers={'Authorization': f'Bearer {patient_token}'},
+        files={'file': ('big.png', b'too-large-bytes', 'image/png')},
+    )
+
+    assert response.status_code == 413
+    assert 'превышает' in response.json()['detail']
+
+
+@pytest.mark.critical
 def test_patient_cannot_comment_on_record(record_client: TestClient) -> None:
     _register_patient(record_client, 'patient4@example.com')
     patient_token = _login(record_client, 'patient4@example.com', TEST_PATIENT_PASSWORD)

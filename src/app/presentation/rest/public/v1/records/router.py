@@ -56,11 +56,31 @@ from app.presentation.rest.public.v1.records.schemas import (
     MedicalRecordResponseSchema,
     RecordCommentResponseSchema,
 )
-from app.presentation.webserver.http_errors import raise_forbidden, raise_not_found
+from app.presentation.webserver.http_errors import raise_forbidden, raise_not_found, raise_payload_too_large
 
 router = APIRouter(prefix='/records', tags=['records'])
 
 uploaded_file_dependency = File(...)
+
+# Максимальный размер вложения. Должен быть согласован с client_max_body_size
+# в nginx и лимитом на фронтенде (frontend/src/utils/files.ts).
+MAX_ATTACHMENT_SIZE_MB = 25
+MAX_ATTACHMENT_SIZE_BYTES = MAX_ATTACHMENT_SIZE_MB * 1024 * 1024
+_ATTACHMENT_TOO_LARGE_DETAIL = f'Файл превышает максимальный размер {MAX_ATTACHMENT_SIZE_MB} МБ'
+
+
+def _read_attachment_within_limit(file: UploadFile) -> bytes:
+    """Прочитать содержимое файла, проверив лимит размера.
+
+    Returns:
+        Бинарное содержимое файла в пределах лимита размера.
+    """
+    if file.size is not None and file.size > MAX_ATTACHMENT_SIZE_BYTES:
+        raise_payload_too_large(_ATTACHMENT_TOO_LARGE_DETAIL)
+    content = file.file.read()
+    if len(content) > MAX_ATTACHMENT_SIZE_BYTES:
+        raise_payload_too_large(_ATTACHMENT_TOO_LARGE_DETAIL)
+    return content
 
 
 @router.post('', response_model=MedicalRecordResponseSchema, status_code=status.HTTP_201_CREATED)
@@ -160,7 +180,7 @@ def add_record_attachment(
     Returns:
         Проекция созданного вложения.
     """
-    content = file.file.read()
+    content = _read_attachment_within_limit(file)
     try:
         attachment = use_case.execute(
             AddRecordAttachmentDTO(
@@ -243,7 +263,7 @@ def add_comment_attachment(
     Returns:
         Проекция созданного вложения.
     """
-    content = file.file.read()
+    content = _read_attachment_within_limit(file)
     try:
         attachment = use_case.execute(
             AddCommentAttachmentDTO(
