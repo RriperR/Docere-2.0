@@ -180,7 +180,8 @@ interface PatientsState {
   fetchPatientById: (id: string) => Promise<void>
   fetchPatientRecords: (id: string) => Promise<void>
   fetchRecordDetail: (recordId: string) => Promise<PatientRecordDetail>
-  createPatientRecord: (patientId: string, payload: CreatePatientRecordPayload) => Promise<void>
+  createPatientRecord: (patientId: string, payload: CreatePatientRecordPayload) => Promise<string>
+  uploadRecordAttachment: (recordId: string, file: File) => Promise<void>
   addRecordComment: (recordId: string, body: string) => Promise<void>
   uploadCommentAttachment: (recordId: string, commentId: string, file: File) => Promise<void>
   downloadAttachment: (recordId: string, attachmentId: string, filename: string) => Promise<void>
@@ -378,7 +379,7 @@ export const usePatientsStore = create<PatientsState>((set, get) => ({
   createPatientRecord: async (patientId, payload) => {
     set({ isLoading: true, error: null })
     try {
-      await api.post('/records', {
+      const { data } = await api.post<BackendRecordDetail>('/records', {
         patient_passport_id: patientId,
         ...payload,
       })
@@ -397,11 +398,26 @@ export const usePatientsStore = create<PatientsState>((set, get) => ({
         filteredPatients: patients,
         isLoading: false,
       })
+      return data.id
     } catch (error: unknown) {
       set({
         error: normalizeError(error, 'Не удалось создать запись'),
         isLoading: false,
       })
+      throw error
+    }
+  },
+
+  uploadRecordAttachment: async (recordId, file) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    try {
+      await api.post(`/records/${recordId}/attachments`, formData)
+      if (get().activeRecord?.id === recordId) {
+        await get().fetchRecordDetail(recordId)
+      }
+    } catch (error: unknown) {
+      set({ error: normalizeError(error, 'Не удалось загрузить файл') })
       throw error
     }
   },

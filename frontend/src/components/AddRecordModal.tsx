@@ -9,8 +9,10 @@ import {
   Code,
   FileText,
   Mail,
+  Paperclip,
   Phone,
   Stethoscope,
+  Trash2,
   User,
   X,
 } from 'lucide-react'
@@ -48,6 +50,7 @@ const steps = [
 export const AddRecordModal: React.FC<Props> = ({ patientId, onClose }) => {
   const { user } = useAuthStore()
   const createPatientRecord = usePatientsStore((state) => state.createPatientRecord)
+  const uploadRecordAttachment = usePatientsStore((state) => state.uploadRecordAttachment)
 
   const [step, setStep] = useState<Step>(1)
   const [recordType, setRecordType] = useState('consultation_result')
@@ -62,6 +65,7 @@ export const AddRecordModal: React.FC<Props> = ({ patientId, onClose }) => {
   const [practitionerEmail, setPractitionerEmail] = useState('')
   const [practitionerPhone, setPractitionerPhone] = useState('')
   const [payloadText, setPayloadText] = useState(defaultPayload)
+  const [files, setFiles] = useState<File[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -71,7 +75,6 @@ export const AddRecordModal: React.FC<Props> = ({ patientId, onClose }) => {
   const inputClass =
     'w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm placeholder-gray-400 focus:border-primary-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-200 transition-colors'
 
-  const fieldClass = 'block'
   const labelClass = 'mb-1.5 block text-sm font-medium text-gray-700'
 
   const handleNext = () => {
@@ -98,7 +101,7 @@ export const AddRecordModal: React.FC<Props> = ({ patientId, onClose }) => {
 
     setLoading(true)
     try {
-      await createPatientRecord(patientId, {
+      const recordId = await createPatientRecord(patientId, {
         record_type: recordType,
         event_date: eventDate,
         title: title || undefined,
@@ -112,6 +115,9 @@ export const AddRecordModal: React.FC<Props> = ({ patientId, onClose }) => {
         author_practitioner_email: requiresPractitionerFields ? practitionerEmail || undefined : undefined,
         author_practitioner_phone: requiresPractitionerFields ? practitionerPhone || undefined : undefined,
       })
+      for (const file of files) {
+        await uploadRecordAttachment(recordId, file)
+      }
       onClose()
     } catch (submitError: unknown) {
       const apiError = submitError as ApiError
@@ -229,6 +235,42 @@ export const AddRecordModal: React.FC<Props> = ({ patientId, onClose }) => {
                     <label className={labelClass}>Клиническое резюме</label>
                     <input type="text" value={clinicalSummary} onChange={(e) => setClinicalSummary(e.target.value)} className={inputClass} placeholder="Краткий итог" />
                   </div>
+                </div>
+
+                <div>
+                  <label className={labelClass}><span className="flex items-center gap-1"><Paperclip className="h-3.5 w-3.5" /> Файлы</span></label>
+                  <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-3 text-sm text-gray-500 hover:border-primary-300 hover:text-primary-600">
+                    <Paperclip className="h-4 w-4" />
+                    Прикрепить файлы
+                    <input
+                      type="file"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        const selected = Array.from(e.target.files ?? [])
+                        e.target.value = ''
+                        if (selected.length) setFiles((prev) => [...prev, ...selected])
+                      }}
+                    />
+                  </label>
+                  {files.length > 0 && (
+                    <ul className="mt-2 space-y-1.5">
+                      {files.map((file, index) => (
+                        <li key={`${file.name}-${index}`} className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs text-gray-700">
+                          <Paperclip className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                          <span className="flex-1 truncate">{file.name}</span>
+                          <span className="text-gray-400">{Math.ceil(file.size / 1024)} КБ</span>
+                          <button
+                            type="button"
+                            onClick={() => setFiles((prev) => prev.filter((_, i) => i !== index))}
+                            className="text-gray-400 hover:text-error-600"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               </motion.div>
             )}
