@@ -25,10 +25,13 @@ class AuthSettings(BaseModel):
 
 
 class StorageSettings(BaseModel):
-    """Настройки файлового хранилища."""
+    """Настройки файлового хранилища (S3/MinIO)."""
 
     endpoint: str
     bucket: str
+    access_key: str = 'minioadmin'
+    secret_key: SecretStr = SecretStr('minioadmin')
+    region: str = 'us-east-1'
 
 
 class QueueSettings(BaseModel):

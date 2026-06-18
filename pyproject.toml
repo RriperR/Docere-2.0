@@ -16,6 +16,7 @@ dependencies = [
   'PyJWT==2.11.0',
   'structlog==25.4.0',
   'httpx==0.28.1',
+  'boto3==1.43.32',
 ]
 
 [dependency-groups]
