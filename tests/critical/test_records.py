@@ -813,6 +813,75 @@ def test_patient_cannot_search_patient_passports(record_client: TestClient) -> N
 
 
 @pytest.mark.critical
+def test_admin_can_create_staff_users(record_client: TestClient) -> None:
+    _create_admin(email='staff-admin@example.com')
+    admin_token = _login(record_client, 'staff-admin@example.com', TEST_DOCTOR_PASSWORD)
+
+    doctor_response = record_client.post(
+        '/api/admin/users',
+        headers={'Authorization': f'Bearer {admin_token}'},
+        json={
+            'fio': 'Demo Doctor',
+            'email': 'demo-doctor@example.com',
+            'phone': '+79990001122',
+            'password': TEST_DOCTOR_PASSWORD,
+            'role': 'doctor',
+        },
+    )
+    admin_response = record_client.post(
+        '/api/admin/users',
+        headers={'Authorization': f'Bearer {admin_token}'},
+        json={
+            'fio': 'Demo Admin',
+            'email': 'demo-admin@example.com',
+            'phone': '+79990001123',
+            'password': TEST_DOCTOR_PASSWORD,
+            'role': 'admin',
+        },
+    )
+
+    assert doctor_response.status_code == 201
+    assert doctor_response.json()['role'] == 'doctor'
+    assert admin_response.status_code == 201
+    assert admin_response.json()['role'] == 'admin'
+
+
+@pytest.mark.critical
+def test_only_admin_can_create_staff_users_and_email_must_be_unique(record_client: TestClient) -> None:
+    _create_doctor(email='staff-doctor@example.com')
+    _create_admin(email='staff-owner@example.com')
+    doctor_token = _login(record_client, 'staff-doctor@example.com', TEST_DOCTOR_PASSWORD)
+    admin_token = _login(record_client, 'staff-owner@example.com', TEST_DOCTOR_PASSWORD)
+    payload = {
+        'fio': 'Duplicate Staff',
+        'email': 'duplicate-staff@example.com',
+        'phone': '+79990001124',
+        'password': TEST_DOCTOR_PASSWORD,
+        'role': 'doctor',
+    }
+
+    forbidden_response = record_client.post(
+        '/api/admin/users',
+        headers={'Authorization': f'Bearer {doctor_token}'},
+        json=payload,
+    )
+    first_response = record_client.post(
+        '/api/admin/users',
+        headers={'Authorization': f'Bearer {admin_token}'},
+        json=payload,
+    )
+    duplicate_response = record_client.post(
+        '/api/admin/users',
+        headers={'Authorization': f'Bearer {admin_token}'},
+        json=payload,
+    )
+
+    assert forbidden_response.status_code == 403
+    assert first_response.status_code == 201
+    assert duplicate_response.status_code == 409
+
+
+@pytest.mark.critical
 def test_doctor_created_empty_patient_card_is_not_visible_to_other_doctor(record_client: TestClient) -> None:
     _create_doctor(email='doctor-card-owner@example.com')
     _create_doctor(email='doctor-card-stranger@example.com')
