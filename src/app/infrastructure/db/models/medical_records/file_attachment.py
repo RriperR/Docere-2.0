@@ -6,12 +6,11 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
-from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, String, Uuid
+from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, func, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.db.base import Base
 from app.infrastructure.db.models._enums import enum_values
-from app.infrastructure.db.models._time import utc_now
 
 
 class FileAttachmentCategoryRow(StrEnum):
@@ -44,4 +43,4 @@ class FileAttachmentRow(Base):
     storage_key: Mapped[str] = mapped_column(String(length=512), unique=True)
     mime_type: Mapped[str] = mapped_column(String(length=255))
     size_bytes: Mapped[int] = mapped_column(BigInteger)
-    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

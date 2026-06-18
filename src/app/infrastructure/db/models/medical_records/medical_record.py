@@ -6,7 +6,7 @@ from datetime import date, datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
-from sqlalchemy import Date, DateTime, Enum, ForeignKey, JSON, String, Text, Uuid
+from sqlalchemy import Date, DateTime, Enum, ForeignKey, func, JSON, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.db.base import Base
@@ -69,9 +69,9 @@ class MedicalRecordRow(Base):
     appointment_location: Mapped[str | None] = mapped_column(String(length=255), nullable=True)
     clinical_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     payload_json: Mapped[dict[str, object]] = mapped_column(JSON)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=utc_now,
+        server_default=func.now(),
         onupdate=utc_now,
     )

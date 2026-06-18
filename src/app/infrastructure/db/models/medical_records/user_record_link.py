@@ -6,12 +6,11 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Uuid
+from sqlalchemy import DateTime, Enum, ForeignKey, func, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.db.base import Base
 from app.infrastructure.db.models._enums import enum_values
-from app.infrastructure.db.models._time import utc_now
 
 
 class UserRecordLinkSourceRow(StrEnum):
@@ -55,4 +54,4 @@ class UserRecordLinkRow(Base):
         ForeignKey('record_shares.id'),
         nullable=True,
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
