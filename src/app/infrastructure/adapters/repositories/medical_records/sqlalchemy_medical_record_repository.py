@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import cast
 from uuid import UUID
 
 from sqlalchemy import case, exists, or_, Select, select
@@ -196,9 +197,15 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
         self._session.add(access_row)
         self._session.flush()
 
+        author_practitioner_row = (
+            self._session.get(PractitionerPassportRow, author_practitioner_passport_id)
+            if author_practitioner_passport_id is not None
+            else None
+        )
         return self._assemble_accessible_record(
             record_row=record_row,
             patient_passport_id=patient_passport_id,
+            author_practitioner_row=author_practitioner_row,
         )
 
     def get_accessible_record(
@@ -216,10 +223,11 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
         if row is None:
             return None
 
-        record_row, patient_passport_id = row
+        record_row, patient_passport_id, author_practitioner_row = row
         return self._assemble_accessible_record(
             record_row=record_row,
             patient_passport_id=patient_passport_id,
+            author_practitioner_row=author_practitioner_row,
         )
 
     def add_comment(
@@ -258,18 +266,16 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
         self,
         record_row: MedicalRecordRow,
         patient_passport_id: UUID | None,
+        author_practitioner_row: PractitionerPassportRow | None,
     ) -> AccessibleMedicalRecordDTO:
-        """Загрузить для записи связанные сущности врача, комментариев и вложений.
+        """Собрать проекцию записи с комментариями и вложениями.
+
+        Паспорт автора передаётся уже загруженным (через join в access-запросе или
+        прямой выборкой при создании), поэтому отдельного round-trip за ним нет.
 
         Returns:
             Доступная проекция записи со вложенными сущностями.
         """
-        author_practitioner_row = None
-        if record_row.author_practitioner_passport_id is not None:
-            author_practitioner_row = self._session.get(
-                PractitionerPassportRow,
-                record_row.author_practitioner_passport_id,
-            )
         comments = tuple(
             self._to_record_comment(comment_row)
             for comment_row in self._session.scalars(
@@ -300,8 +306,11 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
         self,
         record_id: UUID,
         user_id: UUID,
-    ) -> Select[tuple[MedicalRecordRow, UUID | None]]:
+    ) -> Select[tuple[MedicalRecordRow, UUID | None, PractitionerPassportRow | None]]:
         """Собрать запрос записи с фильтрацией по доступу.
+
+        Паспорт автора подтягивается тем же запросом через outer join, чтобы не
+        делать отдельную выборку при сборке проекции.
 
         Returns:
             SQLAlchemy-запрос для поиска доступной записи.
@@ -314,12 +323,16 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
             ),
             else_=1,
         )
-        return (
-            select(MedicalRecordRow, UserRecordLinkRow.patient_passport_id)
+        query = (
+            select(MedicalRecordRow, UserRecordLinkRow.patient_passport_id, PractitionerPassportRow)
             .join(UserRecordLinkRow, UserRecordLinkRow.record_id == MedicalRecordRow.id)
             .outerjoin(
                 PatientPassportRow,
                 PatientPassportRow.id == UserRecordLinkRow.patient_passport_id,
+            )
+            .outerjoin(
+                PractitionerPassportRow,
+                PractitionerPassportRow.id == MedicalRecordRow.author_practitioner_passport_id,
             )
             .where(
                 MedicalRecordRow.id == record_id,
@@ -328,6 +341,8 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
             .order_by(priority_expression, UserRecordLinkRow.created_at.desc())
             .limit(1)
         )
+        # author-паспорт приходит через outer join, поэтому на уровне типов он nullable.
+        return cast('Select[tuple[MedicalRecordRow, UUID | None, PractitionerPassportRow | None]]', query)
 
     @staticmethod
     def _to_medical_record(row: MedicalRecordRow) -> MedicalRecord:
