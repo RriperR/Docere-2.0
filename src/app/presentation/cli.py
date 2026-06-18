@@ -14,6 +14,7 @@ from app.application.use_cases.auth.create_admin_user.use_case import CreateAdmi
 from app.application.use_cases.auth.errors import EmailAlreadyExistsError
 from app.infrastructure.adapters.repositories.auth.sqlalchemy_auth_repository import SqlAlchemyAuthRepositoryAdapter
 from app.infrastructure.adapters.security.pbkdf2_password_hasher import Pbkdf2PasswordHasherAdapter
+from app.infrastructure.db.seed import DEFAULT_DEMO_PASSWORD, seed_demo_data
 from app.infrastructure.db.session import close_db_connections, get_session_factory
 from app.presentation.webserver.server_runner import run_http_server
 
@@ -38,6 +39,9 @@ def build_parser() -> argparse.ArgumentParser:
     create_admin_parser.add_argument('--password', required=True)
     create_admin_parser.add_argument('--fio', default=DEFAULT_ADMIN_FIO)
     create_admin_parser.add_argument('--phone', default=DEFAULT_ADMIN_PHONE)
+
+    seed_demo_parser = subparsers.add_parser('seed-demo')
+    seed_demo_parser.add_argument('--password', default=DEFAULT_DEMO_PASSWORD)
 
     return parser
 
@@ -82,6 +86,33 @@ def create_admin_user(*, email: str, password: str, fio: str, phone: str) -> Non
             raise
 
 
+def seed_demo(*, password: str) -> None:
+    """Загрузить демонстрационные данные в базу.
+
+    Сидинг идемпотентен: ранее созданные демо-сущности удаляются перед вставкой.
+
+    Args:
+        password: Пароль в открытом виде для всех демо-учёток.
+    """
+    session_factory = get_session_factory()
+    with session_factory() as session:
+        try:
+            counts = seed_demo_data(
+                session=session,
+                password_hasher=Pbkdf2PasswordHasherAdapter(),
+                password=password,
+            )
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+
+    print('Демо-данные загружены:')
+    for name, value in counts.items():
+        print(f'  - {name}: {value}')
+    print(f'Пароль демо-учёток: {password}')
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Запустить management CLI.
 
@@ -109,6 +140,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 fio=args.fio,
                 phone=args.phone,
             )
+            return 0
+
+        if args.command == 'seed-demo':
+            seed_demo(password=args.password)
             return 0
     except Exception as error:
         print(f'Command failed: {error}', file=sys.stderr)

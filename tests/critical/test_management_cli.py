@@ -6,11 +6,12 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.infrastructure.config.settings import clear_settings_cache
 from app.infrastructure.db.base import Base
 from app.infrastructure.db.models.auth.user import UserRow
+from app.infrastructure.db.models.medical_records.medical_record import MedicalRecordRow
 from app.infrastructure.db.session import clear_db_session_cache, get_engine, get_session_factory
 from app.presentation.cli import main
 
@@ -98,6 +99,37 @@ def test_create_admin_command_returns_error_for_duplicate_email(
 
     assert first_exit_code == 0
     assert second_exit_code == 1
+
+
+@pytest.mark.critical
+def test_seed_demo_command_is_idempotent(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Проверить, что команда seed-demo наполняет базу и идемпотентна.
+
+    Args:
+        monkeypatch: Инструмент подмены переменных окружения в тесте.
+        tmp_path: Временный каталог pytest.
+    """
+    sqlite_path = tmp_path / 'management-cli-seed.sqlite3'
+    _set_required_env(monkeypatch, sqlite_path)
+    clear_settings_cache()
+    clear_db_session_cache()
+    Base.metadata.create_all(bind=get_engine())
+
+    first_exit_code = main(['seed-demo'])
+    second_exit_code = main(['seed-demo'])
+
+    with get_session_factory()() as session:
+        user_count = session.scalar(select(func.count()).select_from(UserRow))
+        record_count = session.scalar(select(func.count()).select_from(MedicalRecordRow))
+
+    clear_db_session_cache()
+    clear_settings_cache()
+
+    assert first_exit_code == 0
+    assert second_exit_code == 0
+    # Повторный запуск не дублирует данные.
+    assert user_count == 6
+    assert record_count == 4
 
 
 @pytest.mark.critical
