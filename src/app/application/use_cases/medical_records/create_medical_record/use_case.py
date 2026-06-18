@@ -5,10 +5,12 @@ from __future__ import annotations
 from app.application.ports.repositories.medical_records.dtos import AccessibleMedicalRecordDTO
 from app.application.ports.repositories.medical_records.port import MedicalRecordRepositoryPort
 from app.application.use_cases.medical_records.common.dtos import (
-    FileAttachmentDTO,
     MedicalRecordDTO,
     PractitionerPassportDTO,
-    RecordCommentDTO,
+)
+from app.application.use_cases.medical_records.common.mappers import (
+    to_file_attachment_dto,
+    to_record_comment_dto,
 )
 from app.application.use_cases.medical_records.create_medical_record.dtos import CreateMedicalRecordDTO
 from app.application.use_cases.medical_records.errors import (
@@ -102,31 +104,8 @@ class CreateMedicalRecordUseCase:
 def _to_medical_record_dto(accessible_record: AccessibleMedicalRecordDTO) -> MedicalRecordDTO:
     record = accessible_record.record
     author_practitioner = accessible_record.author_practitioner_passport
-    comments = tuple(
-        RecordCommentDTO(
-            id=comment.id,
-            record_id=comment.record_id,
-            author_user_id=comment.author_user_id,
-            author_fio=comment.author_fio,
-            author_role=comment.author_role,
-            body=comment.body,
-            created_at=comment.created_at,
-        )
-        for comment in accessible_record.comments
-    )
-    attachments = tuple(
-        FileAttachmentDTO(
-            id=attachment.id,
-            record_id=attachment.record_id,
-            uploaded_by_user_id=attachment.uploaded_by_user_id,
-            category=attachment.category.value,
-            storage_key=attachment.storage_key,
-            mime_type=attachment.mime_type,
-            size_bytes=attachment.size_bytes,
-            uploaded_at=attachment.uploaded_at,
-        )
-        for attachment in accessible_record.attachments
-    )
+    comments = tuple(to_record_comment_dto(comment) for comment in accessible_record.comments)
+    attachments = tuple(to_file_attachment_dto(attachment) for attachment in accessible_record.attachments)
     return MedicalRecordDTO(
         id=record.id,
         creator_user_id=record.creator_user_id,

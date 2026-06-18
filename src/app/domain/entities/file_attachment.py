@@ -23,8 +23,10 @@ class FileAttachment:
 
     id: UUID
     record_id: UUID
+    comment_id: UUID | None
     uploaded_by_user_id: UUID
     category: FileAttachmentCategory
+    filename: str | None
     storage_key: str
     mime_type: str
     size_bytes: int

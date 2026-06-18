@@ -23,6 +23,22 @@ class PractitionerPassportDTO:
 
 
 @dataclass(frozen=True, slots=True)
+class FileAttachmentDTO:
+    """Проекция вложения."""
+
+    id: UUID
+    record_id: UUID
+    comment_id: UUID | None
+    uploaded_by_user_id: UUID
+    category: str
+    filename: str | None
+    storage_key: str
+    mime_type: str
+    size_bytes: int
+    uploaded_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class RecordCommentDTO:
     """Проекция комментария к записи."""
 
@@ -32,21 +48,8 @@ class RecordCommentDTO:
     author_fio: str
     author_role: str
     body: str
+    attachments: tuple[FileAttachmentDTO, ...]
     created_at: datetime
-
-
-@dataclass(frozen=True, slots=True)
-class FileAttachmentDTO:
-    """Проекция вложения."""
-
-    id: UUID
-    record_id: UUID
-    uploaded_by_user_id: UUID
-    category: str
-    storage_key: str
-    mime_type: str
-    size_bytes: int
-    uploaded_at: datetime
 
 
 @dataclass(frozen=True, slots=True)

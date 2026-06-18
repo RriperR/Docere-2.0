@@ -6,6 +6,7 @@ from datetime import date
 from uuid import UUID
 
 from app.application.ports.repositories.medical_records.dtos import AccessibleMedicalRecordDTO
+from app.domain.entities.file_attachment import FileAttachment
 from app.domain.entities.patient_passport import PatientPassport
 from app.domain.entities.practitioner_passport import PractitionerPassport
 from app.domain.entities.record_comment import RecordComment
@@ -91,4 +92,26 @@ class MedicalRecordRepositoryPort:
 
     def record_exists(self, record_id: UUID) -> bool:
         """Проверить существование медицинской записи."""
+        raise NotImplementedError
+
+    def comment_belongs_to_record(self, comment_id: UUID, record_id: UUID) -> bool:
+        """Проверить, что комментарий принадлежит указанной записи."""
+        raise NotImplementedError
+
+    def add_attachment(
+        self,
+        record_id: UUID,
+        comment_id: UUID | None,
+        uploaded_by_user_id: UUID,
+        category: str,
+        filename: str,
+        storage_key: str,
+        mime_type: str,
+        size_bytes: int,
+    ) -> FileAttachment:
+        """Создать запись вложения."""
+        raise NotImplementedError
+
+    def get_attachment(self, attachment_id: UUID) -> FileAttachment | None:
+        """Вернуть вложение по идентификатору."""
         raise NotImplementedError

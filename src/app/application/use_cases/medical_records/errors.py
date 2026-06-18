@@ -23,3 +23,11 @@ class PractitionerPassportNotFoundError(MedicalRecordError):
 
 class MedicalRecordValidationError(MedicalRecordError):
     """Бизнес-валидация медицинской записи не пройдена."""
+
+
+class RecordCommentNotFoundError(MedicalRecordError):
+    """Комментарий не найден или не относится к записи."""
+
+
+class FileAttachmentNotFoundError(MedicalRecordError):
+    """Вложение не найдено."""

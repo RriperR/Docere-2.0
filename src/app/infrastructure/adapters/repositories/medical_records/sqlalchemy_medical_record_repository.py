@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import date
 from uuid import UUID
 
@@ -10,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.application.ports.repositories.medical_records.dtos import AccessibleMedicalRecordDTO
 from app.application.ports.repositories.medical_records.port import MedicalRecordRepositoryPort
-from app.domain.entities.file_attachment import FileAttachment
+from app.domain.entities.file_attachment import FileAttachment, FileAttachmentCategory
 from app.domain.entities.medical_record import MedicalRecord, MedicalRecordStatus, MedicalRecordType
 from app.domain.entities.patient_passport import PatientPassport, PatientPassportStatus
 from app.domain.entities.practitioner_passport import PractitionerPassport, PractitionerPassportStatus
@@ -238,7 +239,7 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
         )
         self._session.add(row)
         self._session.flush()
-        return self._to_record_comment(row, author_fio=author_fio, author_role=author_role)
+        return self._to_record_comment(row, author_fio=author_fio, author_role=author_role, attachments=())
 
     def record_exists(self, record_id: UUID) -> bool:
         """Проверить существование медицинской записи.
@@ -251,6 +252,62 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
                 select(exists().where(MedicalRecordRow.id == record_id)),
             ),
         )
+
+    def comment_belongs_to_record(self, comment_id: UUID, record_id: UUID) -> bool:
+        """Проверить, что комментарий принадлежит указанной записи.
+
+        Returns:
+            ``True``, если комментарий существует и относится к записи.
+        """
+        return (
+            self._session.scalar(
+                select(RecordCommentRow.id)
+                .where(RecordCommentRow.id == comment_id, RecordCommentRow.record_id == record_id)
+                .limit(1),
+            )
+            is not None
+        )
+
+    def add_attachment(
+        self,
+        record_id: UUID,
+        comment_id: UUID | None,
+        uploaded_by_user_id: UUID,
+        category: str,
+        filename: str,
+        storage_key: str,
+        mime_type: str,
+        size_bytes: int,
+    ) -> FileAttachment:
+        """Создать запись вложения.
+
+        Returns:
+            Созданная сущность вложения.
+        """
+        row = FileAttachmentRow(
+            record_id=record_id,
+            comment_id=comment_id,
+            uploaded_by_user_id=uploaded_by_user_id,
+            category=FileAttachmentCategory(category),
+            filename=filename,
+            storage_key=storage_key,
+            mime_type=mime_type,
+            size_bytes=size_bytes,
+        )
+        self._session.add(row)
+        self._session.flush()
+        return self._to_file_attachment(row)
+
+    def get_attachment(self, attachment_id: UUID) -> FileAttachment | None:
+        """Вернуть вложение по идентификатору.
+
+        Returns:
+            Сущность вложения или ``None``.
+        """
+        row = self._session.get(FileAttachmentRow, attachment_id)
+        if row is None:
+            return None
+        return self._to_file_attachment(row)
 
     def _assemble_accessible_record(
         self,
@@ -266,21 +323,31 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
         Returns:
             Доступная проекция записи со вложенными сущностями.
         """
+        attachments_by_comment: dict[UUID, list[FileAttachment]] = defaultdict(list)
+        record_attachments: list[FileAttachment] = []
+        for attachment_row in self._session.scalars(
+            select(FileAttachmentRow)
+            .where(FileAttachmentRow.record_id == record_row.id)
+            .order_by(FileAttachmentRow.uploaded_at.asc()),
+        ):
+            attachment = self._to_file_attachment(attachment_row)
+            if attachment.comment_id is None:
+                record_attachments.append(attachment)
+            else:
+                attachments_by_comment[attachment.comment_id].append(attachment)
+
         comments = tuple(
-            self._to_record_comment(comment_row, author_fio=author_fio, author_role=author_role.value)
+            self._to_record_comment(
+                comment_row,
+                author_fio=author_fio,
+                author_role=author_role.value,
+                attachments=tuple(attachments_by_comment.get(comment_row.id, ())),
+            )
             for comment_row, author_fio, author_role in self._session.execute(
                 select(RecordCommentRow, UserRow.fio, UserRow.role)
                 .join(UserRow, UserRow.id == RecordCommentRow.author_user_id)
                 .where(RecordCommentRow.record_id == record_row.id)
                 .order_by(RecordCommentRow.created_at.asc()),
-            )
-        )
-        attachments = tuple(
-            self._to_file_attachment(attachment_row)
-            for attachment_row in self._session.scalars(
-                select(FileAttachmentRow)
-                .where(FileAttachmentRow.record_id == record_row.id)
-                .order_by(FileAttachmentRow.uploaded_at.asc()),
             )
         )
         return AccessibleMedicalRecordDTO(
@@ -290,7 +357,7 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
                 self._to_practitioner_passport(author_practitioner_row) if author_practitioner_row is not None else None
             ),
             comments=comments,
-            attachments=attachments,
+            attachments=tuple(record_attachments),
         )
 
     def _accessible_record_query(
@@ -386,7 +453,13 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
         )
 
     @staticmethod
-    def _to_record_comment(row: RecordCommentRow, *, author_fio: str, author_role: str) -> RecordComment:
+    def _to_record_comment(
+        row: RecordCommentRow,
+        *,
+        author_fio: str,
+        author_role: str,
+        attachments: tuple[FileAttachment, ...],
+    ) -> RecordComment:
         return RecordComment(
             id=row.id,
             record_id=row.record_id,
@@ -394,6 +467,7 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
             author_fio=author_fio,
             author_role=author_role,
             body=row.body,
+            attachments=attachments,
             created_at=row.created_at,
         )
 
@@ -402,8 +476,10 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
         return FileAttachment(
             id=row.id,
             record_id=row.record_id,
+            comment_id=row.comment_id,
             uploaded_by_user_id=row.uploaded_by_user_id,
             category=row.category,
+            filename=row.filename,
             storage_key=row.storage_key,
             mime_type=row.mime_type,
             size_bytes=row.size_bytes,

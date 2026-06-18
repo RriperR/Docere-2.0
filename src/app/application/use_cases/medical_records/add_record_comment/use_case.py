@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.application.ports.repositories.medical_records.port import MedicalRecordRepositoryPort
 from app.application.use_cases.medical_records.add_record_comment.dtos import AddRecordCommentDTO
 from app.application.use_cases.medical_records.common.dtos import RecordCommentDTO
+from app.application.use_cases.medical_records.common.mappers import to_record_comment_dto
 from app.application.use_cases.medical_records.errors import (
     MedicalRecordAccessDeniedError,
     MedicalRecordNotFoundError,
@@ -47,12 +48,4 @@ class AddRecordCommentUseCase:
             author_role=input_dto.actor_role,
             body=input_dto.body,
         )
-        return RecordCommentDTO(
-            id=comment.id,
-            record_id=comment.record_id,
-            author_user_id=comment.author_user_id,
-            author_fio=comment.author_fio,
-            author_role=comment.author_role,
-            body=comment.body,
-            created_at=comment.created_at,
-        )
+        return to_record_comment_dto(comment)

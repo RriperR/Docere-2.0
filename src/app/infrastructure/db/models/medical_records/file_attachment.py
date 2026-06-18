@@ -20,6 +20,12 @@ class FileAttachmentRow(Base):
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     record_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey('medical_records.id'), index=True)
+    comment_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey('record_comments.id'),
+        nullable=True,
+        index=True,
+    )
     uploaded_by_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey('users.id'), index=True)
     category: Mapped[FileAttachmentCategory] = mapped_column(
         Enum(
@@ -31,6 +37,7 @@ class FileAttachmentRow(Base):
         ),
         default=FileAttachmentCategory.OTHER,
     )
+    filename: Mapped[str | None] = mapped_column(String(length=255), nullable=True)
     storage_key: Mapped[str] = mapped_column(String(length=512), unique=True)
     mime_type: Mapped[str] = mapped_column(String(length=255))
     size_bytes: Mapped[int] = mapped_column(BigInteger)

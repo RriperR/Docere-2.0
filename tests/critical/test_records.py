@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from app.application.ports.storage.file_storage import FileStoragePort
 from app.domain.entities.file_attachment import FileAttachmentCategory
 from app.infrastructure.adapters.security.pbkdf2_password_hasher import Pbkdf2PasswordHasherAdapter
 from app.infrastructure.config.settings import clear_settings_cache
@@ -365,6 +366,83 @@ def test_record_detail_returns_comments_and_attachments_separately(record_client
     assert response.json()['attachments_count'] == 1
     assert response.json()['comments'][0]['body'] == 'Follow-up in 3 days.'
     assert response.json()['attachments'][0]['category'] == 'document'
+
+
+class _InMemoryStorage(FileStoragePort):
+    """Хранилище в памяти для тестов вложений."""
+
+    def __init__(self) -> None:
+        self.objects: dict[str, bytes] = {}
+
+    def upload(self, *, key: str, content: bytes, content_type: str) -> None:
+        self.objects[key] = content
+
+    def download(self, *, key: str) -> bytes:
+        return self.objects[key]
+
+
+@pytest.mark.critical
+def test_doctor_can_attach_and_download_comment_file(
+    record_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _register_patient(record_client, 'patient-att@example.com')
+    patient_token = _login(record_client, 'patient-att@example.com', TEST_PATIENT_PASSWORD)
+    patient_passport_id = _get_patient_passport_id_by_email('patient-att@example.com')
+    created_record = _create_record(
+        record_client,
+        patient_token,
+        patient_passport_id,
+        author_practitioner_full_name='Dr. Outside',
+    )
+
+    _create_doctor()
+    doctor_token = _login(record_client, 'doctor@example.com', TEST_DOCTOR_PASSWORD)
+    doctor = _get_user_by_email('doctor@example.com')
+    _grant_record_access(doctor.id, UUID(created_record['id']), patient_passport_id)
+
+    comment_response = record_client.post(
+        f'/api/records/{created_record["id"]}/comments',
+        headers={'Authorization': f'Bearer {doctor_token}'},
+        json={'body': 'See attached lab result.'},
+    )
+    assert comment_response.status_code == 201
+    comment_id = comment_response.json()['id']
+
+    storage = _InMemoryStorage()
+    monkeypatch.setattr(
+        'app.presentation.rest.public.v1.records.dependencies.get_file_storage',
+        lambda: storage,
+    )
+
+    upload_response = record_client.post(
+        f'/api/records/{created_record["id"]}/comments/{comment_id}/attachments',
+        headers={'Authorization': f'Bearer {doctor_token}'},
+        files={'file': ('результат.pdf', b'PDF-bytes', 'application/pdf')},
+    )
+
+    assert upload_response.status_code == 201
+    attachment = upload_response.json()
+    assert attachment['comment_id'] == comment_id
+    assert attachment['filename'] == 'результат.pdf'
+    assert len(storage.objects) == 1
+
+    detail = record_client.get(
+        f'/api/records/{created_record["id"]}',
+        headers={'Authorization': f'Bearer {patient_token}'},
+    )
+    assert detail.status_code == 200
+    comment_payload = detail.json()['comments'][0]
+    assert len(comment_payload['attachments']) == 1
+    assert comment_payload['attachments'][0]['filename'] == 'результат.pdf'
+    assert detail.json()['attachments_count'] == 0
+
+    download = record_client.get(
+        f'/api/records/{created_record["id"]}/attachments/{attachment["id"]}',
+        headers={'Authorization': f'Bearer {patient_token}'},
+    )
+    assert download.status_code == 200
+    assert download.content == b'PDF-bytes'
 
 
 @pytest.mark.critical

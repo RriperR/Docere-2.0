@@ -9,6 +9,10 @@ from app.application.use_cases.auth.common.dtos import AuthenticatedUserDTO
 from app.application.use_cases.auth.errors import InvalidTokenError, UserNotFoundError
 from app.application.use_cases.auth.get_authenticated_user.use_case import GetAuthenticatedUserUseCase
 from app.application.use_cases.medical_records.add_record_comment.use_case import AddRecordCommentUseCase
+from app.application.use_cases.medical_records.comment_attachments.use_cases import (
+    AddCommentAttachmentUseCase,
+    DownloadAttachmentUseCase,
+)
 from app.application.use_cases.medical_records.create_medical_record.use_case import CreateMedicalRecordUseCase
 from app.application.use_cases.medical_records.get_medical_record.use_case import GetMedicalRecordUseCase
 from app.application.use_cases.patients.create_patient import CreatePatientUseCase
@@ -33,6 +37,7 @@ from app.infrastructure.adapters.repositories.patient_cards.sqlalchemy_patient_c
 from app.infrastructure.adapters.repositories.share_requests.sqlalchemy_share_request_repository import (
     SqlAlchemyShareRequestRepositoryAdapter,
 )
+from app.infrastructure.adapters.storage.factory import get_file_storage
 from app.infrastructure.db.session import get_db_session
 from app.presentation.rest.public.v1.auth.dependencies import (
     authenticated_user_use_case_dependency,
@@ -101,6 +106,28 @@ def get_add_record_comment_use_case(
         Настроенный use case создания комментария.
     """
     return AddRecordCommentUseCase(repository=_build_repository(session))
+
+
+def get_add_comment_attachment_use_case(
+    session: Session = db_session_dependency,
+) -> AddCommentAttachmentUseCase:
+    """Создать use case загрузки вложения к комментарию.
+
+    Returns:
+        Настроенный use case загрузки вложения.
+    """
+    return AddCommentAttachmentUseCase(repository=_build_repository(session), storage=get_file_storage())
+
+
+def get_download_attachment_use_case(
+    session: Session = db_session_dependency,
+) -> DownloadAttachmentUseCase:
+    """Создать use case скачивания вложения.
+
+    Returns:
+        Настроенный use case скачивания вложения.
+    """
+    return DownloadAttachmentUseCase(repository=_build_repository(session), storage=get_file_storage())
 
 
 def get_list_patients_use_case(session: Session = db_session_dependency) -> ListPatientsUseCase:
@@ -206,6 +233,8 @@ current_authenticated_user_dependency = Depends(get_current_authenticated_user)
 create_medical_record_use_case_dependency = Depends(get_create_medical_record_use_case)
 get_medical_record_use_case_dependency = Depends(get_medical_record_use_case)
 add_record_comment_use_case_dependency = Depends(get_add_record_comment_use_case)
+add_comment_attachment_use_case_dependency = Depends(get_add_comment_attachment_use_case)
+download_attachment_use_case_dependency = Depends(get_download_attachment_use_case)
 list_patients_use_case_dependency = Depends(get_list_patients_use_case)
 create_patient_use_case_dependency = Depends(get_create_patient_use_case)
 get_patient_use_case_dependency = Depends(get_get_patient_use_case)

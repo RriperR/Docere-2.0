@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
+from app.domain.entities.file_attachment import FileAttachment
+
 
 @dataclass(frozen=True, slots=True)
 class RecordComment:
@@ -17,4 +19,5 @@ class RecordComment:
     author_fio: str
     author_role: str
     body: str
+    attachments: tuple[FileAttachment, ...]
     created_at: datetime

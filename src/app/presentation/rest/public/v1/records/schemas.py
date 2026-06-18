@@ -51,6 +51,23 @@ class PractitionerPassportResponseSchema(BaseModel):
     status: str
 
 
+class FileAttachmentResponseSchema(BaseModel):
+    """Схема ответа для вложения записи."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    record_id: UUID
+    comment_id: UUID | None
+    uploaded_by_user_id: UUID
+    category: str
+    filename: str | None
+    storage_key: str
+    mime_type: str
+    size_bytes: int
+    uploaded_at: MoscowDatetime
+
+
 class RecordCommentResponseSchema(BaseModel):
     """Схема ответа для комментария к записи."""
 
@@ -62,22 +79,8 @@ class RecordCommentResponseSchema(BaseModel):
     author_fio: str
     author_role: str
     body: str
+    attachments: tuple[FileAttachmentResponseSchema, ...]
     created_at: MoscowDatetime
-
-
-class FileAttachmentResponseSchema(BaseModel):
-    """Схема ответа для вложения записи."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    record_id: UUID
-    uploaded_by_user_id: UUID
-    category: str
-    storage_key: str
-    mime_type: str
-    size_bytes: int
-    uploaded_at: MoscowDatetime
 
 
 class MedicalRecordResponseSchema(BaseModel):
