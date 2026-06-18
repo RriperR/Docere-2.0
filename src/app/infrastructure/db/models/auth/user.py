@@ -10,7 +10,7 @@ from sqlalchemy import Date, DateTime, Enum, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.db.base import Base
-from app.infrastructure.db.models._time import moscow_now
+from app.infrastructure.db.models._time import utc_now
 
 
 class UserRole(StrEnum):
@@ -61,9 +61,9 @@ class UserRow(Base):
             values_callable=_enum_values,
         )
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=moscow_now)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=moscow_now,
-        onupdate=moscow_now,
+        default=utc_now,
+        onupdate=utc_now,
     )

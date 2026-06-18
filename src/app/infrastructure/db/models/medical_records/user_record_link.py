@@ -10,7 +10,7 @@ from sqlalchemy import DateTime, Enum, ForeignKey, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.db.base import Base
-from app.infrastructure.db.models._time import moscow_now
+from app.infrastructure.db.models._time import utc_now
 from app.infrastructure.db.models.auth.user import _enum_values
 
 
@@ -55,4 +55,4 @@ class UserRecordLinkRow(Base):
         ForeignKey('record_shares.id'),
         nullable=True,
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=moscow_now)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)

@@ -10,7 +10,7 @@ from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.db.base import Base
-from app.infrastructure.db.models._time import moscow_now
+from app.infrastructure.db.models._time import utc_now
 from app.infrastructure.db.models.auth.user import _enum_values
 
 
@@ -44,4 +44,4 @@ class FileAttachmentRow(Base):
     storage_key: Mapped[str] = mapped_column(String(length=512), unique=True)
     mime_type: Mapped[str] = mapped_column(String(length=255))
     size_bytes: Mapped[int] = mapped_column(BigInteger)
-    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=moscow_now)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)

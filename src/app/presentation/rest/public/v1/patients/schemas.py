@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.presentation.rest.public.v1.records.schemas import PractitionerPassportResponseSchema
+from app.presentation.rest.serialization import MoscowDatetime
 
 
 class CreatePatientRequestSchema(BaseModel):
@@ -50,5 +51,5 @@ class PatientRecordSummaryResponseSchema(BaseModel):
     author_practitioner_passport: PractitionerPassportResponseSchema | None
     comments_count: int
     attachments_count: int
-    created_at: datetime
-    updated_at: datetime
+    created_at: MoscowDatetime
+    updated_at: MoscowDatetime

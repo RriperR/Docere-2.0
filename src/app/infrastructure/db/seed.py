@@ -29,7 +29,7 @@ from app.infrastructure.db.models import (
     UserRow,
     UserStatus,
 )
-from app.infrastructure.db.models._time import moscow_now
+from app.infrastructure.db.models._time import utc_now
 from app.infrastructure.db.models.medical_records.record_share import (
     RecordShareRequestRow,
     RecordShareRow,
@@ -83,7 +83,7 @@ def seed_demo_data(
         Словарь с количеством созданных сущностей по группам.
     """
     password_hash = password_hasher.hash_password(plain_password=password)
-    now = moscow_now()
+    now = utc_now()
 
     reset_demo_data(session)
 

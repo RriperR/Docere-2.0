@@ -10,7 +10,7 @@ from sqlalchemy import Date, DateTime, Enum, ForeignKey, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.db.base import Base
-from app.infrastructure.db.models._time import moscow_now
+from app.infrastructure.db.models._time import utc_now
 from app.infrastructure.db.models.auth.user import _enum_values
 
 
@@ -53,9 +53,9 @@ class PatientPassportRow(Base):
         default=PatientPassportStatusRow.DRAFT,
     )
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=moscow_now)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=moscow_now,
-        onupdate=moscow_now,
+        default=utc_now,
+        onupdate=utc_now,
     )

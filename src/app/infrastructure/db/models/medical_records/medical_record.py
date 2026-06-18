@@ -10,7 +10,7 @@ from sqlalchemy import Date, DateTime, Enum, ForeignKey, JSON, String, Text, Uui
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.db.base import Base
-from app.infrastructure.db.models._time import moscow_now
+from app.infrastructure.db.models._time import utc_now
 from app.infrastructure.db.models.auth.user import _enum_values
 
 
@@ -69,9 +69,9 @@ class MedicalRecordRow(Base):
     appointment_location: Mapped[str | None] = mapped_column(String(length=255), nullable=True)
     clinical_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     payload_json: Mapped[dict[str, object]] = mapped_column(JSON)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=moscow_now)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=moscow_now,
-        onupdate=moscow_now,
+        default=utc_now,
+        onupdate=utc_now,
     )

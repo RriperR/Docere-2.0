@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from zoneinfo import ZoneInfo
-
-MOSCOW_TZ = ZoneInfo('Europe/Moscow')
+from datetime import datetime, UTC
 
 
-def moscow_now() -> datetime:
-    """Вернуть текущее время в часовом поясе Москвы.
+def utc_now() -> datetime:
+    """Вернуть текущий момент времени в UTC.
+
+    Штампы времени хранятся в UTC; перевод в зону отображения (например,
+    Europe/Moscow) выполняется на presentation-границе.
 
     Returns:
-        Текущее время в часовом поясе `Europe/Moscow`.
+        Текущий момент времени с зоной UTC.
     """
-    return datetime.now(tz=MOSCOW_TZ)
+    return datetime.now(UTC)

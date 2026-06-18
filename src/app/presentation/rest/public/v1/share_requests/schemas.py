@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
+from app.presentation.rest.serialization import MoscowDatetime
 
 
 class CreateShareRequestSchema(BaseModel):
@@ -36,9 +37,9 @@ class RecordShareResponseSchema(BaseModel):
     record_id: UUID
     patient_passport_id: UUID | None
     status: str
-    created_at: datetime
-    responded_at: datetime | None
-    revoked_at: datetime | None
+    created_at: MoscowDatetime
+    responded_at: MoscowDatetime | None
+    revoked_at: MoscowDatetime | None
 
 
 class ShareRequestResponseSchema(BaseModel):
@@ -52,10 +53,10 @@ class ShareRequestResponseSchema(BaseModel):
     status: str
     message: str | None
     shares: tuple[RecordShareResponseSchema, ...]
-    created_at: datetime
-    responded_at: datetime | None
-    cancelled_at: datetime | None
-    revoked_at: datetime | None
+    created_at: MoscowDatetime
+    responded_at: MoscowDatetime | None
+    cancelled_at: MoscowDatetime | None
+    revoked_at: MoscowDatetime | None
 
 
 class CreateShareRequestResponseSchema(BaseModel):

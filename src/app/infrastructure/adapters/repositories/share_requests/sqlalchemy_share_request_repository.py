@@ -20,7 +20,7 @@ from app.application.use_cases.share_requests.errors import (
     ShareRequestNotFoundError,
     ShareTargetNotFoundError,
 )
-from app.infrastructure.db.models._time import moscow_now
+from app.infrastructure.db.models._time import utc_now
 from app.infrastructure.db.models.auth.user import UserRole, UserRow, UserStatus
 from app.infrastructure.db.models.medical_records.medical_record import MedicalRecordRow
 from app.infrastructure.db.models.medical_records.record_share import (
@@ -149,7 +149,7 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
         request_row = self._get_request_for_recipient(request_id, user_id)
         self._ensure_pending(request_row)
 
-        now = moscow_now()
+        now = utc_now()
         for share_row in self._get_request_shares(request_row.id):
             if share_row.status != RecordShareStatusRow.PENDING:
                 continue
@@ -180,7 +180,7 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
         request_row = self._get_request_for_recipient(request_id, user_id)
         self._ensure_pending(request_row)
 
-        now = moscow_now()
+        now = utc_now()
         for share_row in self._get_request_shares(request_row.id):
             if share_row.status == RecordShareStatusRow.PENDING:
                 share_row.status = RecordShareStatusRow.DECLINED
@@ -199,7 +199,7 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
         request_row = self._get_request_for_sender(request_id, user_id)
         self._ensure_pending(request_row)
 
-        now = moscow_now()
+        now = utc_now()
         for share_row in self._get_request_shares(request_row.id):
             if share_row.status == RecordShareStatusRow.PENDING:
                 share_row.status = RecordShareStatusRow.CANCELLED
@@ -221,7 +221,7 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
         if request_row.status != RecordShareStatusRow.ACCEPTED:
             raise ShareRequestAccessDeniedError
 
-        now = moscow_now()
+        now = utc_now()
         for share_row in self._get_request_shares(request_row.id):
             if share_row.status != RecordShareStatusRow.ACCEPTED:
                 continue

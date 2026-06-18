@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.presentation.rest.serialization import MoscowDatetime
 
 
 class CreateMedicalRecordRequestSchema(BaseModel):
@@ -58,7 +60,7 @@ class RecordCommentResponseSchema(BaseModel):
     record_id: UUID
     author_user_id: UUID
     body: str
-    created_at: datetime
+    created_at: MoscowDatetime
 
 
 class FileAttachmentResponseSchema(BaseModel):
@@ -73,7 +75,7 @@ class FileAttachmentResponseSchema(BaseModel):
     storage_key: str
     mime_type: str
     size_bytes: int
-    uploaded_at: datetime
+    uploaded_at: MoscowDatetime
 
 
 class MedicalRecordResponseSchema(BaseModel):
@@ -97,5 +99,5 @@ class MedicalRecordResponseSchema(BaseModel):
     attachments: tuple[FileAttachmentResponseSchema, ...]
     comments_count: int
     attachments_count: int
-    created_at: datetime
-    updated_at: datetime
+    created_at: MoscowDatetime
+    updated_at: MoscowDatetime
