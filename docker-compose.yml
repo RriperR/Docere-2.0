@@ -109,14 +109,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    entrypoint: ['celery']
+    entrypoint: ['/bin/sh', '-c']
     command:
-      [
-        '--app',
-        'app.infrastructure.queue.celery_app:celery_app',
-        'worker',
-        '--loglevel=INFO',
-      ]
+      - >
+        python -m app.infrastructure.adapters.queue.recover_import_jobs &&
+        celery --app app.infrastructure.adapters.queue.celery_app:celery_app worker --loglevel=INFO
     environment:
       APP_SERVICE_NAME: docere-service
       APP_DATABASE__URL: postgresql+psycopg://docere:docere@postgres:5432/docere
@@ -131,6 +128,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      minio:
         condition: service_healthy
 
 volumes:

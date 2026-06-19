@@ -26,7 +26,8 @@ TaskDecorator = Callable[[TaskCallable], TaskCallable]
 task_decorator = cast(TaskDecorator, celery_app.task(name='docere.ping'))
 ImportTaskCallable = Callable[[str], None]
 import_task_decorator = cast(
-    Callable[[ImportTaskCallable], ImportTaskCallable], celery_app.task(name='docere.import_job')
+    Callable[[ImportTaskCallable], ImportTaskCallable],
+    celery_app.task(name='docere.import_job', soft_time_limit=900, time_limit=960),
 )
 
 

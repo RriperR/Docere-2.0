@@ -17,6 +17,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.application.ports.storage.file_storage import FileStoragePort
 from app.domain.entities.file_attachment import FileAttachmentCategory
+from app.infrastructure.adapters.queue.recover_import_jobs import enqueue_recoverable_import_jobs
 from app.infrastructure.adapters.queue.tasks import process_import_job
 from app.infrastructure.adapters.security.pbkdf2_password_hasher import Pbkdf2PasswordHasherAdapter
 from app.infrastructure.config.settings import clear_settings_cache
@@ -656,6 +657,37 @@ def test_import_job_list_shows_own_jobs_and_admin_sees_all(
     assert {job['id'] for job in admin_list.json()}.issuperset(
         {first_upload.json()['id'], second_upload.json()['id']},
     )
+
+
+@pytest.mark.critical
+def test_import_job_recovery_enqueues_queued_jobs(
+    record_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage = _InMemoryStorage()
+    enqueued: list[str] = []
+
+    class _TaskStub:
+        @staticmethod
+        def delay(job_id: str) -> None:
+            enqueued.append(job_id)
+
+    monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.get_file_storage', lambda: storage)
+    monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.process_import_job.delay', lambda _: None)
+    monkeypatch.setattr('app.infrastructure.adapters.queue.recover_import_jobs.process_import_job', _TaskStub)
+    _create_doctor(email='import-recover@example.com')
+    token = _login(record_client, 'import-recover@example.com', TEST_DOCTOR_PASSWORD)
+    upload_response = record_client.post(
+        '/api/archives/imports',
+        headers={'Authorization': f'Bearer {token}'},
+        files={'file': ('recover.zip', _build_patient_archive_bytes(), 'application/zip')},
+    )
+
+    recovered_count = enqueue_recoverable_import_jobs()
+
+    assert upload_response.status_code == 201
+    assert recovered_count == 1
+    assert enqueued == [upload_response.json()['id']]
 
 
 @pytest.mark.critical
