@@ -13,6 +13,7 @@ class ImportJobStatus(StrEnum):
 
     QUEUED = 'queued'
     RUNNING = 'running'
+    NEEDS_REVIEW = 'needs_review'
     COMPLETED = 'completed'
     FAILED = 'failed'
     COMPLETED_WITH_WARNINGS = 'completed_with_warnings'

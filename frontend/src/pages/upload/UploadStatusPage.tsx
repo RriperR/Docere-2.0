@@ -1,16 +1,19 @@
 import React, { useEffect, useRef } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { AlertTriangle, ArrowLeft, CheckCircle, FileText } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, CheckCircle, FileSearch, FileText } from 'lucide-react'
 
+import { Button } from '../../components/common/Button'
 import { Card } from '../../components/common/Card'
 import { useUploadStore } from '../../stores/uploadStore'
 
 const POLL_INTERVAL = 3000
+const FINAL_STATUSES = ['needs_review', 'completed', 'completed_with_warnings', 'failed']
 
 const statusLabel: Record<string, string> = {
   queued: 'В очереди',
   running: 'Обработка',
+  needs_review: 'Нужна проверка',
   completed: 'Завершено',
   completed_with_warnings: 'Завершено с предупреждениями',
   failed: 'Ошибка',
@@ -22,21 +25,22 @@ const UploadStatusPage: React.FC = () => {
   const timerRef = useRef<number | null>(null)
 
   useEffect(() => {
-    async function fetchStatus() {
-      if (jobId) await getJobById(jobId)
-    }
-    void fetchStatus()
+    if (!jobId) return undefined
 
-    timerRef.current = window.setInterval(async () => {
-      if (!currentJob) return
-      if (['completed', 'completed_with_warnings', 'failed'].includes(currentJob.status)) {
+    const fetchStatus = async () => {
+      await getJobById(jobId)
+    }
+
+    void fetchStatus()
+    timerRef.current = window.setInterval(() => {
+      if (currentJob && FINAL_STATUSES.includes(currentJob.status)) {
         if (timerRef.current !== null) {
           clearInterval(timerRef.current)
           timerRef.current = null
         }
         return
       }
-      await fetchStatus()
+      void fetchStatus()
     }, POLL_INTERVAL)
 
     return () => {
@@ -47,22 +51,27 @@ const UploadStatusPage: React.FC = () => {
   if (!currentJob) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <p className="text-gray-500">Загрузка статуса импорта…</p>
+        <p className="text-gray-500">Загрузка статуса импорта...</p>
       </div>
     )
   }
 
   const isDone = currentJob.status === 'completed' || currentJob.status === 'completed_with_warnings'
   const isFailed = currentJob.status === 'failed'
+  const needsReview = currentJob.status === 'needs_review'
+  const report = currentJob.report_json ?? {}
+  const warnings = Array.isArray(report.warnings) ? report.warnings : []
+  const patients = Array.isArray(report.patients) ? report.patients : []
+
   const icon = isDone ? (
     <CheckCircle className="h-16 w-16 text-success-500" />
   ) : isFailed ? (
     <AlertTriangle className="h-16 w-16 text-error-500" />
+  ) : needsReview ? (
+    <FileSearch className="h-16 w-16 text-warning-500" />
   ) : (
     <FileText className="h-16 w-16 text-primary-500" />
   )
-
-  const reportEntries = Object.entries(currentJob.report_json ?? {})
 
   return (
     <div className="space-y-8">
@@ -72,39 +81,77 @@ const UploadStatusPage: React.FC = () => {
           Назад к загрузке
         </Link>
         <h1 className="text-2xl font-bold">Статус импорта</h1>
-        <p className="text-gray-500">Архив сохранён; обработка содержимого будет расширена позже.</p>
+        <p className="text-gray-500">Архив разбирается в фоне; найденные данные появятся здесь для проверки.</p>
       </motion.div>
 
       <Card>
-        <div className="flex flex-col items-center md:flex-row md:items-start">
-          <div className="p-4">{icon}</div>
-          <div className="text-center md:ml-6 md:text-left">
+        <div className="flex flex-col items-center gap-4 md:flex-row md:items-start">
+          <div className="p-2">{icon}</div>
+          <div className="flex-1 text-center md:text-left">
             <h3 className="text-lg font-medium">{statusLabel[currentJob.status] ?? currentJob.status}</h3>
-            <p className="text-gray-500">{String(currentJob.report_json?.message ?? 'Ожидание обработки')}</p>
+            <p className="text-gray-500">{String(report.message ?? 'Ожидание обработки')}</p>
             <div className="mt-4 flex flex-wrap gap-4 text-sm">
-              <Info label="Файл" value={currentJob.original_filename ?? currentJob.file?.name ?? '—'} />
-              <Info label="Размер" value={currentJob.size_bytes ? `${Math.ceil(currentJob.size_bytes / 1024)} КБ` : '—'} />
+              <Info label="Файл" value={currentJob.original_filename ?? currentJob.file?.name ?? '-'} />
+              <Info label="Размер" value={currentJob.size_bytes ? `${Math.ceil(currentJob.size_bytes / 1024)} КБ` : '-'} />
               <Info label="Загружено" value={new Date(currentJob.created_at).toLocaleString()} />
               {currentJob.finished_at && <Info label="Завершено" value={new Date(currentJob.finished_at).toLocaleString()} />}
             </div>
+            {needsReview && (
+              <div className="mt-5">
+                <Link to={`/upload/review/${currentJob.id}`}>
+                  <Button type="button" icon={<FileSearch className="h-4 w-4" />}>
+                    Проверить импорт
+                  </Button>
+                </Link>
+              </div>
+            )}
+            {isDone && (
+              <div className="mt-5">
+                <Link to="/patients">
+                  <Button type="button" variant="outline">
+                    Перейти к пациентам
+                  </Button>
+                </Link>
+              </div>
+            )}
           </div>
         </div>
       </Card>
 
-      {reportEntries.length > 0 && (
-        <Card title="Отчёт">
-          <dl className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            {reportEntries.map(([key, value]) => (
-              <div key={key} className="rounded-lg bg-gray-50 px-3 py-2">
-                <dt className="text-xs text-gray-500">{key}</dt>
-                <dd className="break-words text-sm font-medium text-gray-900">{String(value)}</dd>
-              </div>
+      <div className="grid gap-4 md:grid-cols-4">
+        <Summary label="Пациенты" value={Number(report.patients_created ?? patients.length ?? 0)} />
+        <Summary label="Записи" value={Number(report.records_created ?? countRecords(patients))} />
+        <Summary label="Вложения" value={Number(report.attachments_created ?? countFiles(patients))} />
+        <Summary label="Предупреждения" value={warnings.length} />
+      </div>
+
+      {warnings.length > 0 && (
+        <Card title="Предупреждения" accent="warning">
+          <ul className="space-y-2 text-sm text-gray-700">
+            {warnings.map((warning, index) => (
+              <li key={`${warning}-${index}`}>{warning}</li>
             ))}
-          </dl>
+          </ul>
         </Card>
       )}
     </div>
   )
+}
+
+function countRecords(patients: Array<{ record_groups?: unknown }>) {
+  return patients.reduce((sum, patient) => {
+    return sum + (Array.isArray(patient.record_groups) ? patient.record_groups.length : 0)
+  }, 0)
+}
+
+function countFiles(patients: Array<{ record_groups?: unknown }>) {
+  return patients.reduce((sum, patient) => {
+    if (!Array.isArray(patient.record_groups)) return sum
+    return sum + patient.record_groups.reduce((inner, group) => {
+      if (!group || typeof group !== 'object' || !('files' in group) || !Array.isArray(group.files)) return inner
+      return inner + group.files.length
+    }, 0)
+  }, 0)
 }
 
 function Info({ label, value }: { label: string; value: string }) {
@@ -113,6 +160,15 @@ function Info({ label, value }: { label: string; value: string }) {
       <p className="text-gray-500">{label}</p>
       <p className="font-medium">{value}</p>
     </div>
+  )
+}
+
+function Summary({ label, value }: { label: string; value: number }) {
+  return (
+    <Card>
+      <p className="text-sm text-gray-500">{label}</p>
+      <p className="mt-1 text-2xl font-semibold text-gray-900">{value}</p>
+    </Card>
   )
 }
 

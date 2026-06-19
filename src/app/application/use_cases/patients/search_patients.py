@@ -56,5 +56,6 @@ class SearchPatientsUseCase:
             query=normalized_query,
             date_of_birth=date_of_birth,
             requested_by_user_id=actor_user_id,
+            requested_by_role=actor_role,
             limit=limit,
         )

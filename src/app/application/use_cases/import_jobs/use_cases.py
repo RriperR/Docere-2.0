@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
+from datetime import date
+from io import BytesIO
 from uuid import UUID, uuid4
+from zipfile import ZipFile
 
 from app.application.ports.repositories.import_jobs.port import ImportJobRepositoryPort
+from app.application.ports.repositories.medical_records.port import MedicalRecordRepositoryPort
+from app.application.ports.repositories.patient_cards.port import PatientCardRepositoryPort
 from app.application.ports.storage.file_storage import FileStoragePort
 from app.application.use_cases.import_jobs.dtos import ImportJobDTO
 from app.application.use_cases.import_jobs.errors import ImportJobNotFoundError, ImportJobValidationError
+from app.domain.entities.file_attachment import FileAttachmentCategory
 from app.domain.entities.import_job import ImportJob
+
+_FINAL_STATUSES = {'completed', 'completed_with_warnings', 'failed'}
 
 
 class CreateImportJobUseCase:
@@ -95,6 +103,187 @@ class GetImportJobUseCase:
         return _to_dto(job)
 
 
+class ResolveImportJobUseCase:
+    """Создать медицинские сущности из подтвержденного черновика ImportJob."""
+
+    def __init__(
+        self,
+        *,
+        import_jobs: ImportJobRepositoryPort,
+        patient_cards: PatientCardRepositoryPort,
+        medical_records: MedicalRecordRepositoryPort,
+        storage: FileStoragePort,
+    ) -> None:
+        """Инициализировать use case."""
+        self._import_jobs = import_jobs
+        self._patient_cards = patient_cards
+        self._medical_records = medical_records
+        self._storage = storage
+
+    def execute(
+        self,
+        *,
+        job_id: UUID,
+        actor_user_id: UUID,
+        actor_role: str,
+        actor_fio: str,
+        decisions: list[dict[str, object]],
+    ) -> ImportJobDTO:
+        """Финализировать ImportJob по решениям пользователя.
+
+        Returns:
+            Обновленный ImportJob.
+
+        Raises:
+            ImportJobNotFoundError: Если job не найден или недоступен.
+            ImportJobValidationError: Если job не готов к resolve или решение некорректно.
+        """
+        job = self._import_jobs.get_job(
+            job_id=job_id,
+            requested_by_user_id=actor_user_id,
+            requested_by_role=actor_role,
+        )
+        if job is None or not job.archive_storage_key:
+            raise ImportJobNotFoundError
+        if job.status.value in _FINAL_STATUSES:
+            return _to_dto(job)
+        if job.status.value != 'needs_review':
+            raise ImportJobValidationError
+
+        report = job.report_json
+        patients = {
+            str(patient.get('candidate_id')): patient
+            for patient in _as_dict_list(report.get('patients'))
+            if patient.get('candidate_id')
+        }
+        decision_by_candidate = {
+            str(decision.get('candidate_id')): decision for decision in decisions if decision.get('candidate_id')
+        }
+
+        archive_content = self._storage.download(key=job.archive_storage_key)
+        created_patients = 0
+        created_records = 0
+        created_attachments = 0
+        warnings = list(_as_str_list(report.get('warnings')))
+
+        with ZipFile(BytesIO(archive_content)) as archive:
+            for candidate_id, patient in patients.items():
+                decision = decision_by_candidate.get(candidate_id)
+                if decision is None or decision.get('action') == 'skip':
+                    continue
+                patient_id = self._resolve_patient_id(
+                    actor_user_id=actor_user_id,
+                    actor_role=actor_role,
+                    patient=patient,
+                    decision=decision,
+                )
+                if decision.get('action') == 'create':
+                    created_patients += 1
+
+                record_decisions = {
+                    str(item.get('group_id')): item
+                    for item in _as_dict_list(decision.get('record_groups'))
+                    if item.get('group_id')
+                }
+                for group in _as_dict_list(patient.get('record_groups')):
+                    group_id = str(group.get('group_id'))
+                    group_decision = record_decisions.get(group_id, {})
+                    if group_decision.get('action') == 'skip':
+                        continue
+
+                    record = self._medical_records.create_record(
+                        creator_user_id=actor_user_id,
+                        patient_passport_id=patient_id,
+                        author_practitioner_passport_id=None,
+                        record_type=str(group_decision.get('record_type') or group.get('record_type') or 'other'),
+                        event_date=_parse_date(str(group_decision.get('event_date') or group.get('event_date') or ''))
+                        or date.today(),
+                        title=str(
+                            group_decision.get('title') or group.get('title') or 'Импортированная запись',
+                        )[:255],
+                        appointment_location=None,
+                        clinical_summary='Создано из импортированного архива.',
+                        payload_json=_payload_json(group),
+                    )
+                    created_records += 1
+                    for file_info in _as_dict_list(group.get('files')):
+                        path = str(file_info.get('path') or '')
+                        try:
+                            content = archive.read(path)
+                        except KeyError:
+                            warnings.append(f'File disappeared from archive during resolve: {path}')
+                            continue
+                        storage_key = f'records/{record.record.id}/{uuid4().hex}/{file_info.get("filename") or "file"}'
+                        mime_type = str(file_info.get('mime_type') or 'application/octet-stream')
+                        self._storage.upload(key=storage_key, content=content, content_type=mime_type)
+                        self._medical_records.add_attachment(
+                            record_id=record.record.id,
+                            comment_id=None,
+                            uploaded_by_user_id=actor_user_id,
+                            uploaded_by_fio=actor_fio,
+                            category=_attachment_category(mime_type, str(group.get('record_type') or 'other')).value,
+                            filename=str(file_info.get('filename') or 'file'),
+                            storage_key=storage_key,
+                            mime_type=mime_type,
+                            size_bytes=len(content),
+                        )
+                        created_attachments += 1
+
+        final_report = {
+            **report,
+            'message': 'Import resolved and medical records created',
+            'patients_created': created_patients,
+            'records_created': created_records,
+            'attachments_created': created_attachments,
+            'warnings': warnings,
+            'resolved_at': date.today().isoformat(),
+        }
+        updated = (
+            self._import_jobs.mark_completed_with_warnings(job_id=job_id, report_json=final_report)
+            if warnings
+            else self._import_jobs.mark_completed(job_id=job_id, report_json=final_report)
+        )
+        if updated is None:
+            raise ImportJobNotFoundError
+        return _to_dto(updated)
+
+    def _resolve_patient_id(
+        self,
+        *,
+        actor_user_id: UUID,
+        actor_role: str,
+        patient: dict[str, object],
+        decision: dict[str, object],
+    ) -> UUID:
+        action = decision.get('action')
+        if action == 'existing':
+            raw_patient_id = decision.get('patient_passport_id')
+            if raw_patient_id is None:
+                raise ImportJobValidationError
+            try:
+                patient_id = UUID(str(raw_patient_id))
+            except ValueError as exc:
+                raise ImportJobValidationError from exc
+            existing = self._patient_cards.get_accessible_patient(
+                patient_id=patient_id,
+                user_id=actor_user_id,
+                user_role=actor_role,
+            )
+            if existing is None:
+                raise ImportJobValidationError
+            return existing.id
+        if action == 'create':
+            created = self._patient_cards.create_patient_passport(
+                created_by_user_id=actor_user_id,
+                fio=str(decision.get('fio') or patient.get('fio') or 'Неизвестный пациент'),
+                date_of_birth=_parse_date(str(decision.get('date_of_birth') or patient.get('date_of_birth') or '')),
+                email=None,
+                phone=None,
+            )
+            return created.id
+        raise ImportJobValidationError
+
+
 def _to_dto(job: ImportJob) -> ImportJobDTO:
     return ImportJobDTO(
         id=job.id,
@@ -107,3 +296,41 @@ def _to_dto(job: ImportJob) -> ImportJobDTO:
         created_at=job.created_at,
         finished_at=job.finished_at,
     )
+
+
+def _as_dict_list(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
+def _as_str_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value]
+
+
+def _parse_date(value: str) -> date | None:
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _payload_json(group: dict[str, object]) -> dict[str, object]:
+    payload = group.get('payload_json')
+    if isinstance(payload, dict):
+        return payload
+    return {'import_source': 'archive'}
+
+
+def _attachment_category(mime_type: str, record_type: str) -> FileAttachmentCategory:
+    if mime_type == 'application/dicom' or record_type == 'exam_result':
+        return FileAttachmentCategory.IMAGING
+    if record_type == 'lab_result':
+        return FileAttachmentCategory.LAB
+    if mime_type in {'application/pdf', 'image/jpeg', 'image/png'}:
+        return FileAttachmentCategory.DOCUMENT
+    return FileAttachmentCategory.OTHER

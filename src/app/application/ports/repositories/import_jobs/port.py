@@ -29,8 +29,16 @@ class ImportJobRepositoryPort:
         """Перевести ImportJob в running."""
         raise NotImplementedError
 
+    def mark_needs_review(self, *, job_id: UUID, report_json: dict[str, object]) -> ImportJob | None:
+        """Перевести ImportJob в needs_review."""
+        raise NotImplementedError
+
     def mark_completed(self, *, job_id: UUID, report_json: dict[str, object]) -> ImportJob | None:
         """Перевести ImportJob в completed."""
+        raise NotImplementedError
+
+    def mark_completed_with_warnings(self, *, job_id: UUID, report_json: dict[str, object]) -> ImportJob | None:
+        """Перевести ImportJob в completed_with_warnings."""
         raise NotImplementedError
 
     def mark_failed(self, *, job_id: UUID, report_json: dict[str, object]) -> ImportJob | None:

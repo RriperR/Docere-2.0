@@ -10,6 +10,8 @@ from zipfile import ZipFile
 
 import pytest
 from fastapi.testclient import TestClient
+from pydicom.dataset import FileDataset, FileMetaDataset
+from pydicom.uid import ExplicitVRLittleEndian, generate_uid, SecondaryCaptureImageStorage
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
@@ -439,6 +441,41 @@ def _build_zip_bytes() -> bytes:
     return buffer.getvalue()
 
 
+def _build_patient_archive_bytes() -> bytes:
+    buffer = BytesIO()
+    with ZipFile(buffer, mode='w') as archive:
+        archive.writestr('Иванов Иван Иванович 1980-01-02/lab 2026-04-05/result.pdf', b'%PDF-1.4')
+        archive.writestr('__MACOSX/.DS_Store', b'noise')
+    return buffer.getvalue()
+
+
+def _build_dicom_bytes() -> bytes:
+    buffer = BytesIO()
+    file_meta = FileMetaDataset()
+    file_meta.MediaStorageSOPClassUID = SecondaryCaptureImageStorage
+    file_meta.MediaStorageSOPInstanceUID = generate_uid()
+    file_meta.TransferSyntaxUID = ExplicitVRLittleEndian
+    dataset = FileDataset('study.dcm', {}, file_meta=file_meta, preamble=b'\0' * 128)
+    dataset.PatientName = 'Petrov^Petr^Petrovich'
+    dataset.PatientBirthDate = '19750506'
+    dataset.StudyDate = '20260407'
+    dataset.Modality = 'MR'
+    dataset.StudyDescription = 'Brain MRI'
+    dataset.SeriesDescription = 'T2'
+    dataset.InstitutionName = 'Demo Clinic'
+    dataset.StudyInstanceUID = generate_uid()
+    dataset.SeriesInstanceUID = generate_uid()
+    dataset.save_as(buffer, enforce_file_format=True)
+    return buffer.getvalue()
+
+
+def _build_dicom_archive_bytes() -> bytes:
+    buffer = BytesIO()
+    with ZipFile(buffer, mode='w') as archive:
+        archive.writestr('dicom/study.dcm', _build_dicom_bytes())
+    return buffer.getvalue()
+
+
 @pytest.mark.critical
 def test_import_job_upload_status_and_worker_completion(
     record_client: TestClient,
@@ -449,10 +486,14 @@ def test_import_job_upload_status_and_worker_completion(
         'app.presentation.rest.public.v1.archives.router.get_file_storage',
         lambda: storage,
     )
+    monkeypatch.setattr(
+        'app.infrastructure.adapters.queue.tasks.get_file_storage',
+        lambda: storage,
+    )
     monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.process_import_job.delay', lambda _: None)
-    _register_patient(record_client, 'import-owner@example.com')
-    token = _login(record_client, 'import-owner@example.com', TEST_PATIENT_PASSWORD)
-    archive_content = _build_zip_bytes()
+    _create_doctor(email='import-owner@example.com')
+    token = _login(record_client, 'import-owner@example.com', TEST_DOCTOR_PASSWORD)
+    archive_content = _build_patient_archive_bytes()
 
     upload_response = record_client.post(
         '/api/archives/imports',
@@ -475,13 +516,47 @@ def test_import_job_upload_status_and_worker_completion(
     assert status_response.json()['archive_storage_key'] == uploaded_job['archive_storage_key']
 
     process_import_job(str(uploaded_job['id']))
-    completed_response = record_client.get(
+    review_response = record_client.get(
         f'/api/archives/imports/{uploaded_job["id"]}',
         headers={'Authorization': f'Bearer {token}'},
     )
 
-    assert completed_response.status_code == 200
-    assert completed_response.json()['status'] == 'completed'
+    assert review_response.status_code == 200
+    assert review_response.json()['status'] == 'needs_review'
+    report = review_response.json()['report_json']
+    assert report['patients'][0]['fio'] == 'Иванов Иван Иванович'
+    assert report['patients'][0]['date_of_birth'] == '1980-01-02'
+    assert report['patients'][0]['record_groups'][0]['record_type'] == 'lab_result'
+
+    resolve_response = record_client.post(
+        f'/api/archives/imports/{uploaded_job["id"]}/resolve',
+        headers={'Authorization': f'Bearer {token}'},
+        json={
+            'decisions': [
+                {
+                    'candidate_id': report['patients'][0]['candidate_id'],
+                    'action': 'create',
+                    'fio': report['patients'][0]['fio'],
+                    'date_of_birth': report['patients'][0]['date_of_birth'],
+                    'record_groups': [
+                        {
+                            'group_id': report['patients'][0]['record_groups'][0]['group_id'],
+                            'action': 'create',
+                            'record_type': 'lab_result',
+                            'event_date': '2026-04-05',
+                            'title': 'Импортированный анализ',
+                        },
+                    ],
+                },
+            ],
+        },
+    )
+
+    assert resolve_response.status_code == 200
+    assert resolve_response.json()['status'] == 'completed_with_warnings'
+    assert resolve_response.json()['report_json']['patients_created'] == 1
+    assert resolve_response.json()['report_json']['records_created'] == 1
+    assert resolve_response.json()['report_json']['attachments_created'] == 1
     with get_session_factory()() as session:
         job = session.get(ImportJobRow, UUID(uploaded_job['id']))
         audit_event = session.scalar(
@@ -490,6 +565,14 @@ def test_import_job_upload_status_and_worker_completion(
                 AuditEventRow.entity_id == UUID(uploaded_job['id']),
             ),
         )
+        patient = session.scalar(select(PatientPassportRow).where(PatientPassportRow.fio == 'Иванов Иван Иванович'))
+        assert patient is not None
+        record = session.scalar(
+            select(MedicalRecordRow).join(UserRecordLinkRow).where(UserRecordLinkRow.patient_passport_id == patient.id),
+        )
+        assert record is not None
+        attachment = session.scalar(select(FileAttachmentRow).where(FileAttachmentRow.record_id == record.id))
+        assert attachment is not None
     assert job is not None
     assert job.archive_storage_key in storage.objects
     assert audit_event is not None
@@ -497,9 +580,50 @@ def test_import_job_upload_status_and_worker_completion(
 
 
 @pytest.mark.critical
+def test_import_job_suggests_exact_accessible_patient_match(
+    record_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage = _InMemoryStorage()
+    monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.get_file_storage', lambda: storage)
+    monkeypatch.setattr('app.infrastructure.adapters.queue.tasks.get_file_storage', lambda: storage)
+    monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.process_import_job.delay', lambda _: None)
+    _create_doctor(email='import-match@example.com')
+    token = _login(record_client, 'import-match@example.com', TEST_DOCTOR_PASSWORD)
+    create_patient_response = record_client.post(
+        '/api/patients',
+        headers={'Authorization': f'Bearer {token}'},
+        json={
+            'fio': 'Иванов Иван Иванович',
+            'date_of_birth': '1980-01-02',
+            'email': None,
+            'phone': None,
+        },
+    )
+    assert create_patient_response.status_code == 201
+
+    upload_response = record_client.post(
+        '/api/archives/imports',
+        headers={'Authorization': f'Bearer {token}'},
+        files={'file': ('records.zip', _build_patient_archive_bytes(), 'application/zip')},
+    )
+    process_import_job(upload_response.json()['id'])
+    status_response = record_client.get(
+        f'/api/archives/imports/{upload_response.json()["id"]}',
+        headers={'Authorization': f'Bearer {token}'},
+    )
+
+    assert upload_response.status_code == 201
+    assert status_response.status_code == 200
+    patient = status_response.json()['report_json']['patients'][0]
+    exact_matches = [match for match in patient['existing_matches'] if match['match_type'] == 'exact']
+    assert exact_matches[0]['id'] == create_patient_response.json()['id']
+
+
+@pytest.mark.critical
 def test_import_job_requires_zip_archive(record_client: TestClient) -> None:
-    _register_patient(record_client, 'import-invalid@example.com')
-    token = _login(record_client, 'import-invalid@example.com', TEST_PATIENT_PASSWORD)
+    _create_doctor(email='import-invalid@example.com')
+    token = _login(record_client, 'import-invalid@example.com', TEST_DOCTOR_PASSWORD)
 
     response = record_client.post(
         '/api/archives/imports',
@@ -508,6 +632,73 @@ def test_import_job_requires_zip_archive(record_client: TestClient) -> None:
     )
 
     assert response.status_code == 422
+
+
+@pytest.mark.critical
+def test_import_job_extracts_dicom_metadata(
+    record_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage = _InMemoryStorage()
+    monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.get_file_storage', lambda: storage)
+    monkeypatch.setattr('app.infrastructure.adapters.queue.tasks.get_file_storage', lambda: storage)
+    monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.process_import_job.delay', lambda _: None)
+    _create_doctor(email='import-dicom@example.com')
+    token = _login(record_client, 'import-dicom@example.com', TEST_DOCTOR_PASSWORD)
+
+    upload_response = record_client.post(
+        '/api/archives/imports',
+        headers={'Authorization': f'Bearer {token}'},
+        files={'file': ('dicom.zip', _build_dicom_archive_bytes(), 'application/zip')},
+    )
+    process_import_job(upload_response.json()['id'])
+    status_response = record_client.get(
+        f'/api/archives/imports/{upload_response.json()["id"]}',
+        headers={'Authorization': f'Bearer {token}'},
+    )
+
+    assert upload_response.status_code == 201
+    assert status_response.status_code == 200
+    report = status_response.json()['report_json']
+    patient = report['patients'][0]
+    record_group = patient['record_groups'][0]
+    dicom_metadata = record_group['payload_json']['dicom_metadata'][0]
+    assert status_response.json()['status'] == 'needs_review'
+    assert patient['fio'] == 'Petrov Petr Petrovich'
+    assert patient['date_of_birth'] == '1975-05-06'
+    assert record_group['event_date'] == '2026-04-07'
+    assert record_group['record_type'] == 'exam_result'
+    assert dicom_metadata['Modality'] == 'MR'
+    assert dicom_metadata['StudyDescription'] == 'Brain MRI'
+
+
+@pytest.mark.critical
+def test_import_job_worker_marks_corrupted_zip_failed(
+    record_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage = _InMemoryStorage()
+    monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.get_file_storage', lambda: storage)
+    monkeypatch.setattr('app.infrastructure.adapters.queue.tasks.get_file_storage', lambda: storage)
+    monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.process_import_job.delay', lambda _: None)
+    _create_doctor(email='import-broken@example.com')
+    token = _login(record_client, 'import-broken@example.com', TEST_DOCTOR_PASSWORD)
+
+    upload_response = record_client.post(
+        '/api/archives/imports',
+        headers={'Authorization': f'Bearer {token}'},
+        files={'file': ('broken.zip', b'PKbroken', 'application/zip')},
+    )
+    process_import_job(upload_response.json()['id'])
+    status_response = record_client.get(
+        f'/api/archives/imports/{upload_response.json()["id"]}',
+        headers={'Authorization': f'Bearer {token}'},
+    )
+
+    assert upload_response.status_code == 201
+    assert status_response.status_code == 200
+    assert status_response.json()['status'] == 'failed'
+    assert status_response.json()['report_json']['errors']
 
 
 @pytest.mark.critical

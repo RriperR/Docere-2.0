@@ -45,6 +45,7 @@ class PatientCardRepositoryPort:
         query: str,
         date_of_birth: date | None,
         requested_by_user_id: UUID,
+        requested_by_role: str,
         limit: int,
     ) -> tuple[PatientSearchResultDTO, ...]:
         """Найти вероятные совпадения паспортов пациентов.

@@ -79,6 +79,20 @@ class SqlAlchemyImportJobRepositoryAdapter(ImportJobRepositoryPort):
         self._session.flush()
         return self._to_domain(row)
 
+    def mark_needs_review(self, *, job_id: UUID, report_json: dict[str, object]) -> ImportJob | None:
+        """Перевести ImportJob в needs_review.
+
+        Returns:
+            Обновленное задание или ``None``.
+        """
+        row = self._session.get(ImportJobRow, job_id)
+        if row is None:
+            return None
+        row.status = ImportJobStatus.NEEDS_REVIEW
+        row.report_json = report_json
+        self._session.flush()
+        return self._to_domain(row)
+
     def mark_completed(self, *, job_id: UUID, report_json: dict[str, object]) -> ImportJob | None:
         """Перевести ImportJob в completed.
 
@@ -89,6 +103,21 @@ class SqlAlchemyImportJobRepositoryAdapter(ImportJobRepositoryPort):
         if row is None:
             return None
         row.status = ImportJobStatus.COMPLETED
+        row.report_json = report_json
+        row.finished_at = utc_now()
+        self._session.flush()
+        return self._to_domain(row)
+
+    def mark_completed_with_warnings(self, *, job_id: UUID, report_json: dict[str, object]) -> ImportJob | None:
+        """Перевести ImportJob в completed_with_warnings.
+
+        Returns:
+            Обновленное задание или ``None``.
+        """
+        row = self._session.get(ImportJobRow, job_id)
+        if row is None:
+            return None
+        row.status = ImportJobStatus.COMPLETED_WITH_WARNINGS
         row.report_json = report_json
         row.finished_at = utc_now()
         self._session.flush()

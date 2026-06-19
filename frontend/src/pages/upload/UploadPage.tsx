@@ -24,8 +24,8 @@ const UploadPage = () => {
       return;
     }
 
-    if (file.size > 50 * 1024 * 1024) {
-      setUploadError('Файл слишком большой. Максимальный размер — 50 МБ.');
+    if (file.size > 200 * 1024 * 1024) {
+      setUploadError('Файл слишком большой. Максимальный размер - 200 МБ.');
       return;
     }
 
@@ -125,7 +125,7 @@ const UploadPage = () => {
                     : 'Перетащите ZIP-архив сюда или выберите файл'}
                 </p>
                 <p className="text-sm text-gray-500 mb-4">
-                  Поддерживается ZIP до 50 МБ
+                  Поддерживается ZIP до 200 МБ
                 </p>
 
                 <Button

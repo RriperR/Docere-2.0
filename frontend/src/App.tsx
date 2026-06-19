@@ -20,6 +20,7 @@ const AdminPanelPage = lazy(() => import('./pages/admin/AdminPanelPage'))
 const AccountSettings = lazy(() => import('./pages/settings/AccountSettingsPage'))
 const UploadPage = lazy(() => import('./pages/upload/UploadPage'))
 const UploadStatusPage = lazy(() => import('./pages/upload/UploadStatusPage'))
+const UploadReviewPage = lazy(() => import('./pages/upload/UploadReviewPage'))
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'))
 
 function App() {
@@ -88,6 +89,14 @@ function App() {
               element={
                 <RoleRoute allowedRoles={['doctor', 'admin']}>
                   <UploadStatusPage />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="/upload/review/:jobId"
+              element={
+                <RoleRoute allowedRoles={['doctor', 'admin']}>
+                  <UploadReviewPage />
                 </RoleRoute>
               }
             />

@@ -80,6 +80,7 @@ class SqlAlchemyPatientCardRepositoryAdapter(PatientCardRepositoryPort):
         query: str,
         date_of_birth: date | None,
         requested_by_user_id: UUID,
+        requested_by_role: str,
         limit: int,
     ) -> tuple[PatientSearchResultDTO, ...]:
         """Найти вероятные совпадения PatientPassport.
@@ -88,7 +89,9 @@ class SqlAlchemyPatientCardRepositoryAdapter(PatientCardRepositoryPort):
             Кандидаты, отсортированные по убыванию похожести.
         """
         rows = self._session.scalars(
-            select(PatientPassportRow).order_by(PatientPassportRow.updated_at.desc()).limit(500),
+            self._accessible_patient_passports_query(requested_by_user_id, requested_by_role)
+            .order_by(PatientPassportRow.updated_at.desc())
+            .limit(500),
         ).all()
         normalized_query = self._normalize_search_text(query)
         results: list[PatientSearchResultDTO] = []
