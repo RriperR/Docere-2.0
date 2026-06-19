@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, status
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.application.use_cases.auth.common.dtos import AuthenticatedUserDTO, AuthTokenDTO
@@ -43,6 +45,7 @@ from app.presentation.webserver.http_errors import (
 from app.presentation.webserver.rate_limit import check_auth_rate_limit
 
 router = APIRouter(prefix='/auth', tags=['auth'])
+logger = logging.getLogger(__name__)
 
 
 def _is_duplicate_user_email_error(error: IntegrityError) -> bool:
@@ -117,16 +120,20 @@ def login(
     check_auth_rate_limit(f'login:{normalized_email}')
     try:
         token = use_case.execute(email=normalized_email, password=payload.password)
-        current_user = SqlAlchemyAuthRepositoryAdapter(session=session).find_by_email(email=normalized_email)
-        if current_user is not None:
-            AuditEventRepositoryAdapter(session).record(
-                actor_user_id=current_user.id,
-                event_type='login',
-                entity_type='user',
-                entity_id=current_user.id,
-                metadata_json={'email': normalized_email},
-            )
-            session.commit()
+        try:
+            current_user = SqlAlchemyAuthRepositoryAdapter(session=session).find_by_email(email=normalized_email)
+            if current_user is not None:
+                AuditEventRepositoryAdapter(session).record(
+                    actor_user_id=current_user.id,
+                    event_type='login',
+                    entity_type='user',
+                    entity_id=current_user.id,
+                    metadata_json={'email': normalized_email},
+                )
+                session.commit()
+        except SQLAlchemyError:
+            session.rollback()
+            logger.warning('Failed to record login audit event', exc_info=True)
         return token
     except InvalidCredentialsError:
         session.rollback()

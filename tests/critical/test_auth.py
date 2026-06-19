@@ -6,8 +6,10 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.domain.entities.patient_passport import PatientPassportStatus
+from app.infrastructure.adapters.repositories.audit_events import AuditEventRepositoryAdapter
 from app.infrastructure.adapters.repositories.auth.sqlalchemy_auth_repository import SqlAlchemyAuthRepositoryAdapter
 from app.infrastructure.config.settings import clear_settings_cache
 from app.infrastructure.db.base import Base
@@ -176,6 +178,31 @@ def test_login_returns_access_token(auth_client: TestClient) -> None:
         audit_event = session.scalar(select(AuditEventRow).where(AuditEventRow.event_type == 'login'))
     assert audit_event is not None
     assert audit_event.entity_type == 'user'
+
+
+@pytest.mark.critical
+def test_login_returns_access_token_when_audit_write_fails(
+    auth_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = _build_registration_payload()
+    register_response = auth_client.post('/api/auth/register', json=payload)
+    assert register_response.status_code == 201
+
+    def fail_audit_record(self: AuditEventRepositoryAdapter, **_: object) -> None:
+        raise SQLAlchemyError('audit write failed')
+
+    monkeypatch.setattr(AuditEventRepositoryAdapter, 'record', fail_audit_record)
+
+    login_response = auth_client.post(
+        '/api/auth/login',
+        json={'email': payload['email'], 'password': payload['password']},
+    )
+
+    assert login_response.status_code == 200
+    login_payload = login_response.json()
+    assert login_payload['access_token']
+    assert login_payload['refresh_token']
 
 
 @pytest.mark.critical

@@ -147,6 +147,9 @@ const normalizeApiErrorMessage = (error: unknown, fallback: string): string => {
   const detail = maybeError?.response?.data?.detail;
 
   if (typeof detail === 'string' && detail.trim().length > 0) {
+    if (detail === 'Internal server error') {
+      return fallback;
+    }
     return detail;
   }
 
@@ -200,7 +203,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       await get().login(email, password);
     } catch (err: any) {
       set({
-        error: normalizeApiErrorMessage(err, 'Registration failed'),
+        error: normalizeApiErrorMessage(err, 'Не удалось зарегистрироваться. Попробуйте позже.'),
         isLoading: false,
       });
       throw err;
@@ -223,7 +226,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ user, isLoading: false, isAuthenticated: true });
     } catch (err: any) {
       set({
-        error: normalizeApiErrorMessage(err, 'Login failed'),
+        error: normalizeApiErrorMessage(err, 'Не удалось войти. Проверьте email и пароль или попробуйте позже.'),
         isLoading: false,
       });
       throw err;
