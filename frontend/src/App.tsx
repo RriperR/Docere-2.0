@@ -18,6 +18,8 @@ const PatientDetailsPage = lazy(() => import('./pages/patients/PatientDetailsPag
 const ShareRequestsPage = lazy(() => import('./pages/shares/ShareRequestsPage'))
 const AdminPanelPage = lazy(() => import('./pages/admin/AdminPanelPage'))
 const AccountSettings = lazy(() => import('./pages/settings/AccountSettingsPage'))
+const UploadPage = lazy(() => import('./pages/upload/UploadPage'))
+const UploadStatusPage = lazy(() => import('./pages/upload/UploadStatusPage'))
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'))
 
 function App() {
@@ -73,6 +75,22 @@ function App() {
             <Route path="/patients" element={<PatientListPage />} />
             <Route path="/patients/:id" element={<PatientDetailsPage />} />
             <Route path="/share-requests" element={<ShareRequestsPage />} />
+            <Route
+              path="/upload"
+              element={
+                <RoleRoute allowedRoles={['doctor', 'admin']}>
+                  <UploadPage />
+                </RoleRoute>
+              }
+            />
+            <Route
+              path="/upload/status/:jobId"
+              element={
+                <RoleRoute allowedRoles={['doctor', 'admin']}>
+                  <UploadStatusPage />
+                </RoleRoute>
+              }
+            />
             <Route
               path="/admin"
               element={

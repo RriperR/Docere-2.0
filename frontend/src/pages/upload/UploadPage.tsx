@@ -17,16 +17,15 @@ const UploadPage = () => {
 
     const file = acceptedFiles[0];
 
-    // Check file type (accept PDF, images, ZIP, etc.)
-    const acceptedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'application/zip', 'application/x-zip-compressed'];
-    if (!acceptedTypes.includes(file.type)) {
-      setUploadError('Invalid file type. Please upload a PDF, image, or ZIP file.');
+    const acceptedTypes = ['application/zip', 'application/x-zip-compressed'];
+    const isZip = acceptedTypes.includes(file.type) || file.name.toLowerCase().endsWith('.zip');
+    if (!isZip) {
+      setUploadError('Выберите ZIP-архив.');
       return;
     }
 
-    // Check file size (max 50MB)
     if (file.size > 50 * 1024 * 1024) {
-      setUploadError('File is too large. Maximum size is 50MB.');
+      setUploadError('Файл слишком большой. Максимальный размер — 50 МБ.');
       return;
     }
 
@@ -36,7 +35,11 @@ const UploadPage = () => {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    multiple: false
+    multiple: false,
+    accept: {
+      'application/zip': ['.zip'],
+      'application/x-zip-compressed': ['.zip'],
+    },
   });
 
   const handleUpload = async () => {
@@ -73,9 +76,9 @@ const UploadPage = () => {
         transition={{ duration: 0.5 }}
         className="mb-8"
       >
-        <h1 className="text-2xl font-bold text-gray-900">Upload Patient Archive</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Импорт архива</h1>
         <p className="mt-1 text-gray-500">
-          Upload medical records and let the system automatically extract patient information.
+          Загрузите ZIP-архив с медицинскими данными пациента.
         </p>
       </motion.div>
 
@@ -118,11 +121,11 @@ const UploadPage = () => {
 
                 <p className="text-lg font-medium text-gray-700 mb-1">
                   {isDragActive
-                    ? 'Drop the file here'
-                    : 'Drag & drop a file here, or click to select'}
+                    ? 'Отпустите архив здесь'
+                    : 'Перетащите ZIP-архив сюда или выберите файл'}
                 </p>
                 <p className="text-sm text-gray-500 mb-4">
-                  Support for PDF, images, and ZIP files (max 50MB)
+                  Поддерживается ZIP до 50 МБ
                 </p>
 
                 <Button
@@ -130,14 +133,14 @@ const UploadPage = () => {
                   variant="outline"
                   size="md"
                 >
-                  Select File
+                  Выбрать файл
                 </Button>
               </div>
             </div>
           ) : (
             <div className="border rounded-lg p-6">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-medium text-gray-900">Selected File</h3>
+                <h3 className="text-lg font-medium text-gray-900">Выбранный архив</h3>
                 {!isUploading && (
                   <button
                     onClick={clearUpload}
@@ -165,7 +168,7 @@ const UploadPage = () => {
               {isUploading ? (
                 <div className="mb-6">
                   <div className="flex justify-between text-sm font-medium text-gray-700 mb-1">
-                    <span>Uploading...</span>
+                    <span>Загрузка...</span>
                     <span>{progress}%</span>
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-2.5">
@@ -183,14 +186,14 @@ const UploadPage = () => {
                     onClick={clearUpload}
                     className="mr-2"
                   >
-                    Cancel
+                    Отмена
                   </Button>
                   <Button
                     type="button"
                     variant="primary"
                     onClick={handleUpload}
                   >
-                    Upload
+                    Загрузить
                   </Button>
                 </div>
               )}

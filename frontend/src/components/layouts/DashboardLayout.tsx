@@ -13,6 +13,7 @@ import {
   Settings,
   Share2,
   Shield,
+  UploadCloud,
   Users,
   X,
 } from 'lucide-react'
@@ -99,9 +100,11 @@ export const DashboardLayout = () => {
 
     const roleLinks: Record<string, Array<{ path: string; label: string; icon: ReactNode; badge: number }>> = {
       doctor: [
+        { path: '/upload', label: 'Импорт архива', icon: <UploadCloud className="h-5 w-5" />, badge: 0 },
         { path: '/patients', label: 'Пациенты', icon: <Users className="h-5 w-5" />, badge: 0 },
       ],
       admin: [
+        { path: '/upload', label: 'Импорт архива', icon: <UploadCloud className="h-5 w-5" />, badge: 0 },
         { path: '/patients', label: 'Пациенты', icon: <Users className="h-5 w-5" />, badge: 0 },
         { path: '/admin', label: 'Панель админа', icon: <Shield className="h-5 w-5" />, badge: 0 },
       ],
@@ -419,6 +422,7 @@ function getBreadcrumbs(pathname: string): Array<{ label: string; path: string }
     '/dashboard/admin': 'Панель администратора',
     '/patients': 'Пациенты',
     '/share-requests': 'Sharing записей',
+    '/upload': 'Импорт архива',
     '/admin': 'Управление системой',
     '/settings': 'Настройки аккаунта',
   }
