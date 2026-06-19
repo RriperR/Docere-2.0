@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import suppress
+from typing import cast, Protocol
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, status, UploadFile
@@ -39,6 +40,12 @@ router = APIRouter(prefix='/archives', tags=['archives'])
 archive_file_dependency = File(...)
 MAX_ARCHIVE_SIZE_MB = 200
 MAX_ARCHIVE_SIZE_BYTES = MAX_ARCHIVE_SIZE_MB * 1024 * 1024
+
+
+class _CeleryTask(Protocol):
+    def delay(self, *args: object, **kwargs: object) -> object:
+        """Enqueue Celery task."""
+        ...
 
 
 def _build_repository(session: Session) -> SqlAlchemyImportJobRepositoryAdapter:
@@ -120,7 +127,7 @@ def create_import_job(
         )
         session.commit()
         with suppress(Exception):
-            process_import_job.delay(str(job.id))
+            cast(_CeleryTask, process_import_job).delay(str(job.id))
         return job
     except ImportJobValidationError as exc:
         session.rollback()

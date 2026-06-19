@@ -208,7 +208,12 @@ def _read_dicom_metadata(content: bytes, path: str) -> dict[str, object]:
     if not path.lower().endswith(('.dcm', '.dicom', '.ima')) and content[128:132] != b'DICM':
         return {}
     try:
-        dataset = pydicom.dcmread(BytesIO(content), stop_before_pixels=True, force=True, specific_tags=_DICOM_TAGS)
+        dataset = pydicom.dcmread(
+            BytesIO(content),
+            stop_before_pixels=True,
+            force=True,
+            specific_tags=list(_DICOM_TAGS),
+        )
     except Exception:
         return {}
     metadata: dict[str, object] = {}
