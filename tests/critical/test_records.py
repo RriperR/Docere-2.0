@@ -621,6 +621,44 @@ def test_import_job_suggests_exact_accessible_patient_match(
 
 
 @pytest.mark.critical
+def test_import_job_list_shows_own_jobs_and_admin_sees_all(
+    record_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage = _InMemoryStorage()
+    monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.get_file_storage', lambda: storage)
+    monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.process_import_job.delay', lambda _: None)
+    _create_doctor(email='import-list-a@example.com')
+    _create_doctor(email='import-list-b@example.com')
+    _create_admin(email='import-list-admin@example.com')
+    token_a = _login(record_client, 'import-list-a@example.com', TEST_DOCTOR_PASSWORD)
+    token_b = _login(record_client, 'import-list-b@example.com', TEST_DOCTOR_PASSWORD)
+    admin_token = _login(record_client, 'import-list-admin@example.com', TEST_DOCTOR_PASSWORD)
+
+    first_upload = record_client.post(
+        '/api/archives/imports',
+        headers={'Authorization': f'Bearer {token_a}'},
+        files={'file': ('first.zip', _build_patient_archive_bytes(), 'application/zip')},
+    )
+    second_upload = record_client.post(
+        '/api/archives/imports',
+        headers={'Authorization': f'Bearer {token_b}'},
+        files={'file': ('second.zip', _build_patient_archive_bytes(), 'application/zip')},
+    )
+    own_list = record_client.get('/api/archives/imports', headers={'Authorization': f'Bearer {token_a}'})
+    admin_list = record_client.get('/api/archives/imports', headers={'Authorization': f'Bearer {admin_token}'})
+
+    assert first_upload.status_code == 201
+    assert second_upload.status_code == 201
+    assert own_list.status_code == 200
+    assert admin_list.status_code == 200
+    assert [job['id'] for job in own_list.json()] == [first_upload.json()['id']]
+    assert {job['id'] for job in admin_list.json()}.issuperset(
+        {first_upload.json()['id'], second_upload.json()['id']},
+    )
+
+
+@pytest.mark.critical
 def test_import_job_requires_zip_archive(record_client: TestClient) -> None:
     _create_doctor(email='import-invalid@example.com')
     token = _login(record_client, 'import-invalid@example.com', TEST_DOCTOR_PASSWORD)

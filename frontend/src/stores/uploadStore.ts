@@ -84,13 +84,16 @@ export interface ImportPatientDecision {
 interface UploadState {
   currentUpload: File | null
   currentJob: UploadJob | null
+  jobs: UploadJob[]
   isUploading: boolean
+  isLoadingJobs: boolean
   isResolving: boolean
   progress: number
   error: string | null
 
   setCurrentUpload: (file: File | null) => void
   uploadFile: (file: File) => Promise<string>
+  listJobs: () => Promise<void>
   getJobById: (id: string) => Promise<void>
   resolveJob: (id: string, patients: ImportPatientDecision[]) => Promise<void>
   clearUpload: () => void
@@ -110,7 +113,9 @@ const normalizeError = (error: unknown, fallback: string): string => {
 export const useUploadStore = create<UploadState>((set, get) => ({
   currentUpload: null,
   currentJob: null,
+  jobs: [],
   isUploading: false,
+  isLoadingJobs: false,
   isResolving: false,
   progress: 0,
   error: null,
@@ -134,11 +139,21 @@ export const useUploadStore = create<UploadState>((set, get) => ({
         ...data,
         file: { name: file.name, size: file.size, type: file.type },
       }
-      set({ currentJob: job, isUploading: false, progress: 100 })
+      set({ currentJob: job, jobs: [job, ...get().jobs.filter((item) => item.id !== job.id)], isUploading: false, progress: 100 })
       return data.id
     } catch (error: unknown) {
       set({ error: normalizeError(error, 'Не удалось загрузить архив'), isUploading: false, progress: 0 })
       throw error
+    }
+  },
+
+  listJobs: async () => {
+    set({ isLoadingJobs: true, error: null })
+    try {
+      const { data } = await api.get<UploadJob[]>('/archives/imports')
+      set({ jobs: data, isLoadingJobs: false })
+    } catch (error: unknown) {
+      set({ error: normalizeError(error, 'Не удалось загрузить список импортов'), isLoadingJobs: false })
     }
   },
 
@@ -151,6 +166,7 @@ export const useUploadStore = create<UploadState>((set, get) => ({
           ...data,
           file: get().currentJob?.file,
         },
+        jobs: get().jobs.map((item) => (item.id === data.id ? data : item)),
       })
     } catch (error: unknown) {
       set({ error: normalizeError(error, 'Не удалось получить статус импорта') })
@@ -161,7 +177,11 @@ export const useUploadStore = create<UploadState>((set, get) => ({
     set({ isResolving: true, error: null })
     try {
       const { data } = await api.post<UploadJob>(`/archives/imports/${id}/resolve`, { decisions: patients })
-      set({ currentJob: data, isResolving: false })
+      set({
+        currentJob: data,
+        jobs: get().jobs.map((item) => (item.id === data.id ? data : item)),
+        isResolving: false,
+      })
     } catch (error: unknown) {
       set({ error: normalizeError(error, 'Не удалось подтвердить импорт'), isResolving: false })
       throw error
@@ -172,7 +192,9 @@ export const useUploadStore = create<UploadState>((set, get) => ({
     set({
       currentUpload: null,
       currentJob: null,
+      jobs: [],
       isUploading: false,
+      isLoadingJobs: false,
       isResolving: false,
       progress: 0,
       error: null,

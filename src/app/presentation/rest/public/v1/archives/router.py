@@ -15,6 +15,7 @@ from app.application.use_cases.import_jobs.errors import ImportJobNotFoundError,
 from app.application.use_cases.import_jobs.use_cases import (
     CreateImportJobUseCase,
     GetImportJobUseCase,
+    ListImportJobsUseCase,
     ResolveImportJobUseCase,
 )
 from app.infrastructure.adapters.queue.tasks import process_import_job
@@ -70,6 +71,15 @@ def get_import_job_use_case(session: Session = db_session_dependency) -> GetImpo
     return GetImportJobUseCase(repository=_build_repository(session))
 
 
+def get_list_import_jobs_use_case(session: Session = db_session_dependency) -> ListImportJobsUseCase:
+    """Создать use case списка ImportJob.
+
+    Returns:
+        Настроенный use case.
+    """
+    return ListImportJobsUseCase(repository=_build_repository(session))
+
+
 def get_resolve_import_job_use_case(session: Session = db_session_dependency) -> ResolveImportJobUseCase:
     """Создать use case финализации ImportJob.
 
@@ -86,6 +96,7 @@ def get_resolve_import_job_use_case(session: Session = db_session_dependency) ->
 
 create_import_job_use_case_dependency = Depends(get_create_import_job_use_case)
 get_import_job_use_case_dependency = Depends(get_import_job_use_case)
+list_import_jobs_use_case_dependency = Depends(get_list_import_jobs_use_case)
 resolve_import_job_use_case_dependency = Depends(get_resolve_import_job_use_case)
 
 
@@ -135,6 +146,25 @@ def create_import_job(
     except Exception:
         session.rollback()
         raise
+
+
+@router.get('/imports', response_model=list[ImportJobResponseSchema])
+def list_import_jobs(
+    current_user: AuthenticatedUserDTO = current_authenticated_user_dependency,
+    use_case: ListImportJobsUseCase = list_import_jobs_use_case_dependency,
+) -> tuple[ImportJobDTO, ...]:
+    """Вернуть последние задания импорта, доступные текущему пользователю.
+
+    Returns:
+        Список доступных заданий импорта.
+    """
+    if current_user.role not in {'doctor', 'admin'}:
+        raise_forbidden('Only doctors and admins can view archive imports')
+    return use_case.execute(
+        requested_by_user_id=current_user.id,
+        requested_by_role=current_user.role,
+        limit=50,
+    )
 
 
 @router.get('/imports/{job_id}', response_model=ImportJobResponseSchema)

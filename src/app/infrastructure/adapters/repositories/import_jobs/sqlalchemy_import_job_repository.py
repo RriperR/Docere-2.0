@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.application.ports.repositories.import_jobs.port import ImportJobRepositoryPort
@@ -65,6 +66,14 @@ class SqlAlchemyImportJobRepositoryAdapter(ImportJobRepositoryPort):
         if requested_by_role != 'admin' and row.uploaded_by_user_id != requested_by_user_id:
             return None
         return self._to_domain(row)
+
+    def list_jobs(self, *, requested_by_user_id: UUID, requested_by_role: str, limit: int) -> tuple[ImportJob, ...]:
+        """Return accessible ImportJob rows, newest first."""
+        statement = select(ImportJobRow).order_by(ImportJobRow.created_at.desc()).limit(limit)
+        if requested_by_role != 'admin':
+            statement = statement.where(ImportJobRow.uploaded_by_user_id == requested_by_user_id)
+        rows = self._session.scalars(statement).all()
+        return tuple(self._to_domain(row) for row in rows)
 
     def mark_running(self, *, job_id: UUID) -> ImportJob | None:
         """Перевести ImportJob в running.

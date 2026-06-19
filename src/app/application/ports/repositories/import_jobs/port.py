@@ -25,6 +25,10 @@ class ImportJobRepositoryPort:
         """Вернуть ImportJob, если он доступен пользователю."""
         raise NotImplementedError
 
+    def list_jobs(self, *, requested_by_user_id: UUID, requested_by_role: str, limit: int) -> tuple[ImportJob, ...]:
+        """Return accessible ImportJob rows."""
+        raise NotImplementedError
+
     def mark_running(self, *, job_id: UUID) -> ImportJob | None:
         """Перевести ImportJob в running."""
         raise NotImplementedError

@@ -1,16 +1,39 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDropzone } from 'react-dropzone';
 import { motion } from 'framer-motion';
-import { Upload, FileText, X, AlertCircle } from 'lucide-react';
+import { Upload, FileText, X, AlertCircle, FileSearch, RefreshCw } from 'lucide-react';
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
-import { useUploadStore } from '../../stores/uploadStore';
+import { UploadJob, useUploadStore } from '../../stores/uploadStore';
+
+const statusLabel: Record<UploadJob['status'], string> = {
+  queued: 'В очереди',
+  running: 'Обработка',
+  needs_review: 'Нужна проверка',
+  completed: 'Завершено',
+  completed_with_warnings: 'Завершено с предупреждениями',
+  failed: 'Ошибка',
+};
 
 const UploadPage = () => {
   const navigate = useNavigate();
-  const { currentUpload, setCurrentUpload, uploadFile, isUploading, progress, error } = useUploadStore();
+  const {
+    currentUpload,
+    setCurrentUpload,
+    uploadFile,
+    listJobs,
+    jobs,
+    isLoadingJobs,
+    isUploading,
+    progress,
+    error,
+  } = useUploadStore();
   const [uploadError, setUploadError] = useState('');
+
+  useEffect(() => {
+    void listJobs();
+  }, [listJobs]);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles.length === 0) return;
@@ -51,6 +74,10 @@ const UploadPage = () => {
     } catch (error) {
       // Error is handled by the upload store
     }
+  };
+
+  const openJob = (job: UploadJob) => {
+    navigate(job.status === 'needs_review' ? `/upload/review/${job.id}` : `/upload/status/${job.id}`);
   };
 
   const clearUpload = () => {
@@ -201,8 +228,80 @@ const UploadPage = () => {
           )}
         </Card>
       </motion.div>
+
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.3, duration: 0.5 }}
+        className="mt-8"
+      >
+        <Card
+          title="Загруженные архивы"
+          footer={
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                icon={<RefreshCw className="h-4 w-4" />}
+                isLoading={isLoadingJobs}
+                onClick={() => void listJobs()}
+              >
+                Обновить
+              </Button>
+            </div>
+          }
+        >
+          {jobs.length === 0 ? (
+            <p className="text-sm text-gray-500">Загруженных архивов пока нет.</p>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {jobs.map((job) => (
+                <div key={job.id} className="flex flex-col gap-3 py-3 md:flex-row md:items-center md:justify-between">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-gray-900">
+                      {job.original_filename ?? 'archive.zip'}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {statusLabel[job.status]} · {new Date(job.created_at).toLocaleString()}
+                    </p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Пациентов: {getPatientCount(job)} · Записей: {getRecordCount(job)} · Вложений: {getAttachmentCount(job)}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant={job.status === 'needs_review' ? 'primary' : 'outline'}
+                    size="sm"
+                    icon={job.status === 'needs_review' ? <FileSearch className="h-4 w-4" /> : <FileText className="h-4 w-4" />}
+                    onClick={() => openJob(job)}
+                  >
+                    {job.status === 'needs_review' ? 'Проверить импорт' : 'Статус'}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      </motion.div>
     </div>
   );
 };
+
+function getPatientCount(job: UploadJob) {
+  return Number(job.report_json.patients_created ?? job.report_json.patients?.length ?? 0);
+}
+
+function getRecordCount(job: UploadJob) {
+  if (typeof job.report_json.records_created === 'number') return job.report_json.records_created;
+  return job.report_json.patients?.reduce((sum, patient) => sum + patient.record_groups.length, 0) ?? 0;
+}
+
+function getAttachmentCount(job: UploadJob) {
+  if (typeof job.report_json.attachments_created === 'number') return job.report_json.attachments_created;
+  return job.report_json.patients?.reduce((sum, patient) => {
+    return sum + patient.record_groups.reduce((inner, group) => inner + group.files.length, 0);
+  }, 0) ?? 0;
+}
 
 export default UploadPage;

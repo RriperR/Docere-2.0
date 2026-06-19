@@ -103,6 +103,33 @@ class GetImportJobUseCase:
         return _to_dto(job)
 
 
+class ListImportJobsUseCase:
+    """Вернуть список доступных ImportJob."""
+
+    def __init__(self, repository: ImportJobRepositoryPort) -> None:
+        """Инициализировать use case."""
+        self._repository = repository
+
+    def execute(
+        self,
+        *,
+        requested_by_user_id: UUID,
+        requested_by_role: str,
+        limit: int = 50,
+    ) -> tuple[ImportJobDTO, ...]:
+        """Вернуть последние задания импорта.
+
+        Returns:
+            Доступные задания импорта.
+        """
+        jobs = self._repository.list_jobs(
+            requested_by_user_id=requested_by_user_id,
+            requested_by_role=requested_by_role,
+            limit=limit,
+        )
+        return tuple(_to_dto(job) for job in jobs)
+
+
 class ResolveImportJobUseCase:
     """Создать медицинские сущности из подтвержденного черновика ImportJob."""
 
