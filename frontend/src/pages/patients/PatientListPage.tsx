@@ -149,6 +149,7 @@ const PatientListPage: React.FC = () => {
           <div className="flex gap-2">
             <Input
               type="date"
+              lang="en-GB"
               icon={<Calendar className="h-4 w-4" />}
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
@@ -157,6 +158,7 @@ const PatientListPage: React.FC = () => {
             />
             <Input
               type="date"
+              lang="en-GB"
               icon={<Calendar className="h-4 w-4" />}
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
@@ -206,7 +208,7 @@ const PatientListPage: React.FC = () => {
           <EmptyState onAdd={() => setModalOpen(true)} canCreate={canCreatePatient} />
         ) : viewMode === 'grid' ? (
           <div className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredPatients.map((patient, i) => (
+            {filteredPatients.map((patient) => (
               <Link
                 key={patient.id}
                 to={`/patients/${patient.id}`}
@@ -252,7 +254,7 @@ const PatientListPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {filteredPatients.map((patient, i) => (
+                {filteredPatients.map((patient) => (
                   <tr key={patient.id} className="group hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
@@ -331,7 +333,7 @@ const PatientListPage: React.FC = () => {
                 <Input label="Отчество" className="col-span-2" value={form.middleName} onChange={(e) => setForm({ ...form, middleName: e.target.value })} />
                 <Input label="Email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
                 <Input label="Телефон" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-                <Input label="Дата рождения" type="date" className="col-span-2" value={form.birthday} onChange={(e) => setForm({ ...form, birthday: e.target.value })} />
+                <Input label="Дата рождения" type="date" lang="en-GB" className="col-span-2" value={form.birthday} onChange={(e) => setForm({ ...form, birthday: e.target.value })} />
               </div>
               <div className="mt-5 flex justify-end gap-2">
                 <Button variant="outline" onClick={closeModal}>Отмена</Button>

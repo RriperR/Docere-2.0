@@ -182,6 +182,7 @@ const RegisterPage = () => {
           <Input
             id="birthday"
             type="date"
+            lang="en-GB"
             label="Дата рождения"
             icon={<Calendar size={15} />}
             error={errors.birthday?.message}

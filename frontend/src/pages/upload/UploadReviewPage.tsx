@@ -5,12 +5,14 @@ import { AlertTriangle, ArrowLeft, Check, FileText, UserCheck } from 'lucide-rea
 
 import { Button } from '../../components/common/Button'
 import { Card } from '../../components/common/Card'
+import { Patient, usePatientsStore } from '../../stores/patientsStore'
 import {
   ImportPatientDecision,
   ImportPatientDraft,
   ImportRecordGroupDecision,
   useUploadStore,
 } from '../../stores/uploadStore'
+import { formatDateForDisplay } from '../../utils/dates'
 
 type PatientAction = 'existing' | 'create' | 'skip'
 
@@ -27,6 +29,12 @@ type PatientDecisionState = {
   record_groups: GroupDecisionState[]
 }
 
+type PatientOption = {
+  id: string
+  label: string
+  priority: number
+}
+
 const recordTypeLabels: Record<string, string> = {
   exam_result: 'Обследование',
   lab_result: 'Анализ',
@@ -38,6 +46,12 @@ const UploadReviewPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>()
   const navigate = useNavigate()
   const { currentJob, error, getJobById, resolveJob, isResolving } = useUploadStore()
+  const {
+    patients: accessiblePatients,
+    fetchPatients,
+    isLoading: isLoadingPatients,
+    error: patientsError,
+  } = usePatientsStore()
   const [decisions, setDecisions] = useState<PatientDecisionState[]>([])
   const [formError, setFormError] = useState('')
 
@@ -45,13 +59,17 @@ const UploadReviewPage: React.FC = () => {
     if (jobId) void getJobById(jobId)
   }, [jobId, getJobById])
 
-  const patients = useMemo(() => currentJob?.report_json.patients ?? [], [currentJob?.report_json.patients])
+  useEffect(() => {
+    void fetchPatients()
+  }, [fetchPatients])
+
+  const patientCandidates = useMemo(() => currentJob?.report_json.patients ?? [], [currentJob?.report_json.patients])
   const warnings = currentJob?.report_json.warnings ?? []
 
   useEffect(() => {
-    if (decisions.length > 0 || patients.length === 0) return
-    setDecisions(patients.map(toInitialDecision))
-  }, [patients, decisions.length])
+    if (decisions.length > 0 || patientCandidates.length === 0) return
+    setDecisions(patientCandidates.map(toInitialDecision))
+  }, [patientCandidates, decisions.length])
 
   if (!currentJob) {
     return (
@@ -98,40 +116,22 @@ const UploadReviewPage: React.FC = () => {
         <p className="text-gray-500">Подтвердите, к каким карточкам пациентов добавить найденные записи.</p>
       </motion.div>
 
-      {(formError || error) && (
+      {(formError || error || patientsError) && (
         <div className="flex items-start rounded-md border border-error-200 bg-error-50 p-3">
           <AlertTriangle className="mr-2 mt-0.5 h-5 w-5 flex-shrink-0 text-error-500" />
-          <p className="text-sm text-error-700">{formError || error}</p>
+          <p className="text-sm text-error-700">{formError || error || patientsError}</p>
         </div>
       )}
 
       {decisions.map((decision, patientIndex) => {
-        const patient = patients.find((item) => item.candidate_id === decision.candidate_id)
-        if (!patient) return null
+        const patientCandidate = patientCandidates.find((item) => item.candidate_id === decision.candidate_id)
+        if (!patientCandidate) return null
+        const patientOptions = buildPatientOptions(accessiblePatients, patientCandidate)
 
         return (
-          <Card key={decision.candidate_id} title={patient.fio ?? 'Пациент не распознан'}>
+          <Card key={decision.candidate_id} title={patientCandidate.fio ?? 'Пациент не распознан'}>
             <div className="space-y-5">
               <div className="grid gap-4 lg:grid-cols-3">
-                <label className="space-y-1">
-                  <span className="text-sm font-medium text-gray-700">ФИО</span>
-                  <input
-                    className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm"
-                    value={decision.fio}
-                    disabled={decision.action === 'skip'}
-                    onChange={(event) => updatePatient(patientIndex, { fio: event.target.value })}
-                  />
-                </label>
-                <label className="space-y-1">
-                  <span className="text-sm font-medium text-gray-700">Дата рождения</span>
-                  <input
-                    type="date"
-                    className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm"
-                    value={decision.date_of_birth}
-                    disabled={decision.action === 'skip'}
-                    onChange={(event) => updatePatient(patientIndex, { date_of_birth: event.target.value })}
-                  />
-                </label>
                 <label className="space-y-1">
                   <span className="text-sm font-medium text-gray-700">Решение</span>
                   <select
@@ -144,27 +144,70 @@ const UploadReviewPage: React.FC = () => {
                     <option value="skip">Пропустить пациента</option>
                   </select>
                 </label>
+
+                {decision.action === 'create' && (
+                  <>
+                    <label className="space-y-1">
+                      <span className="text-sm font-medium text-gray-700">ФИО</span>
+                      <input
+                        className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm"
+                        value={decision.fio}
+                        onChange={(event) => updatePatient(patientIndex, { fio: event.target.value })}
+                      />
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-sm font-medium text-gray-700">Дата рождения</span>
+                      <input
+                        type="date"
+                        lang="en-GB"
+                        className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm"
+                        value={decision.date_of_birth}
+                        onChange={(event) => updatePatient(patientIndex, { date_of_birth: event.target.value })}
+                      />
+                    </label>
+                  </>
+                )}
+
+                {decision.action === 'existing' && (
+                  <label className="space-y-1 lg:col-span-2">
+                    <span className="text-sm font-medium text-gray-700">Карточка пациента</span>
+                    <select
+                      className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm"
+                      value={decision.patient_passport_id}
+                      disabled={isLoadingPatients}
+                      onChange={(event) => updatePatient(patientIndex, { patient_passport_id: event.target.value })}
+                    >
+                      <option value="">
+                        {isLoadingPatients ? 'Загрузка карточек...' : 'Выберите доступную карточку'}
+                      </option>
+                      {patientOptions.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
               </div>
 
-              {patient.existing_matches.length > 0 && decision.action === 'existing' && (
+              {patientCandidate.existing_matches.length > 0 && decision.action === 'existing' && (
                 <div className="rounded-md border border-gray-100 bg-gray-50 p-3">
-                  <p className="mb-2 text-sm font-medium text-gray-700">Найденные карточки</p>
+                  <p className="mb-2 text-sm font-medium text-gray-700">Найденные совпадения</p>
                   <div className="space-y-2">
-                    {patient.existing_matches.map((match) => (
-                      <label key={match.id} className="flex items-center gap-3 rounded border border-gray-200 bg-white px-3 py-2 text-sm">
-                        <input
-                          type="radio"
-                          name={`patient-match-${decision.candidate_id}`}
-                          checked={decision.patient_passport_id === match.id}
-                          onChange={() => updatePatient(patientIndex, { patient_passport_id: match.id })}
-                        />
+                    {patientCandidate.existing_matches.map((match) => (
+                      <button
+                        type="button"
+                        key={match.id}
+                        className="flex w-full items-center gap-3 rounded border border-gray-200 bg-white px-3 py-2 text-left text-sm hover:border-primary-300"
+                        onClick={() => updatePatient(patientIndex, { patient_passport_id: match.id })}
+                      >
                         <UserCheck className="h-4 w-4 text-primary-600" />
                         <span className="flex-1">
                           {match.fio}
-                          {match.date_of_birth ? `, ${match.date_of_birth}` : ''}
+                          {match.date_of_birth ? `, ${formatDateForDisplay(match.date_of_birth)}` : ''}
                         </span>
                         <span className="text-xs text-gray-500">{match.match_type === 'exact' ? 'точное' : 'похожее'}</span>
-                      </label>
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -172,7 +215,7 @@ const UploadReviewPage: React.FC = () => {
 
               <div className="space-y-3">
                 {decision.record_groups.map((group, groupIndex) => {
-                  const sourceGroup = patient.record_groups.find((item) => item.group_id === group.group_id)
+                  const sourceGroup = patientCandidate.record_groups.find((item) => item.group_id === group.group_id)
                   return (
                     <div key={group.group_id} className="rounded-lg border border-gray-100 p-4">
                       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
@@ -211,6 +254,7 @@ const UploadReviewPage: React.FC = () => {
                           <span className="text-xs font-medium text-gray-500">Дата события</span>
                           <input
                             type="date"
+                            lang="en-GB"
                             className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm"
                             value={group.event_date ?? ''}
                             disabled={decision.action === 'skip' || group.action === 'skip'}
@@ -277,6 +321,25 @@ const UploadReviewPage: React.FC = () => {
       }),
     )
   }
+}
+
+function buildPatientOptions(accessiblePatients: Patient[], patientCandidate: ImportPatientDraft): PatientOption[] {
+  const matchTypeById = new Map(patientCandidate.existing_matches.map((match) => [match.id, match.match_type]))
+  return accessiblePatients
+    .map((patient) => {
+      const matchType = matchTypeById.get(patient.id)
+      const matchLabel = matchType === 'exact' ? 'точное совпадение' : matchType === 'fuzzy' ? 'похожая карточка' : ''
+      return {
+        id: patient.id,
+        priority: matchType === 'exact' ? 0 : matchType === 'fuzzy' ? 1 : 2,
+        label: [
+          patient.fio,
+          patient.birthday ? formatDateForDisplay(patient.birthday) : '',
+          matchLabel,
+        ].filter(Boolean).join(', '),
+      }
+    })
+    .sort((left, right) => left.priority - right.priority || left.label.localeCompare(right.label))
 }
 
 function toInitialDecision(patient: ImportPatientDraft): PatientDecisionState {

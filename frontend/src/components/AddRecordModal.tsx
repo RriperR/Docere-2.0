@@ -219,7 +219,7 @@ export const AddRecordModal: React.FC<Props> = ({ patientId, onClose }) => {
 
                 <div>
                   <label className={labelClass}><span className="flex items-center gap-1"><Calendar className="h-3.5 w-3.5" /> Дата события *</span></label>
-                  <input type="date" value={eventDate} onChange={(e) => setEventDate(e.target.value)} className={inputClass} />
+                  <input type="date" lang="en-GB" value={eventDate} onChange={(e) => setEventDate(e.target.value)} className={inputClass} />
                 </div>
 
                 <div>

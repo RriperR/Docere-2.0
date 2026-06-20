@@ -226,6 +226,7 @@ const AccountSettingsPage: React.FC = () => {
                 label="Дата рождения"
                 name="dateOfBirth"
                 type="date"
+                lang="en-GB"
                 value={formData.dateOfBirth}
                 onChange={handleInputChange}
                 disabled={!isEditing}
