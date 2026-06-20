@@ -12,7 +12,7 @@ import {
   ImportRecordGroupDecision,
   useUploadStore,
 } from '../../stores/uploadStore'
-import { formatDateForDisplay } from '../../utils/dates'
+import { formatDateForDisplay, normalizeDateInput, parseDisplayDateToIso } from '../../utils/dates'
 
 type PatientAction = 'existing' | 'create' | 'skip'
 
@@ -35,11 +35,62 @@ type PatientOption = {
   priority: number
 }
 
+type DisplayDateInputProps = {
+  value?: string | null
+  disabled?: boolean
+  className?: string
+  onChange: (value: string | null) => void
+}
+
 const recordTypeLabels: Record<string, string> = {
   exam_result: 'Обследование',
   lab_result: 'Анализ',
   consultation_result: 'Консультация',
   other: 'Другое',
+}
+
+const DisplayDateInput: React.FC<DisplayDateInputProps> = ({ value, disabled, className, onChange }) => {
+  const [displayValue, setDisplayValue] = useState(formatDateForDisplay(value))
+
+  useEffect(() => {
+    setDisplayValue(formatDateForDisplay(value))
+  }, [value])
+
+  const commitValue = (rawValue: string) => {
+    if (!rawValue) {
+      onChange(null)
+      return
+    }
+
+    const parsedValue = parseDisplayDateToIso(rawValue)
+    if (parsedValue) {
+      onChange(parsedValue)
+      return
+    }
+
+    setDisplayValue(formatDateForDisplay(value))
+  }
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      autoComplete="off"
+      placeholder="dd/mm/yyyy"
+      maxLength={10}
+      className={className}
+      value={displayValue}
+      disabled={disabled}
+      onChange={(event) => {
+        const nextValue = normalizeDateInput(event.target.value)
+        setDisplayValue(nextValue)
+        if (!nextValue || nextValue.length === 10) {
+          commitValue(nextValue)
+        }
+      }}
+      onBlur={() => commitValue(displayValue)}
+    />
+  )
 }
 
 const UploadReviewPage: React.FC = () => {
@@ -157,12 +208,10 @@ const UploadReviewPage: React.FC = () => {
                     </label>
                     <label className="space-y-1">
                       <span className="text-sm font-medium text-gray-700">Дата рождения</span>
-                      <input
-                        type="date"
-                        lang="en-GB"
+                      <DisplayDateInput
                         className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm"
                         value={decision.date_of_birth}
-                        onChange={(event) => updatePatient(patientIndex, { date_of_birth: event.target.value })}
+                        onChange={(value) => updatePatient(patientIndex, { date_of_birth: value ?? '' })}
                       />
                     </label>
                   </>
@@ -252,13 +301,11 @@ const UploadReviewPage: React.FC = () => {
                         </label>
                         <label className="space-y-1">
                           <span className="text-xs font-medium text-gray-500">Дата события</span>
-                          <input
-                            type="date"
-                            lang="en-GB"
+                          <DisplayDateInput
                             className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm"
                             value={group.event_date ?? ''}
                             disabled={decision.action === 'skip' || group.action === 'skip'}
-                            onChange={(event) => updateGroup(patientIndex, groupIndex, { event_date: event.target.value })}
+                            onChange={(value) => updateGroup(patientIndex, groupIndex, { event_date: value })}
                           />
                         </label>
                         <label className="space-y-1">
