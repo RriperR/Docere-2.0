@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Calendar, Eye, EyeOff, Lock, Mail, Phone, User } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { DateInput } from '../../components/common/DateInput'
 import { Input } from '../../components/common/Input'
 import { Button } from '../../components/common/Button'
 import { useAuthStore } from '../../stores/authStore'
@@ -81,6 +82,7 @@ const RegisterPage = () => {
   const {
     register: registerField,
     handleSubmit,
+    setValue,
     watch,
     formState: { errors },
   } = useForm<RegisterFormData>({
@@ -179,14 +181,13 @@ const RegisterPage = () => {
             error={errors.phone?.message}
             {...registerField('phone')}
           />
-          <Input
+          <DateInput
             id="birthday"
-            type="date"
-            lang="en-GB"
             label="Дата рождения"
             icon={<Calendar size={15} />}
+            value={watch('birthday', '')}
+            onChange={(value) => setValue('birthday', value ?? '', { shouldValidate: true })}
             error={errors.birthday?.message}
-            {...registerField('birthday')}
           />
         </div>
 

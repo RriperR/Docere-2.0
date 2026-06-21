@@ -10,6 +10,7 @@ import {
   Shield,
   User,
 } from 'lucide-react'
+import { DateInput } from '../../components/common/DateInput'
 import { Input } from '../../components/common/Input'
 import { Button } from '../../components/common/Button'
 import { useAuthStore } from '../../stores/authStore'
@@ -222,13 +223,11 @@ const AccountSettingsPage: React.FC = () => {
                 disabled={!isEditing}
                 icon={<Phone size={15} />}
               />
-              <Input
+              <DateInput
                 label="Дата рождения"
                 name="dateOfBirth"
-                type="date"
-                lang="en-GB"
                 value={formData.dateOfBirth}
-                onChange={handleInputChange}
+                onChange={(value) => setFormData((prev) => ({ ...prev, dateOfBirth: value ?? '' }))}
                 disabled={!isEditing}
                 icon={<Calendar size={15} />}
               />

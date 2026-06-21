@@ -5,6 +5,7 @@ import { Calendar, FileText, Grid3X3, LayoutList, Plus, Search, X } from 'lucide
 import { format } from 'date-fns'
 
 import { Button } from '../../components/common/Button'
+import { DateInput } from '../../components/common/DateInput'
 import { Input } from '../../components/common/Input'
 import { useAuthStore } from '../../stores/authStore'
 import { usePatientsStore } from '../../stores/patientsStore'
@@ -147,21 +148,17 @@ const PatientListPage: React.FC = () => {
             />
           </div>
           <div className="flex gap-2">
-            <Input
-              type="date"
-              lang="en-GB"
+            <DateInput
               icon={<Calendar className="h-4 w-4" />}
               value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
+              onChange={(value) => setStartDate(value ?? '')}
               fullWidth={false}
               className="w-36"
             />
-            <Input
-              type="date"
-              lang="en-GB"
+            <DateInput
               icon={<Calendar className="h-4 w-4" />}
               value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
+              onChange={(value) => setEndDate(value ?? '')}
               fullWidth={false}
               className="w-36"
             />
@@ -333,7 +330,7 @@ const PatientListPage: React.FC = () => {
                 <Input label="Отчество" className="col-span-2" value={form.middleName} onChange={(e) => setForm({ ...form, middleName: e.target.value })} />
                 <Input label="Email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
                 <Input label="Телефон" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-                <Input label="Дата рождения" type="date" lang="en-GB" className="col-span-2" value={form.birthday} onChange={(e) => setForm({ ...form, birthday: e.target.value })} />
+                <DateInput label="Дата рождения" className="col-span-2" value={form.birthday} onChange={(value) => setForm({ ...form, birthday: value ?? '' })} />
               </div>
               <div className="mt-5 flex justify-end gap-2">
                 <Button variant="outline" onClick={closeModal}>Отмена</Button>
