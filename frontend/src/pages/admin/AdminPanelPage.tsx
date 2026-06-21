@@ -41,7 +41,6 @@ const AdminPanelPage = () => {
   const [activeTab, setActiveTab] = useState('users');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
 
   // Mock data
   const users: User[] = [

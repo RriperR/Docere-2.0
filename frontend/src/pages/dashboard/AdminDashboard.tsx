@@ -14,7 +14,6 @@ import {
 } from 'lucide-react'
 
 import { Button } from '../../components/common/Button'
-import { useAuthStore } from '../../stores/authStore'
 import { usePatientsStore } from '../../stores/patientsStore'
 
 type AuditCategory = 'all' | 'access' | 'changes' | 'auth'
@@ -54,7 +53,6 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 const AdminDashboard: React.FC = () => {
-  const { user } = useAuthStore()
   const { patients, fetchPatients } = usePatientsStore()
   const [activeCategory, setActiveCategory] = useState<AuditCategory>('all')
 

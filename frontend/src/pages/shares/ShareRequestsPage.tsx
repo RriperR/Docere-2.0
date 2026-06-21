@@ -10,7 +10,6 @@ import {
   FileText,
   Inbox,
   Send,
-  User,
   X,
 } from 'lucide-react'
 

@@ -71,7 +71,7 @@ const UploadPage = () => {
     try {
       const jobId = await uploadFile(currentUpload);
       navigate(`/upload/status/${jobId}`);
-    } catch (error) {
+    } catch {
       // Error is handled by the upload store
     }
   };

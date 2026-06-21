@@ -1,6 +1,12 @@
 import axios, { AxiosError } from 'axios';
 import { useAuthStore } from '../stores/authStore';
 
+declare global {
+  interface Window {
+    api?: typeof api;
+  }
+}
+
 const baseURL = import.meta.env.VITE_API_BASE_URL ?? '/api';
 
 const api = axios.create({ baseURL });
@@ -25,7 +31,6 @@ api.interceptors.response.use(
 );
 
 if (import.meta.env.DEV) {
-  // @ts-ignore
   window.api = api;
 }
 

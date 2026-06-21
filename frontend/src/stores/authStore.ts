@@ -201,7 +201,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         date_of_birth: birthday,
       });
       await get().login(email, password);
-    } catch (err: any) {
+    } catch (err: unknown) {
       set({
         error: normalizeApiErrorMessage(err, 'Не удалось зарегистрироваться. Попробуйте позже.'),
         isLoading: false,
@@ -224,7 +224,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const user = toUserData(backendUser);
       localStorage.setItem('authUserData', JSON.stringify(user));
       set({ user, isLoading: false, isAuthenticated: true });
-    } catch (err: any) {
+    } catch (err: unknown) {
       set({
         error: normalizeApiErrorMessage(err, 'Не удалось войти. Проверьте email и пароль или попробуйте позже.'),
         isLoading: false,

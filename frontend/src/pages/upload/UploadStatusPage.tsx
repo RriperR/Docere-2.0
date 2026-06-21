@@ -22,6 +22,7 @@ const statusLabel: Record<string, string> = {
 const UploadStatusPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>()
   const { currentJob, getJobById } = useUploadStore()
+  const currentJobStatus = currentJob?.status
   const timerRef = useRef<number | null>(null)
 
   useEffect(() => {
@@ -33,7 +34,7 @@ const UploadStatusPage: React.FC = () => {
 
     void fetchStatus()
     timerRef.current = window.setInterval(() => {
-      if (currentJob && FINAL_STATUSES.includes(currentJob.status)) {
+      if (currentJobStatus && FINAL_STATUSES.includes(currentJobStatus)) {
         if (timerRef.current !== null) {
           clearInterval(timerRef.current)
           timerRef.current = null
@@ -46,7 +47,7 @@ const UploadStatusPage: React.FC = () => {
     return () => {
       if (timerRef.current !== null) clearInterval(timerRef.current)
     }
-  }, [jobId, getJobById, currentJob?.status])
+  }, [jobId, getJobById, currentJobStatus])
 
   if (!currentJob) {
     return (
