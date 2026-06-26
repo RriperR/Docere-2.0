@@ -7,6 +7,9 @@ import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { UploadJob, useUploadStore } from '../../stores/uploadStore';
 
+type StatusFilter = UploadJob['status'] | 'all';
+type SortOrder = 'newest' | 'oldest';
+
 const statusLabel: Record<UploadJob['status'], string> = {
   queued: 'В очереди',
   running: 'Обработка',
@@ -30,6 +33,14 @@ const UploadPage = () => {
     error,
   } = useUploadStore();
   const [uploadError, setUploadError] = useState('');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('newest');
+  const filteredJobs = jobs
+    .filter((job) => statusFilter === 'all' || job.status === statusFilter)
+    .sort((left, right) => {
+      const diff = new Date(left.created_at).getTime() - new Date(right.created_at).getTime();
+      return sortOrder === 'newest' ? -diff : diff;
+    });
 
   useEffect(() => {
     void listJobs();
@@ -252,11 +263,33 @@ const UploadPage = () => {
             </div>
           }
         >
+          <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
+              className="rounded-md border border-gray-200 px-3 py-2 text-sm"
+            >
+              <option value="all">Все статусы</option>
+              {Object.entries(statusLabel).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+            <select
+              value={sortOrder}
+              onChange={(event) => setSortOrder(event.target.value as SortOrder)}
+              className="rounded-md border border-gray-200 px-3 py-2 text-sm"
+            >
+              <option value="newest">Сначала новые</option>
+              <option value="oldest">Сначала старые</option>
+            </select>
+          </div>
           {jobs.length === 0 ? (
             <p className="text-sm text-gray-500">Загруженных архивов пока нет.</p>
+          ) : filteredJobs.length === 0 ? (
+            <p className="text-sm text-gray-500">Архивов с выбранным статусом нет.</p>
           ) : (
             <div className="divide-y divide-gray-100">
-              {jobs.map((job) => (
+              {filteredJobs.map((job) => (
                 <div key={job.id} className="flex flex-col gap-3 py-3 md:flex-row md:items-center md:justify-between">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-gray-900">

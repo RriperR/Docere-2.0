@@ -14,6 +14,7 @@ import {
   useUploadStore,
 } from '../../stores/uploadStore'
 import { formatDateForDisplay } from '../../utils/dates'
+import { groupedWarnings, warningAffectsFile } from '../../utils/importWarnings'
 
 type PatientAction = 'existing' | 'create' | 'skip'
 
@@ -36,9 +37,9 @@ type PatientOption = {
   priority: number
 }
 
-type WarningView = {
-  label: string
-  tone: string
+type BulkPatchState = {
+  record_type: string
+  event_date: string
 }
 
 const recordTypeLabels: Record<string, string> = {
@@ -60,6 +61,8 @@ const UploadReviewPage: React.FC = () => {
   } = usePatientsStore()
   const [decisions, setDecisions] = useState<PatientDecisionState[]>([])
   const [formError, setFormError] = useState('')
+  const [selectedGroupsByPatient, setSelectedGroupsByPatient] = useState<Record<string, string[]>>({})
+  const [bulkPatchByPatient, setBulkPatchByPatient] = useState<Record<string, BulkPatchState>>({})
 
   useEffect(() => {
     if (jobId) void getJobById(jobId)
@@ -71,6 +74,7 @@ const UploadReviewPage: React.FC = () => {
 
   const patientCandidates = useMemo(() => currentJob?.report_json.patients ?? [], [currentJob?.report_json.patients])
   const warnings = currentJob?.report_json.warnings ?? []
+  const warningViews = groupedWarnings(warnings)
 
   useEffect(() => {
     if (decisions.length > 0 || patientCandidates.length === 0) return
@@ -101,7 +105,7 @@ const UploadReviewPage: React.FC = () => {
 
   const submit = async () => {
     if (!jobId) return
-    const validationError = validateDecisions(decisions)
+    const validationError = validateDecisions(decisions, patientCandidates)
     if (validationError) {
       setFormError(validationError)
       return
@@ -129,6 +133,29 @@ const UploadReviewPage: React.FC = () => {
         </div>
       )}
 
+      {patientCandidates.length > 0 && (
+        <div className="sticky top-0 z-10 rounded-md border border-gray-100 bg-white/95 p-3 shadow-sm backdrop-blur">
+          <div className="flex flex-wrap gap-2">
+            {patientCandidates.map((patient) => {
+              const decision = decisions.find((item) => item.candidate_id === patient.candidate_id)
+              const summary = reviewSummary(patient, decision)
+              return (
+                <a
+                  key={patient.candidate_id}
+                  href={`#${patient.candidate_id}`}
+                  className="rounded border border-gray-200 px-3 py-2 text-sm hover:border-primary-300"
+                >
+                  <span className="font-medium text-gray-900">{patient.fio ?? 'Пациент не распознан'}</span>
+                  <span className="ml-2 text-xs text-gray-500">
+                    готово {summary.ready} · даты {summary.needsDate} · пропущено {summary.skipped}
+                  </span>
+                </a>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {decisions.map((decision, patientIndex) => {
         const patientCandidate = patientCandidates.find((item) => item.candidate_id === decision.candidate_id)
         if (!patientCandidate) return null
@@ -136,6 +163,7 @@ const UploadReviewPage: React.FC = () => {
 
         return (
           <Card key={decision.candidate_id} title={patientCandidate.fio ?? 'Пациент не распознан'}>
+            <div id={decision.candidate_id} className="scroll-mt-24" />
             <div className="space-y-5">
               <div className="grid gap-4 lg:grid-cols-3">
                 <label className="space-y-1">
@@ -218,24 +246,92 @@ const UploadReviewPage: React.FC = () => {
               )}
 
               <div className="space-y-3">
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" size="sm" variant="outline" onClick={() => updateAllGroups(patientIndex, { action: 'create' })}>
+                    Импортировать все
+                  </Button>
+                  <Button type="button" size="sm" variant="outline" onClick={() => updateAllGroups(patientIndex, { action: 'skip' })}>
+                    Пропустить все
+                  </Button>
+                  <Button type="button" size="sm" variant="outline" onClick={() => applyFirstDateCandidates(patientIndex, patientCandidate)}>
+                    Применить найденные даты
+                  </Button>
+                </div>
+                <div className="grid gap-3 rounded-md border border-gray-100 bg-gray-50 p-3 md:grid-cols-[minmax(160px,1fr)_minmax(180px,1fr)_auto_auto] md:items-end">
+                  <label className="space-y-1">
+                    <span className="text-xs font-medium text-gray-500">Тип для выбранных</span>
+                    <select
+                      className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm"
+                      value={getBulkPatch(decision.candidate_id).record_type}
+                      onChange={(event) => updateBulkPatch(decision.candidate_id, { record_type: event.target.value })}
+                    >
+                      {Object.entries(recordTypeLabels).map(([value, label]) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-xs font-medium text-gray-500">Дата для выбранных</span>
+                    <DateInput
+                      className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm"
+                      value={getBulkPatch(decision.candidate_id).event_date}
+                      onChange={(value) => updateBulkPatch(decision.candidate_id, { event_date: value ?? '' })}
+                    />
+                  </label>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={getSelectedGroupIds(decision.candidate_id).length === 0}
+                    onClick={() => applyToSelectedGroups(patientIndex, decision.candidate_id, { record_type: getBulkPatch(decision.candidate_id).record_type })}
+                  >
+                    Применить тип
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={getSelectedGroupIds(decision.candidate_id).length === 0 || !getBulkPatch(decision.candidate_id).event_date}
+                    onClick={() => applyToSelectedGroups(patientIndex, decision.candidate_id, { event_date: getBulkPatch(decision.candidate_id).event_date })}
+                  >
+                    Применить дату
+                  </Button>
+                </div>
                 {decision.record_groups.map((group, groupIndex) => {
                   const sourceGroup = patientCandidate.record_groups.find((item) => item.group_id === group.group_id)
+                  const needsDate = Boolean(sourceGroup && sourceGroup.event_date_candidates.length > 1 && group.action === 'create' && !group.event_date)
+                  const isSelected = getSelectedGroupIds(decision.candidate_id).includes(group.group_id)
                   return (
                     <div key={group.group_id} className="rounded-lg border border-gray-100 p-4">
                       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                         <div className="flex items-center gap-2">
                           <FileText className="h-4 w-4 text-primary-600" />
                           <p className="font-medium text-gray-900">{group.title || sourceGroup?.title || 'Запись'}</p>
+                          <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${group.action === 'skip' ? 'border-gray-200 bg-gray-50 text-gray-600' : needsDate ? 'border-warning-200 bg-warning-50 text-warning-700' : 'border-success-200 bg-success-50 text-success-700'}`}>
+                            {group.action === 'skip' ? 'Пропущено' : needsDate ? 'Нужно выбрать дату' : 'Готово'}
+                          </span>
                         </div>
-                        <label className="flex items-center gap-2 text-sm text-gray-700">
-                          <input
-                            type="checkbox"
-                            checked={group.action === 'create'}
-                            disabled={decision.action === 'skip'}
-                            onChange={(event) => updateGroup(patientIndex, groupIndex, { action: event.target.checked ? 'create' : 'skip' })}
-                          />
-                          Импортировать
-                        </label>
+                        <div className="flex flex-wrap items-center gap-3">
+                          <label className="flex items-center gap-2 text-sm text-gray-700">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={(event) => toggleGroupSelection(decision.candidate_id, group.group_id, event.target.checked)}
+                            />
+                            Выбрано
+                          </label>
+                          <label className="flex items-center gap-2 text-sm text-gray-700">
+                            <input
+                              type="checkbox"
+                              checked={group.action === 'create'}
+                              disabled={decision.action === 'skip'}
+                              onChange={(event) => updateGroup(patientIndex, groupIndex, { action: event.target.checked ? 'create' : 'skip' })}
+                            />
+                            Импортировать
+                          </label>
+                        </div>
                       </div>
 
                       <div className="grid gap-3 md:grid-cols-3">
@@ -298,9 +394,29 @@ const UploadReviewPage: React.FC = () => {
                       </div>
 
                       {sourceGroup && (
-                        <p className="mt-3 text-xs text-gray-500">
-                          Файлов: {sourceGroup.files.length}; DICOM: {sourceGroup.files.filter((file) => file.is_dicom).length}
-                        </p>
+                        <div className="mt-3 space-y-2">
+                          <p className="text-xs text-gray-500">
+                            Файлов: {sourceGroup.files.length}; DICOM: {sourceGroup.files.filter((file) => file.is_dicom).length}
+                          </p>
+                          <div className="grid gap-2 md:grid-cols-2">
+                            {sourceGroup.files.map((file) => {
+                              const hasWarning = warningAffectsFile(warnings, file.path, file.filename)
+                              return (
+                                <div key={file.path} className="rounded border border-gray-100 bg-gray-50 px-3 py-2 text-xs">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="truncate font-medium text-gray-800">{file.filename}</span>
+                                    <span className="shrink-0 text-gray-500">{formatFileSize(file.size_bytes)}</span>
+                                  </div>
+                                  <div className="mt-1 flex flex-wrap gap-2 text-gray-500">
+                                    <span>{file.is_dicom ? 'DICOM' : file.mime_type}</span>
+                                    {hasWarning && <span className="text-warning-700">есть warning</span>}
+                                  </div>
+                                  <p className="mt-1 break-all text-gray-400">{file.path}</p>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
                       )}
                     </div>
                   )
@@ -313,19 +429,22 @@ const UploadReviewPage: React.FC = () => {
 
       {warnings.length > 0 && (
         <Card title="Предупреждения" accent="warning">
-          <ul className="space-y-2 text-sm">
-            {warnings.map((warning, index) => {
-              const view = warningView(warning)
+          <div className="space-y-3 text-sm">
+            {warningViews.map((view) => {
               return (
-                <li key={`${warning}-${index}`} className="flex flex-wrap items-start gap-2 text-gray-700">
+                <div key={view.label} className="space-y-2">
                   <span className={`rounded border px-2 py-0.5 text-xs font-medium ${view.tone}`}>
-                    {view.label}
+                    {view.label}: {view.warnings.length}
                   </span>
-                  <span className="min-w-0 flex-1 break-words">{warning}</span>
-                </li>
+                  <ul className="space-y-1 text-gray-700">
+                    {view.warnings.map((warning, index) => (
+                      <li key={`${warning}-${index}`} className="break-words">{warning}</li>
+                    ))}
+                  </ul>
+                </div>
               )
             })}
-          </ul>
+          </div>
         </Card>
       )}
 
@@ -354,6 +473,73 @@ const UploadReviewPage: React.FC = () => {
       }),
     )
   }
+
+  function updateAllGroups(patientIndex: number, patch: Partial<GroupDecisionState>) {
+    setDecisions((current) =>
+      current.map((patient, itemIndex) => (
+        itemIndex === patientIndex
+          ? { ...patient, record_groups: patient.record_groups.map((group) => ({ ...group, ...patch })) }
+          : patient
+      )),
+    )
+  }
+
+  function getSelectedGroupIds(candidateId: string) {
+    return selectedGroupsByPatient[candidateId] ?? []
+  }
+
+  function getBulkPatch(candidateId: string) {
+    return bulkPatchByPatient[candidateId] ?? { record_type: 'other', event_date: '' }
+  }
+
+  function updateBulkPatch(candidateId: string, patch: Partial<BulkPatchState>) {
+    setBulkPatchByPatient((current) => ({
+      ...current,
+      [candidateId]: { ...getBulkPatch(candidateId), ...patch },
+    }))
+  }
+
+  function toggleGroupSelection(candidateId: string, groupId: string, selected: boolean) {
+    setSelectedGroupsByPatient((current) => {
+      const groupIds = current[candidateId] ?? []
+      const nextGroupIds = selected
+        ? Array.from(new Set([...groupIds, groupId]))
+        : groupIds.filter((item) => item !== groupId)
+      return { ...current, [candidateId]: nextGroupIds }
+    })
+  }
+
+  function applyToSelectedGroups(patientIndex: number, candidateId: string, patch: Partial<GroupDecisionState>) {
+    const selectedGroupIds = getSelectedGroupIds(candidateId)
+    if (selectedGroupIds.length === 0) return
+    setDecisions((current) =>
+      current.map((patient, itemIndex) => {
+        if (itemIndex !== patientIndex) return patient
+        return {
+          ...patient,
+          record_groups: patient.record_groups.map((group) => (
+            selectedGroupIds.includes(group.group_id) ? { ...group, ...patch } : group
+          )),
+        }
+      }),
+    )
+  }
+
+  function applyFirstDateCandidates(patientIndex: number, patient: ImportPatientDraft) {
+    setDecisions((current) =>
+      current.map((decision, itemIndex) => {
+        if (itemIndex !== patientIndex) return decision
+        return {
+          ...decision,
+          record_groups: decision.record_groups.map((group) => {
+            const sourceGroup = patient.record_groups.find((item) => item.group_id === group.group_id)
+            const firstCandidate = sourceGroup?.event_date_candidates[0]
+            return firstCandidate && !group.event_date ? { ...group, event_date: firstCandidate } : group
+          }),
+        }
+      }),
+    )
+  }
 }
 
 function buildPatientOptions(accessiblePatients: Patient[], patientCandidate: ImportPatientDraft): PatientOption[] {
@@ -375,23 +561,6 @@ function buildPatientOptions(accessiblePatients: Patient[], patientCandidate: Im
     .sort((left, right) => left.priority - right.priority || left.label.localeCompare(right.label))
 }
 
-function warningView(warning: string): WarningView {
-  const text = warning.toLowerCase()
-  if (text.includes('unsafe') || text.includes('system file')) {
-    return { label: 'Безопасность', tone: 'border-error-200 bg-error-50 text-error-700' }
-  }
-  if (text.includes('empty file')) {
-    return { label: 'Пустой файл', tone: 'border-gray-200 bg-gray-50 text-gray-700' }
-  }
-  if (text.includes('size limit') || text.includes('file count limit') || text.includes('compressed')) {
-    return { label: 'Лимит архива', tone: 'border-warning-200 bg-warning-50 text-warning-700' }
-  }
-  if (text.includes('multiple date candidates')) {
-    return { label: 'Выбор даты', tone: 'border-primary-200 bg-primary-50 text-primary-700' }
-  }
-  return { label: 'Внимание', tone: 'border-warning-200 bg-warning-50 text-warning-700' }
-}
-
 function toInitialDecision(patient: ImportPatientDraft): PatientDecisionState {
   const exactMatch = patient.existing_matches.find((match) => match.match_type === 'exact')
   return {
@@ -410,7 +579,7 @@ function toInitialDecision(patient: ImportPatientDraft): PatientDecisionState {
   }
 }
 
-function validateDecisions(decisions: PatientDecisionState[]): string {
+function validateDecisions(decisions: PatientDecisionState[], patients: ImportPatientDraft[]): string {
   for (const decision of decisions) {
     if (decision.action === 'skip') continue
     if (decision.action === 'existing' && !decision.patient_passport_id) {
@@ -418,6 +587,13 @@ function validateDecisions(decisions: PatientDecisionState[]): string {
     }
     if (decision.action === 'create' && !decision.fio.trim()) {
       return 'Укажите ФИО для новой карточки пациента.'
+    }
+    for (const group of decision.record_groups) {
+      const patient = patients.find((item) => item.candidate_id === decision.candidate_id)
+      const sourceGroup = patient?.record_groups.find((item) => item.group_id === group.group_id)
+      if (group.action === 'create' && sourceGroup && sourceGroup.event_date_candidates.length > 1 && !group.event_date) {
+        return 'Выберите дату события для записей с несколькими найденными датами.'
+      }
     }
   }
   return ''
@@ -438,6 +614,25 @@ function toPayload(decision: PatientDecisionState): ImportPatientDecision {
       title: group.title,
     })),
   }
+}
+
+function reviewSummary(patient: ImportPatientDraft, decision: PatientDecisionState | undefined) {
+  if (!decision) return { ready: 0, needsDate: 0, skipped: 0 }
+  return decision.record_groups.reduce((summary, group) => {
+    const sourceGroup = patient.record_groups.find((item) => item.group_id === group.group_id)
+    if (group.action === 'skip') return { ...summary, skipped: summary.skipped + 1 }
+    if (sourceGroup && sourceGroup.event_date_candidates.length > 1 && !group.event_date) {
+      return { ...summary, needsDate: summary.needsDate + 1 }
+    }
+    return { ...summary, ready: summary.ready + 1 }
+  }, { ready: 0, needsDate: 0, skipped: 0 })
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes === 0) return '0 Б'
+  const units = ['Б', 'КБ', 'МБ', 'ГБ']
+  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
+  return `${(bytes / Math.pow(1024, index)).toFixed(index === 0 ? 0 : 1)} ${units[index]}`
 }
 
 export default UploadReviewPage

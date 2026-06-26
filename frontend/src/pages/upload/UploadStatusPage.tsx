@@ -6,6 +6,7 @@ import { AlertTriangle, ArrowLeft, CheckCircle, FileSearch, FileText } from 'luc
 import { Button } from '../../components/common/Button'
 import { Card } from '../../components/common/Card'
 import { useUploadStore } from '../../stores/uploadStore'
+import { groupedWarnings } from '../../utils/importWarnings'
 
 const POLL_INTERVAL = 3000
 const FINAL_STATUSES = ['needs_review', 'completed', 'completed_with_warnings', 'failed']
@@ -62,6 +63,7 @@ const UploadStatusPage: React.FC = () => {
   const needsReview = currentJob.status === 'needs_review'
   const report = currentJob.report_json ?? {}
   const warnings = Array.isArray(report.warnings) ? report.warnings : []
+  const warningViews = groupedWarnings(warnings)
   const patients = Array.isArray(report.patients) ? report.patients : []
 
   const icon = isDone ? (
@@ -128,11 +130,33 @@ const UploadStatusPage: React.FC = () => {
 
       {warnings.length > 0 && (
         <Card title="Предупреждения" accent="warning">
-          <ul className="space-y-2 text-sm text-gray-700">
-            {warnings.map((warning, index) => (
-              <li key={`${warning}-${index}`}>{warning}</li>
+          <div className="space-y-3 text-sm">
+            {warningViews.map((view) => (
+              <div key={view.label} className="space-y-2">
+                <span className={`rounded border px-2 py-0.5 text-xs font-medium ${view.tone}`}>
+                  {view.label}: {view.warnings.length}
+                </span>
+                <ul className="space-y-1 text-gray-700">
+                  {view.warnings.map((warning, index) => (
+                    <li key={`${warning}-${index}`} className="break-words">{warning}</li>
+                  ))}
+                </ul>
+              </div>
             ))}
-          </ul>
+          </div>
+        </Card>
+      )}
+
+      {isFailed && report.errors && Array.isArray(report.errors) && report.errors.length > 0 && (
+        <Card title="Причина ошибки" accent="error">
+          <div className="space-y-3">
+            <ul className="space-y-2 text-sm text-error-700">
+              {report.errors.map((item, index) => <li key={`${item}-${index}`}>{String(item)}</li>)}
+            </ul>
+            <Link to="/upload">
+              <Button type="button" variant="outline">Загрузить исправленный архив</Button>
+            </Link>
+          </div>
         </Card>
       )}
     </div>
