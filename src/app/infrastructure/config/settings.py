@@ -41,6 +41,15 @@ class QueueSettings(BaseModel):
     result_backend: str | None = None
 
 
+class ImportArchiveSettings(BaseModel):
+    """Настройки обработки импортируемых ZIP-архивов."""
+
+    max_files: int = 1000
+    max_file_size_bytes: int = 100 * 1024 * 1024
+    max_total_uncompressed_size_bytes: int = 500 * 1024 * 1024
+    max_compression_ratio: int = 100
+
+
 class AppSettings(BaseSettings):
     """Корневой объект конфигурации приложения."""
 
@@ -57,6 +66,7 @@ class AppSettings(BaseSettings):
     auth: AuthSettings
     storage: StorageSettings
     queue: QueueSettings
+    import_archive: ImportArchiveSettings = ImportArchiveSettings()
 
 
 @cache

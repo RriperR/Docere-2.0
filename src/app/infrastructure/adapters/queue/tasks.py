@@ -1,19 +1,21 @@
 """Фоновые Celery-задачи."""
 
 from collections.abc import Callable
+from time import monotonic
 from typing import cast
 from uuid import UUID
 
+import structlog
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.application.use_cases.import_jobs.dtos import ExtractImportDraftCommand
 from app.application.use_cases.import_jobs.errors import ArchiveExtractionError
 from app.application.use_cases.import_jobs.extractor import ExtractImportDraftUseCase
+from app.infrastructure.adapters.import_jobs.factory import build_zip_archive_reader
 from app.infrastructure.adapters.import_jobs.patient_matcher import RepositoryPatientMatcher
 from app.infrastructure.adapters.import_jobs.pydicom_metadata_reader import PydicomMetadataReader
 from app.infrastructure.adapters.import_jobs.report_serializer import import_draft_result_to_json
-from app.infrastructure.adapters.import_jobs.zip_archive_reader import ZipArchiveReader
 from app.infrastructure.adapters.queue.celery_app import celery_app
 from app.infrastructure.adapters.repositories.import_jobs.sqlalchemy_import_job_repository import (
     SqlAlchemyImportJobRepositoryAdapter,
@@ -33,6 +35,7 @@ import_task_decorator = cast(
     Callable[[ImportTaskCallable], ImportTaskCallable],
     celery_app.task(name='docere.import_job', soft_time_limit=900, time_limit=960),
 )
+logger = structlog.get_logger(__name__)
 
 
 @task_decorator
@@ -56,15 +59,22 @@ def process_import_job(job_id: str) -> None:
         job_id: Идентификатор ImportJob.
     """
     with get_session_factory()() as session:
+        started_at = monotonic()
         repository = SqlAlchemyImportJobRepositoryAdapter(session=session)
         job = repository.mark_running(job_id=UUID(job_id))
         if job is None or job.archive_storage_key is None:
             return
+        logger.info(
+            'import_job_processing_started',
+            job_id=str(job.id),
+            source_archive=job.original_filename,
+            size_bytes=job.size_bytes,
+        )
         try:
             archive_content = get_file_storage().download(key=job.archive_storage_key)
             patient_repository = SqlAlchemyPatientCardRepositoryAdapter(session=session)
             use_case = ExtractImportDraftUseCase(
-                archive_reader=ZipArchiveReader(),
+                archive_reader=build_zip_archive_reader(),
                 dicom_metadata_reader=PydicomMetadataReader(),
                 patient_matcher=RepositoryPatientMatcher(patient_repository),
             )
@@ -76,7 +86,16 @@ def process_import_job(job_id: str) -> None:
                     requested_by_role=_user_role(session=session, user_id=job.uploaded_by_user_id),
                 ),
             )
-            repository.mark_needs_review(job_id=job.id, report_json=import_draft_result_to_json(result))
+            report = import_draft_result_to_json(result)
+            repository.mark_needs_review(job_id=job.id, report_json=report)
+            logger.info(
+                'import_job_processing_finished',
+                job_id=str(job.id),
+                status='needs_review',
+                files_total=result.files_total,
+                warnings_count=len(result.warnings),
+                duration_ms=round((monotonic() - started_at) * 1000, 3),
+            )
         except ArchiveExtractionError as exc:
             repository.mark_failed(
                 job_id=job.id,
@@ -86,6 +105,15 @@ def process_import_job(job_id: str) -> None:
                     'source_archive': job.original_filename,
                 },
             )
+            logger.info(
+                'import_job_processing_finished',
+                job_id=str(job.id),
+                status='failed',
+                files_total=0,
+                warnings_count=0,
+                duration_ms=round((monotonic() - started_at) * 1000, 3),
+                error=str(exc),
+            )
         except Exception as exc:
             repository.mark_failed(
                 job_id=job.id,
@@ -94,6 +122,13 @@ def process_import_job(job_id: str) -> None:
                     'errors': [str(exc)],
                     'source_archive': job.original_filename,
                 },
+            )
+            logger.exception(
+                'import_job_processing_failed',
+                job_id=str(job.id),
+                status='failed',
+                duration_ms=round((monotonic() - started_at) * 1000, 3),
+                error=str(exc),
             )
         session.commit()
 

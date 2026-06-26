@@ -115,6 +115,23 @@ def test_environment_variables_override_dotenv_values(
 
 
 @pytest.mark.critical
+def test_import_archive_limits_can_be_loaded_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_required_env(monkeypatch)
+    monkeypatch.setenv('APP_IMPORT_ARCHIVE__MAX_FILES', '7')
+    monkeypatch.setenv('APP_IMPORT_ARCHIVE__MAX_FILE_SIZE_BYTES', '1024')
+    monkeypatch.setenv('APP_IMPORT_ARCHIVE__MAX_TOTAL_UNCOMPRESSED_SIZE_BYTES', '4096')
+    monkeypatch.setenv('APP_IMPORT_ARCHIVE__MAX_COMPRESSION_RATIO', '12')
+    clear_settings_cache()
+
+    settings = get_settings(env_file=None)
+
+    assert settings.import_archive.max_files == 7
+    assert settings.import_archive.max_file_size_bytes == 1024
+    assert settings.import_archive.max_total_uncompressed_size_bytes == 4096
+    assert settings.import_archive.max_compression_ratio == 12
+
+
+@pytest.mark.critical
 def test_project_root_can_be_resolved_without_pyproject(tmp_path: Path) -> None:
     config_dir = tmp_path / 'src' / 'app' / 'infrastructure' / 'config'
     config_dir.mkdir(parents=True)
