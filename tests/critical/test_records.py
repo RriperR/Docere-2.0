@@ -603,6 +603,12 @@ def test_import_job_upload_status_and_worker_completion(
             select(MedicalRecordRow).join(UserRecordLinkRow).where(UserRecordLinkRow.patient_passport_id == patient.id),
         )
         assert record is not None
+        import_provenance = record.payload_json.get('import_provenance')
+        assert isinstance(import_provenance, dict)
+        assert import_provenance['source'] == 'archive'
+        assert import_provenance['import_job_id'] == uploaded_job['id']
+        assert import_provenance['source_archive'] == 'records.zip'
+        assert import_provenance['files'][0]['path'].endswith('result.pdf')
         attachment = session.scalar(select(FileAttachmentRow).where(FileAttachmentRow.record_id == record.id))
         assert attachment is not None
         records_count = len(session.scalars(select(MedicalRecordRow)).all())

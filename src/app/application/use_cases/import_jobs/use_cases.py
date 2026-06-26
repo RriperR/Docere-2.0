@@ -234,7 +234,12 @@ class ResolveImportJobUseCase:
                     )[:255],
                     appointment_location=None,
                     clinical_summary='Создано из импортированного архива.',
-                    payload_json=_payload_json(group),
+                    payload_json=_payload_json(
+                        group=group,
+                        job_id=job.id,
+                        source_archive=job.original_filename,
+                        resolved_by_user_id=actor_user_id,
+                    ),
                 )
                 created_records += 1
                 for file_info in _as_dict_list(group.get('files')):
@@ -353,11 +358,38 @@ def _parse_date(value: str) -> date | None:
         return None
 
 
-def _payload_json(group: dict[str, object]) -> dict[str, object]:
+def _payload_json(
+    *,
+    group: dict[str, object],
+    job_id: UUID,
+    source_archive: str | None,
+    resolved_by_user_id: UUID,
+) -> dict[str, object]:
     payload = group.get('payload_json')
-    if isinstance(payload, dict):
-        return payload
-    return {'import_source': 'archive'}
+    result = dict(payload) if isinstance(payload, dict) else {}
+    result['import_provenance'] = {
+        'source': 'archive',
+        'import_job_id': str(job_id),
+        'source_archive': source_archive,
+        'resolved_by_user_id': str(resolved_by_user_id),
+        'group_id': str(group.get('group_id') or ''),
+        'event_date_candidates': [str(item) for item in _as_str_list(group.get('event_date_candidates'))],
+        'files': [
+            {
+                'path': str(file_info.get('path') or ''),
+                'filename': str(file_info.get('filename') or ''),
+                'mime_type': str(file_info.get('mime_type') or ''),
+                'size_bytes': _as_int(file_info.get('size_bytes')),
+                'is_dicom': bool(file_info.get('is_dicom') or False),
+            }
+            for file_info in _as_dict_list(group.get('files'))
+        ],
+    }
+    return result
+
+
+def _as_int(value: object) -> int:
+    return value if isinstance(value, int) else 0
 
 
 def _attachment_category(mime_type: str, record_type: str) -> FileAttachmentCategory:
