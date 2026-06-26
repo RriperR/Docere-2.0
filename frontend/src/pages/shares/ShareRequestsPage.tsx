@@ -9,14 +9,19 @@ import {
   Clock,
   FileText,
   Inbox,
+  MessageSquare,
+  Paperclip,
+  Search,
   Send,
   X,
 } from 'lucide-react'
 
 import { Button } from '../../components/common/Button'
-import { ShareRequest, ShareStatus, useShareRequestsStore } from '../../stores/shareRequestsStore'
+import { SharedRecord, ShareRequest, ShareStatus, useShareRequestsStore } from '../../stores/shareRequestsStore'
+import { formatDateForDisplay } from '../../utils/dates'
 
 type Tab = 'inbox' | 'outbox'
+type StatusFilter = ShareStatus | 'all'
 
 const statusConfig: Record<ShareStatus, { label: string; className: string }> = {
   pending: { label: 'Ожидает', className: 'bg-warning-50 text-warning-700 border-warning-200' },
@@ -27,6 +32,12 @@ const statusConfig: Record<ShareStatus, { label: string; className: string }> = 
 }
 
 const formatDateTime = (date: string) => format(new Date(date), 'dd.MM.yyyy HH:mm')
+const recordTypeLabels: Record<string, string> = {
+  consultation_result: 'Консультация',
+  exam_result: 'Обследование',
+  lab_result: 'Анализ',
+  other: 'Другое',
+}
 
 const ShareRequestsPage = () => {
   const {
@@ -42,6 +53,8 @@ const ShareRequestsPage = () => {
     revokeRequest,
   } = useShareRequestsStore()
   const [tab, setTab] = useState<Tab>('inbox')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
     void fetchInbox()
@@ -49,7 +62,13 @@ const ShareRequestsPage = () => {
   }, [fetchInbox, fetchOutbox])
 
   const pendingInbox = inbox.filter((r) => r.status === 'pending').length
-  const requests = tab === 'inbox' ? inbox : outbox
+  const requests = filterRequests(tab === 'inbox' ? inbox : outbox, statusFilter, searchQuery)
+  const activeSharedCount = outbox.reduce((sum, request) => (
+    sum + request.shares.filter((share) => share.status === 'accepted').length
+  ), 0)
+  const closedRequestsCount = [...inbox, ...outbox].filter((request) => (
+    request.status === 'cancelled' || request.status === 'revoked' || request.status === 'declined'
+  )).length
 
   return (
     <div className="space-y-6">
@@ -99,6 +118,34 @@ const ShareRequestsPage = () => {
           <ArrowUpRight className="h-4 w-4" />
           Исходящие
         </button>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        <SummaryCard label="Ожидают ответа" value={pendingInbox} />
+        <SummaryCard label="Активные доступы" value={activeSharedCount} />
+        <SummaryCard label="Закрытые запросы" value={closedRequestsCount} />
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-xl border border-gray-100 bg-white p-4 shadow-card lg:flex-row lg:items-center">
+        <label className="relative flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <input
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-3 text-sm focus:border-primary-400 focus:outline-none"
+            placeholder="Поиск по ФИО, email, пациенту или записи"
+          />
+        </label>
+        <select
+          value={statusFilter}
+          onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
+          className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-primary-400 focus:outline-none"
+        >
+          <option value="all">Все статусы</option>
+          {Object.entries(statusConfig).map(([value, config]) => (
+            <option key={value} value={value}>{config.label}</option>
+          ))}
+        </select>
       </div>
 
       {error && (
@@ -156,9 +203,9 @@ const ShareRequestsPage = () => {
                 request={request}
                 mode={tab}
                 onAccept={() => acceptRequest(request.id)}
-                onDecline={() => declineRequest(request.id)}
-                onCancel={() => cancelRequest(request.id)}
-                onRevoke={() => revokeRequest(request.id)}
+                onDecline={() => confirmAction('Отклонить sharing-запрос?') ? declineRequest(request.id) : Promise.resolve()}
+                onCancel={() => confirmAction('Отменить исходящий sharing-запрос?') ? cancelRequest(request.id) : Promise.resolve()}
+                onRevoke={() => confirmAction('Отозвать доступ к записям?') ? revokeRequest(request.id) : Promise.resolve()}
               />
             ))}
           </motion.div>
@@ -249,35 +296,75 @@ function ShareRequestCard({
 
         {request.shares.length > 0 && (
           <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {request.shares.map((share) => (
-              <div
-                key={share.id}
-                className="flex items-center justify-between rounded-lg border border-gray-100 bg-gray-50 px-4 py-2.5"
-              >
-                <div className="flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-gray-400" />
-                  <div>
-                    <p className="text-xs font-medium text-gray-900">Запись {share.record_id.slice(0, 8)}</p>
-                    {share.patient_passport_id && (
-                      <Link
-                        to={`/patients/${share.patient_passport_id}`}
-                        className="text-xs text-primary-600 hover:text-primary-700 hover:underline"
-                      >
-                        Открыть карточку
-                      </Link>
-                    )}
-                  </div>
-                </div>
-                <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${statusConfig[share.status].className}`}>
-                  {statusConfig[share.status].label}
-                </span>
-              </div>
-            ))}
+            {request.shares.map((share) => <SharedRecordCard key={share.id} share={share} />)}
           </div>
         )}
       </div>
     </motion.div>
   )
+}
+
+function SharedRecordCard({ share }: { share: SharedRecord }) {
+  return (
+    <div className="rounded-lg border border-gray-100 bg-gray-50 px-4 py-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <FileText className="h-4 w-4 text-gray-400" />
+            <p className="font-medium text-gray-900">{share.title || 'Медицинская запись'}</p>
+            <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${statusConfig[share.status].className}`}>
+              {statusConfig[share.status].label}
+            </span>
+          </div>
+          <div className="mt-1 flex flex-wrap gap-3 text-xs text-gray-500">
+            <span>{recordTypeLabels[share.record_type] ?? share.record_type}</span>
+            <span>{formatDateForDisplay(share.event_date)}</span>
+            {share.patient_fio && <span>{share.patient_fio}</span>}
+            <span className="flex items-center gap-1"><MessageSquare className="h-3.5 w-3.5" />{share.comments_count}</span>
+            <span className="flex items-center gap-1"><Paperclip className="h-3.5 w-3.5" />{share.attachments_count}</span>
+          </div>
+        </div>
+        {share.patient_passport_id && (
+          <Link
+            to={`/patients/${share.patient_passport_id}`}
+            className="shrink-0 rounded-lg border border-primary-200 bg-white px-3 py-1.5 text-xs font-medium text-primary-700 hover:bg-primary-50"
+          >
+            Открыть карточку
+          </Link>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function SummaryCard({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-card">
+      <p className="text-xs font-medium uppercase text-gray-400">{label}</p>
+      <p className="mt-1 text-2xl font-semibold text-gray-900">{value}</p>
+    </div>
+  )
+}
+
+function filterRequests(requests: ShareRequest[], statusFilter: StatusFilter, searchQuery: string): ShareRequest[] {
+  const query = searchQuery.trim().toLowerCase()
+  return requests.filter((request) => {
+    if (statusFilter !== 'all' && request.status !== statusFilter) return false
+    if (!query) return true
+    const values = [
+      request.from_user.fio,
+      request.from_user.email,
+      request.to_user.fio,
+      request.to_user.email,
+      request.message ?? '',
+      ...request.shares.flatMap((share) => [share.title ?? '', share.patient_fio ?? '', share.record_type]),
+    ]
+    return values.some((value) => value.toLowerCase().includes(query))
+  })
+}
+
+function confirmAction(message: string): boolean {
+  return window.confirm(message)
 }
 
 export default ShareRequestsPage
