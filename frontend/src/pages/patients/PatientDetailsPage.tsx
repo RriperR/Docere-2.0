@@ -250,6 +250,7 @@ const PatientDetailsPage: React.FC = () => {
   if (!currentPatient) return null
 
   const patientInitials = getInitials(currentPatient.fio)
+  const selectedShareRecords = patientRecords.filter((record) => selectedShareRecordIds.includes(record.id))
 
   return (
     <div className="space-y-6">
@@ -652,6 +653,7 @@ const PatientDetailsPage: React.FC = () => {
       {isShareModalOpen && (
         <ShareRecordsModal
           selectedCount={selectedShareRecordIds.length}
+          selectedRecords={selectedShareRecords}
           email={shareEmail}
           message={shareMessage}
           result={shareResult}
@@ -670,10 +672,11 @@ const PatientDetailsPage: React.FC = () => {
 }
 
 function ShareRecordsModal({
-  selectedCount, email, message, result, error, isSubmitting, recipients,
+  selectedCount, selectedRecords, email, message, result, error, isSubmitting, recipients,
   onEmailChange, onMessageChange, onSelectRecipient, onSubmit, onClose,
 }: {
   selectedCount: number
+  selectedRecords: PatientRecordSummary[]
   email: string
   message: string
   result: CreateShareResult | null
@@ -713,15 +716,36 @@ function ShareRecordsModal({
         {result && (
           <div className="mb-4 rounded-xl bg-success-50 px-4 py-3 text-sm text-success-800">
             {result.request
-              ? 'Sharing-запрос создан. Получатель увидит его во входящих.'
+              ? `Sharing-запрос создан: отправлено ${result.request.shares.length} записей.`
               : 'Новые записи не добавлены: у получателя уже есть доступ или активный запрос.'}
             {result.skipped_record_ids.length > 0 && (
               <p className="mt-1 text-xs">Пропущено: {result.skipped_record_ids.length}</p>
+            )}
+            {result.request && (
+              <Link to="/share-requests" className="mt-2 inline-flex text-xs font-medium text-success-900 underline">
+                Открыть исходящие
+              </Link>
             )}
           </div>
         )}
 
         <div className="space-y-4">
+          <div>
+            <p className="mb-2 text-sm font-medium text-gray-700">Выбранные записи</p>
+            <div className="max-h-40 space-y-2 overflow-y-auto rounded-xl border border-gray-100 bg-gray-50 p-2">
+              {selectedRecords.map((record) => (
+                <div key={record.id} className="rounded-lg bg-white px-3 py-2 text-sm">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${typeColors[record.recordType] ?? 'bg-gray-100 text-gray-600'}`}>
+                      {typeLabel[record.recordType] ?? record.recordType}
+                    </span>
+                    <span className="text-xs text-gray-500">{format(new Date(record.eventDate), 'dd.MM.yyyy')}</span>
+                  </div>
+                  <p className="mt-1 font-medium text-gray-900">{record.title || 'Медицинская запись'}</p>
+                </div>
+              ))}
+            </div>
+          </div>
           <div>
             <label className="block text-sm font-medium text-gray-700">Email получателя</label>
             <input
@@ -734,12 +758,14 @@ function ShareRecordsModal({
             {recipients.length > 0 && (
               <div className="mt-2 max-h-44 overflow-y-auto rounded-xl border border-gray-200 bg-white">
                 {recipients.map((recipient) => (
-                  <button
-                    key={recipient.id}
-                    type="button"
-                    onClick={() => onSelectRecipient(recipient.email)}
-                    className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-primary-50"
-                  >
+	                  <button
+	                    key={recipient.id}
+	                    type="button"
+	                    onClick={() => onSelectRecipient(recipient.email)}
+	                    className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-primary-50 ${
+	                      email === recipient.email ? 'bg-primary-50' : ''
+	                    }`}
+	                  >
                     <span>
                       <span className="block font-medium text-gray-900">{recipient.fio}</span>
                       <span className="text-xs text-gray-500">{recipient.email}</span>
