@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
@@ -46,7 +47,13 @@ class RecordShareResponseSchema(BaseModel):
 
     id: UUID
     record_id: UUID
+    title: str | None
+    record_type: str
+    event_date: date
+    patient_fio: str | None
     patient_passport_id: UUID | None
+    attachments_count: int
+    comments_count: int
     status: str
     created_at: MoscowDatetime
     responded_at: MoscowDatetime | None

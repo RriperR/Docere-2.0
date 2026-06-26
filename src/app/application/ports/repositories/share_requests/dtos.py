@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 
 
@@ -23,7 +23,13 @@ class RecordShareDTO:
 
     id: UUID
     record_id: UUID
+    title: str | None
+    record_type: str
+    event_date: date
+    patient_fio: str | None
     patient_passport_id: UUID | None
+    attachments_count: int
+    comments_count: int
     status: str
     created_at: datetime
     responded_at: datetime | None

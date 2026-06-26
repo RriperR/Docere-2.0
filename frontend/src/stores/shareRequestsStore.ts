@@ -14,7 +14,13 @@ export interface ShareUser {
 export interface SharedRecord {
   id: string
   record_id: string
+  title: string | null
+  record_type: string
+  event_date: string
+  patient_fio: string | null
   patient_passport_id: string | null
+  attachments_count: number
+  comments_count: number
   status: ShareStatus
   created_at: string
   responded_at: string | null

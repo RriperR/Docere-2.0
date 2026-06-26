@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import exists, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
 from app.application.ports.repositories.share_requests.dtos import (
@@ -23,8 +23,10 @@ from app.application.use_cases.share_requests.errors import (
 from app.domain.entities.medical_record import MedicalRecordStatus
 from app.infrastructure.db.models._time import utc_now
 from app.infrastructure.db.models.auth.user import UserRole, UserRow, UserStatus
+from app.infrastructure.db.models.medical_records.file_attachment import FileAttachmentRow
 from app.infrastructure.db.models.medical_records.medical_record import MedicalRecordRow
 from app.infrastructure.db.models.medical_records.patient_passport import PatientPassportRow
+from app.infrastructure.db.models.medical_records.record_comment import RecordCommentRow
 from app.infrastructure.db.models.medical_records.record_share import (
     RecordShareRequestRow,
     RecordShareRow,
@@ -382,14 +384,33 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
             role=UserRole(row.role).value,
         )
 
-    @staticmethod
-    def _to_share_dto(row: RecordShareRow) -> RecordShareDTO:
+    def _to_share_dto(self, row: RecordShareRow) -> RecordShareDTO:
+        record = self._session.get(MedicalRecordRow, row.record_id)
+        if record is None:
+            raise RuntimeError('Record share references missing medical record')
+        patient = self._session.get(PatientPassportRow, row.patient_passport_id) if row.patient_passport_id else None
         return RecordShareDTO(
             id=row.id,
             record_id=row.record_id,
+            title=record.title,
+            record_type=record.record_type.value,
+            event_date=record.event_date,
+            patient_fio=patient.fio if patient is not None else None,
             patient_passport_id=row.patient_passport_id,
+            attachments_count=self._record_attachments_count(row.record_id),
+            comments_count=self._record_comments_count(row.record_id),
             status=row.status.value,
             created_at=row.created_at,
             responded_at=row.responded_at,
             revoked_at=row.revoked_at,
         )
+
+    def _record_attachments_count(self, record_id: UUID) -> int:
+        return self._session.scalar(
+            select(func.count(FileAttachmentRow.id)).where(FileAttachmentRow.record_id == record_id),
+        ) or 0
+
+    def _record_comments_count(self, record_id: UUID) -> int:
+        return self._session.scalar(
+            select(func.count(RecordCommentRow.id)).where(RecordCommentRow.record_id == record_id),
+        ) or 0

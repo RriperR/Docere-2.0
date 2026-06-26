@@ -1450,6 +1450,10 @@ def test_share_request_accept_grants_record_access_to_registered_user(record_cli
         '/api/share-requests/inbox',
         headers={'Authorization': f'Bearer {recipient_token}'},
     )
+    outbox_response = record_client.get(
+        '/api/share-requests/outbox',
+        headers={'Authorization': f'Bearer {owner_token}'},
+    )
     accept_response = record_client.post(
         f'/api/share-requests/{share_response["request"]["id"]}/accept',
         headers={'Authorization': f'Bearer {recipient_token}'},
@@ -1475,6 +1479,17 @@ def test_share_request_accept_grants_record_access_to_registered_user(record_cli
     assert before_accept_response.status_code == 403
     assert inbox_response.status_code == 200
     assert inbox_response.json()[0]['id'] == share_response['request']['id']
+    inbox_share = inbox_response.json()[0]['shares'][0]
+    assert inbox_share['record_id'] == created_record['id']
+    assert inbox_share['title'] == 'Shared record'
+    assert inbox_share['record_type'] == 'consultation_result'
+    assert inbox_share['event_date'] == '2026-03-11'
+    assert inbox_share['patient_fio'] == 'Ivan Ivanov'
+    assert inbox_share['patient_passport_id'] == str(owner_passport_id)
+    assert inbox_share['attachments_count'] == 0
+    assert inbox_share['comments_count'] == 0
+    assert outbox_response.status_code == 200
+    assert outbox_response.json()[0]['shares'][0]['title'] == 'Shared record'
     assert accept_response.status_code == 200
     assert accept_response.json()['status'] == 'accepted'
     assert accept_response.json()['shares'][0]['status'] == 'accepted'
