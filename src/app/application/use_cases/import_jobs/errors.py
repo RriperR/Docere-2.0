@@ -11,3 +11,7 @@ class ImportJobNotFoundError(ImportJobError):
 
 class ImportJobValidationError(ImportJobError):
     """Архив импорта не прошел валидацию."""
+
+
+class ArchiveExtractionError(ImportJobError):
+    """Архив не может быть прочитан как корректный импортируемый ZIP."""

@@ -1,22 +1,28 @@
-"""Best-effort extraction of useful metadata from arbitrary ZIP archives."""
+"""Use case извлечения черновика импорта из архива."""
 
 from __future__ import annotations
 
-import mimetypes
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import date
-from io import BytesIO
 from pathlib import PurePosixPath
-from zipfile import BadZipFile, LargeZipFile, ZipFile
+from uuid import UUID
 
-from app.domain.entities.medical_record import MedicalRecordType
-
-try:
-    import pydicom
-except ImportError:  # pragma: no cover - dependency is expected in runtime.
-    pydicom = None  # type: ignore[assignment]
+from app.application.ports.import_jobs.archive_reader import ArchiveReaderPort
+from app.application.ports.import_jobs.dicom_metadata_reader import DicomMetadataReaderPort
+from app.application.ports.import_jobs.patient_matcher import PatientMatcherPort
+from app.application.use_cases.import_jobs.dtos import (
+    DicomMetadata,
+    ExtractImportDraftCommand,
+    ImportDraftResult,
+    ImportedFileCandidate,
+    PatientCandidate,
+    PatientMatchCandidate,
+    RecordGroupCandidate,
+    RecordType,
+)
+from app.application.use_cases.import_jobs.errors import ArchiveExtractionError
 
 _DATE_PATTERNS = (
     re.compile(r'(?P<year>20\d{2}|19\d{2})[-_. ]?(?P<month>0[1-9]|1[0-2])[-_. ]?(?P<day>0[1-9]|[12]\d|3[01])'),
@@ -24,25 +30,6 @@ _DATE_PATTERNS = (
 )
 _CYRILLIC_FIO_RE = re.compile(r'\b[А-ЯЁ][а-яё]+(?:[\s_.-]+[А-ЯЁ][а-яё]+){1,3}\b')
 _LATIN_FIO_RE = re.compile(r'\b[A-Z][a-z]+(?:[\s_.-]+[A-Z][a-z]+){1,3}\b')
-_TRASH_FILENAMES = {'', '.ds_store', 'thumbs.db', 'desktop.ini'}
-_TRASH_PARTS = {'__macosx', '.trash'}
-_MAX_ZIP_FILES = 1000
-_MAX_ZIP_FILE_SIZE_BYTES = 100 * 1024 * 1024
-_MAX_ZIP_TOTAL_UNCOMPRESSED_SIZE_BYTES = 500 * 1024 * 1024
-_MAX_ZIP_COMPRESSION_RATIO = 100
-_DICOM_TAGS = (
-    'PatientName',
-    'PatientBirthDate',
-    'StudyDate',
-    'SeriesDate',
-    'ContentDate',
-    'Modality',
-    'StudyDescription',
-    'SeriesDescription',
-    'InstitutionName',
-    'StudyInstanceUID',
-    'SeriesInstanceUID',
-)
 _EXPLICIT_BIRTH_DATE_RE = re.compile(
     r'(?:'
     r'date[_\s.-]*of[_\s.-]*birth|birth[_\s.-]*date|birth|dob|'
@@ -57,132 +44,92 @@ _EXPLICIT_BIRTH_DATE_RE = re.compile(
 )
 
 
-class ArchiveExtractionError(ValueError):
-    """Archive cannot be parsed as a valid import ZIP."""
-
-
-@dataclass(slots=True)
-class _FileDraft:
-    path: str
-    filename: str
-    size_bytes: int
-    mime_type: str
-    is_dicom: bool
-    patient_fio: str | None
-    patient_birth_date: date | None
-    event_date: date | None
-    event_date_candidates: list[date]
-    record_type: MedicalRecordType
-    title: str
-    group_key: str
-    dicom_metadata: dict[str, object] = field(default_factory=dict)
-
-
 @dataclass(slots=True)
 class _PatientDraft:
     candidate_id: str
     fio: str | None
     date_of_birth: date | None
     sources: set[str] = field(default_factory=set)
-    files: list[_FileDraft] = field(default_factory=list)
+    files: list[ImportedFileCandidate] = field(default_factory=list)
 
 
-def extract_import_draft(*, archive_filename: str, archive_content: bytes) -> dict[str, object]:
-    """Extract patient and record candidates from an arbitrary ZIP archive.
+class ExtractImportDraftUseCase:
+    """Оркестрировать извлечение черновика импорта."""
 
-    Args:
-        archive_filename: Original uploaded archive filename.
-        archive_content: ZIP bytes.
+    def __init__(
+        self,
+        *,
+        archive_reader: ArchiveReaderPort,
+        dicom_metadata_reader: DicomMetadataReaderPort,
+        patient_matcher: PatientMatcherPort,
+    ) -> None:
+        """Инициализировать use case зависимостями через порты."""
+        self._archive_reader = archive_reader
+        self._dicom_metadata_reader = dicom_metadata_reader
+        self._patient_matcher = patient_matcher
 
-    Returns:
-        JSON-serializable draft report for user review.
+    def execute(self, command: ExtractImportDraftCommand) -> ImportDraftResult:
+        """Извлечь пациентов, группы записей и файлы из архива.
 
-    Raises:
-        ArchiveExtractionError: If archive bytes cannot be read as a valid ZIP.
+        Returns:
+            Типизированный черновик импорта.
+        """
+        warnings: list[str] = []
+        archive_fio = _find_fio(command.archive_filename)
+        archive_birth_dates = _find_explicit_birth_dates(command.archive_filename)
+        patients: dict[str, _PatientDraft] = {}
+        files: list[ImportedFileCandidate] = []
 
-    """
-    warnings: list[str] = []
-    archive_fio = _find_fio(archive_filename)
-    archive_birth_dates = _find_explicit_birth_dates(archive_filename)
-    patients: dict[str, _PatientDraft] = {}
-    files: list[_FileDraft] = []
-    processed_files = 0
-    total_uncompressed_size = 0
+        archive_result = self._archive_reader.read_files(archive_content=command.archive_content)
+        warnings.extend(archive_result.warnings)
 
-    try:
-        archive = ZipFile(BytesIO(archive_content))
-    except (BadZipFile, LargeZipFile) as error:
-        raise ArchiveExtractionError('Archive is not a valid ZIP file') from error
-
-    with archive:
-        for info in archive.infolist():
-            if info.is_dir():
-                continue
-            path = _safe_zip_path(info.filename)
-            if path is None:
-                warnings.append(f'Skipped unsafe or system file: {info.filename}')
-                continue
-            if processed_files >= _MAX_ZIP_FILES:
-                warnings.append(f'Skipped file over ZIP file count limit: {path}')
-                continue
-            if info.file_size <= 0:
-                warnings.append(f'Skipped empty file: {path}')
-                continue
-            if info.file_size > _MAX_ZIP_FILE_SIZE_BYTES:
-                warnings.append(f'Skipped file over size limit: {path}')
-                continue
-            if total_uncompressed_size + info.file_size > _MAX_ZIP_TOTAL_UNCOMPRESSED_SIZE_BYTES:
-                warnings.append(f'Skipped file over ZIP total uncompressed size limit: {path}')
-                continue
-            if _compression_ratio(info.compress_size, info.file_size) > _MAX_ZIP_COMPRESSION_RATIO:
-                warnings.append(f'Skipped suspiciously compressed file: {path}')
-                continue
-
-            try:
-                content = archive.read(info)
-            except (BadZipFile, LargeZipFile) as error:
-                raise ArchiveExtractionError('Archive contains unreadable ZIP entries') from error
-            processed_files += 1
-            total_uncompressed_size += info.file_size
-            dicom_metadata = _read_dicom_metadata(content, path)
-            name_context = f'{archive_filename} {path}'
-            patient_fio = _dicom_patient_name(dicom_metadata) or _find_fio(path) or archive_fio
+        for archive_file in archive_result.files:
+            dicom_metadata = self._dicom_metadata_reader.read_metadata(
+                content=archive_file.content,
+                path=archive_file.path,
+            )
+            name_context = f'{command.archive_filename} {archive_file.path}'
+            patient_fio = _dicom_patient_name(dicom_metadata) or _find_fio(archive_file.path) or archive_fio
             birth_date_candidates = _unique_dates(
                 [
-                    *_find_explicit_birth_dates(path),
+                    *_find_explicit_birth_dates(archive_file.path),
                     *archive_birth_dates,
                 ],
             )
-            patient_birth_date = _parse_dicom_date(dicom_metadata.get('PatientBirthDate')) or _single_date_or_none(
+            patient_birth_date = _dicom_patient_birth_date(dicom_metadata) or _single_date_or_none(
                 candidates=birth_date_candidates,
-                warning_context=f'birth date for {path}',
+                warning_context=f'birth date for {archive_file.path}',
                 warnings=warnings,
             )
-            path_dates = [item for item in _find_dates(path) if item not in birth_date_candidates]
+            path_dates = [item for item in _find_dates(archive_file.path) if item not in birth_date_candidates]
             event_date_candidates = _unique_dates([*_dicom_event_dates(dicom_metadata), *path_dates])
             event_date = _single_date_or_none(
                 candidates=event_date_candidates,
-                warning_context=f'event date for {path}',
+                warning_context=f'event date for {archive_file.path}',
                 warnings=warnings,
             )
             record_type = _guess_record_type(name_context, dicom_metadata)
-            group_key = _group_key(path=path, event_date=event_date, record_type=record_type, metadata=dicom_metadata)
-            draft = _FileDraft(
-                path=path,
-                filename=PurePosixPath(path).name,
-                size_bytes=info.file_size,
-                mime_type=_mime_type(path, bool(dicom_metadata)),
-                is_dicom=bool(dicom_metadata),
+            candidate = ImportedFileCandidate(
+                path=archive_file.path,
+                filename=archive_file.filename,
+                size_bytes=archive_file.size_bytes,
+                mime_type='application/dicom' if dicom_metadata else archive_file.mime_type,
+                is_dicom=dicom_metadata is not None,
                 patient_fio=patient_fio,
                 patient_birth_date=patient_birth_date,
                 event_date=event_date,
-                event_date_candidates=event_date_candidates,
+                event_date_candidates=tuple(event_date_candidates),
                 record_type=record_type,
-                title=_guess_title(path, dicom_metadata),
-                group_key=group_key,
+                title=_guess_title(archive_file.path, dicom_metadata),
+                group_key=_group_key(
+                    path=archive_file.path,
+                    event_date=event_date,
+                    record_type=record_type,
+                    metadata=dicom_metadata,
+                ),
                 dicom_metadata=dicom_metadata,
             )
-            files.append(draft)
+            files.append(candidate)
             patient_key = _patient_key(patient_fio, patient_birth_date)
             if patient_key not in patients:
                 patients[patient_key] = _PatientDraft(
@@ -190,123 +137,84 @@ def extract_import_draft(*, archive_filename: str, archive_content: bytes) -> di
                     fio=patient_fio,
                     date_of_birth=patient_birth_date,
                 )
-            patients[patient_key].files.append(draft)
-            patients[patient_key].sources.add(path)
+            patients[patient_key].files.append(candidate)
+            patients[patient_key].sources.add(archive_file.path)
 
-    if not patients:
-        unknown = _PatientDraft(candidate_id='patient-1', fio=None, date_of_birth=None)
-        patients[_patient_key(None, None)] = unknown
+        if not patients:
+            patients[_patient_key(None, None)] = _PatientDraft(
+                candidate_id='patient-1',
+                fio=None,
+                date_of_birth=None,
+            )
 
-    patient_reports = [_patient_to_report(patient) for patient in patients.values()]
-    return {
-        'message': 'Archive parsed and waiting for user review',
-        'source_archive': archive_filename,
-        'patients': patient_reports,
-        'files_total': len(files),
-        'warnings': warnings,
-    }
-
-
-def _patient_to_report(patient: _PatientDraft) -> dict[str, object]:
-    groups: dict[str, list[_FileDraft]] = {}
-    for file in patient.files:
-        groups.setdefault(file.group_key, []).append(file)
-
-    record_groups = []
-    for index, group_files in enumerate(groups.values(), start=1):
-        representative = group_files[0]
-        record_groups.append(
-            {
-                'group_id': f'{patient.candidate_id}-record-{index}',
-                'record_type': representative.record_type.value,
-                'event_date': representative.event_date.isoformat() if representative.event_date else None,
-                'event_date_candidates': [
-                    candidate.isoformat()
-                    for candidate in _unique_dates(
-                        candidate for item in group_files for candidate in item.event_date_candidates
-                    )
-                ],
-                'title': representative.title,
-                'payload_json': {
-                    'import_source': 'archive',
-                    'dicom_metadata': [item.dicom_metadata for item in group_files if item.dicom_metadata],
-                },
-                'files': [
-                    {
-                        'path': item.path,
-                        'filename': item.filename,
-                        'mime_type': item.mime_type,
-                        'size_bytes': item.size_bytes,
-                        'is_dicom': item.is_dicom,
-                    }
-                    for item in group_files
-                ],
-            },
+        return ImportDraftResult(
+            message='Archive parsed and waiting for user review',
+            source_archive=command.archive_filename,
+            patients=tuple(
+                self._patient_to_candidate(
+                    patient=patient,
+                    requested_by_user_id=command.requested_by_user_id,
+                    requested_by_role=command.requested_by_role,
+                )
+                for patient in patients.values()
+            ),
+            files_total=len(files),
+            warnings=tuple(warnings),
         )
 
-    return {
-        'candidate_id': patient.candidate_id,
-        'fio': patient.fio,
-        'date_of_birth': patient.date_of_birth.isoformat() if patient.date_of_birth else None,
-        'sources': sorted(patient.sources),
-        'existing_matches': [],
-        'record_groups': record_groups,
-    }
+    def _patient_to_candidate(
+        self,
+        *,
+        patient: _PatientDraft,
+        requested_by_user_id: UUID | None,
+        requested_by_role: str | None,
+    ) -> PatientCandidate:
+        groups: dict[str, list[ImportedFileCandidate]] = {}
+        for file in patient.files:
+            groups.setdefault(file.group_key, []).append(file)
 
+        record_groups: list[RecordGroupCandidate] = []
+        for index, group_files in enumerate(groups.values(), start=1):
+            representative = group_files[0]
+            record_groups.append(
+                RecordGroupCandidate(
+                    group_id=f'{patient.candidate_id}-record-{index}',
+                    record_type=representative.record_type,
+                    event_date=representative.event_date,
+                    event_date_candidates=tuple(
+                        _unique_dates(candidate for item in group_files for candidate in item.event_date_candidates),
+                    ),
+                    title=representative.title,
+                    payload_json={
+                        'import_source': 'archive',
+                        'dicom_metadata': [
+                            _dicom_metadata_to_payload(item.dicom_metadata)
+                            for item in group_files
+                            if item.dicom_metadata is not None
+                        ],
+                    },
+                    files=tuple(group_files),
+                ),
+            )
 
-def _safe_zip_path(raw_path: str) -> str | None:
-    raw_path = raw_path.replace('\\', '/')
-    if raw_path.startswith('/'):
-        return None
-    if re.match(r'^[A-Za-z]:[/\\]', raw_path):
-        return None
+        existing_matches: tuple[PatientMatchCandidate, ...] = ()
+        if patient.fio:
+            existing_matches = self._patient_matcher.find_matches(
+                fio=patient.fio,
+                date_of_birth=patient.date_of_birth,
+                requested_by_user_id=requested_by_user_id,
+                requested_by_role=requested_by_role,
+                limit=5,
+            )
 
-    raw_parts = raw_path.split('/')
-    if any(part in {'..', '.'} for part in raw_parts):
-        return None
-    if any(part.casefold() in _TRASH_PARTS for part in raw_parts):
-        return None
-    raw_name = raw_parts[-1].casefold() if raw_parts else ''
-    if raw_name in _TRASH_FILENAMES:
-        return None
-    if raw_parts and raw_parts[-1].startswith('._'):
-        return None
-
-    normalized = '/'.join(part for part in raw_parts if part)
-    if not normalized:
-        return None
-    path = PurePosixPath(normalized)
-    if path.is_absolute() or any(part in {'..', '.'} for part in path.parts):
-        return None
-    return path.as_posix()
-
-
-def _compression_ratio(compressed_size: int, uncompressed_size: int) -> float:
-    if compressed_size <= 0:
-        return float('inf')
-    return uncompressed_size / compressed_size
-
-
-def _read_dicom_metadata(content: bytes, path: str) -> dict[str, object]:
-    if pydicom is None:
-        return {}
-    if not path.lower().endswith(('.dcm', '.dicom', '.ima')) and content[128:132] != b'DICM':
-        return {}
-    try:
-        dataset = pydicom.dcmread(
-            BytesIO(content),
-            stop_before_pixels=True,
-            force=True,
-            specific_tags=list(_DICOM_TAGS),
+        return PatientCandidate(
+            candidate_id=patient.candidate_id,
+            fio=patient.fio,
+            date_of_birth=patient.date_of_birth,
+            sources=tuple(sorted(patient.sources)),
+            existing_matches=existing_matches,
+            record_groups=tuple(record_groups),
         )
-    except Exception:
-        return {}
-    metadata: dict[str, object] = {}
-    for tag in _DICOM_TAGS:
-        value = getattr(dataset, tag, None)
-        if value not in (None, ''):
-            metadata[tag] = str(value)
-    return metadata
 
 
 def _find_fio(value: str) -> str | None:
@@ -342,36 +250,31 @@ def _find_explicit_birth_dates(value: str) -> list[date]:
     return _unique_dates(dates)
 
 
-def _parse_dicom_date(value: object) -> date | None:
-    if value is None:
-        return None
-    raw = str(value)
-    if not re.fullmatch(r'\d{8}', raw):
-        return None
-    try:
-        return date(int(raw[:4]), int(raw[4:6]), int(raw[6:8]))
-    except ValueError:
-        return None
-
-
-def _dicom_event_dates(metadata: dict[str, object]) -> list[date]:
+def _dicom_event_dates(metadata: DicomMetadata | None) -> list[date]:
+    if metadata is None:
+        return []
     return [
         item
         for item in (
-            _parse_dicom_date(metadata.get('StudyDate')),
-            _parse_dicom_date(metadata.get('SeriesDate')),
-            _parse_dicom_date(metadata.get('ContentDate')),
+            metadata.study_date,
+            metadata.series_date,
+            metadata.content_date,
         )
         if item is not None
     ]
 
 
-def _dicom_patient_name(metadata: dict[str, object]) -> str | None:
-    value = metadata.get('PatientName')
-    if value is None:
+def _dicom_patient_name(metadata: DicomMetadata | None) -> str | None:
+    if metadata is None or metadata.patient_name is None:
         return None
-    name = str(value).replace('^', ' ')
+    name = metadata.patient_name.replace('^', ' ')
     return ' '.join(name.split()) or None
+
+
+def _dicom_patient_birth_date(metadata: DicomMetadata | None) -> date | None:
+    if metadata is None:
+        return None
+    return metadata.patient_birth_date
 
 
 def _unique_dates(values: Iterable[date]) -> list[date]:
@@ -389,51 +292,43 @@ def _single_date_or_none(*, candidates: list[date], warning_context: str, warnin
     return None
 
 
-def _guess_record_type(context: str, metadata: dict[str, object]) -> MedicalRecordType:
-    if metadata:
-        return MedicalRecordType.EXAM_RESULT
+def _guess_record_type(context: str, metadata: DicomMetadata | None) -> RecordType:
+    if metadata is not None:
+        return RecordType.EXAM_RESULT
     text = context.casefold()
     if any(word in text for word in ('lab', 'анализ', 'лаборат', 'blood', 'биохим')):
-        return MedicalRecordType.LAB_RESULT
+        return RecordType.LAB_RESULT
     if any(word in text for word in ('consult', 'консульта', 'прием', 'приём', 'осмотр')):
-        return MedicalRecordType.CONSULTATION_RESULT
+        return RecordType.CONSULTATION_RESULT
     if any(word in text for word in ('mri', 'мрт', 'ct', 'кт', 'dicom', 'рентген', 'узи', 'study')):
-        return MedicalRecordType.EXAM_RESULT
-    return MedicalRecordType.OTHER
+        return RecordType.EXAM_RESULT
+    return RecordType.OTHER
 
 
 def _group_key(
     *,
     path: str,
     event_date: date | None,
-    record_type: MedicalRecordType,
-    metadata: dict[str, object],
+    record_type: RecordType,
+    metadata: DicomMetadata | None,
 ) -> str:
-    study_uid = metadata.get('StudyInstanceUID')
-    if study_uid:
-        return f'dicom:{study_uid}'
-    series_uid = metadata.get('SeriesInstanceUID')
-    if series_uid:
-        return f'dicom-series:{series_uid}'
-    if metadata:
-        return f'dicom:{event_date}:{metadata.get("Modality", "")}'
+    if metadata is not None:
+        if metadata.study_instance_uid:
+            return f'dicom:{metadata.study_instance_uid}'
+        if metadata.series_instance_uid:
+            return f'dicom-series:{metadata.series_instance_uid}'
+        return f'dicom:{event_date}:{metadata.modality or ""}'
     parent = PurePosixPath(path).parent.as_posix()
     return f'file:{parent}:{event_date}:{record_type.value}'
 
 
-def _guess_title(path: str, metadata: dict[str, object]) -> str:
-    for key in ('StudyDescription', 'SeriesDescription'):
-        value = metadata.get(key)
-        if value:
-            return str(value)[:255]
+def _guess_title(path: str, metadata: DicomMetadata | None) -> str:
+    if metadata is not None:
+        for value in (metadata.study_description, metadata.series_description):
+            if value:
+                return value[:255]
     name = PurePosixPath(path).parent.name or PurePosixPath(path).stem
     return _normalize_text(name)[:255] or 'Импортированная запись'
-
-
-def _mime_type(path: str, is_dicom: bool) -> str:
-    if is_dicom:
-        return 'application/dicom'
-    return mimetypes.guess_type(path)[0] or 'application/octet-stream'
 
 
 def _patient_key(fio: str | None, date_of_birth: date | None) -> str:
@@ -445,3 +340,30 @@ def _patient_key(fio: str | None, date_of_birth: date | None) -> str:
 def _normalize_text(value: str) -> str:
     value = value.replace('\\', '/').replace('/', ' ')
     return re.sub(r'[_\-./()]+', ' ', value)
+
+
+def _dicom_metadata_to_payload(metadata: DicomMetadata | None) -> dict[str, object]:
+    if metadata is None:
+        return {}
+    payload: dict[str, object] = {}
+    values = {
+        'PatientName': metadata.patient_name,
+        'PatientBirthDate': metadata.patient_birth_date,
+        'StudyDate': metadata.study_date,
+        'SeriesDate': metadata.series_date,
+        'ContentDate': metadata.content_date,
+        'Modality': metadata.modality,
+        'StudyDescription': metadata.study_description,
+        'SeriesDescription': metadata.series_description,
+        'InstitutionName': metadata.institution_name,
+        'StudyInstanceUID': metadata.study_instance_uid,
+        'SeriesInstanceUID': metadata.series_instance_uid,
+    }
+    for key, value in values.items():
+        if value is None:
+            continue
+        payload[key] = value.isoformat() if isinstance(value, date) else value
+    return payload
+
+
+__all__ = ('ArchiveExtractionError', 'ExtractImportDraftUseCase')

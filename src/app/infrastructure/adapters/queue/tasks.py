@@ -1,14 +1,19 @@
 """Фоновые Celery-задачи."""
 
 from collections.abc import Callable
-from datetime import date
 from typing import cast
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.application.use_cases.import_jobs.extractor import ArchiveExtractionError, extract_import_draft
+from app.application.use_cases.import_jobs.dtos import ExtractImportDraftCommand
+from app.application.use_cases.import_jobs.errors import ArchiveExtractionError
+from app.application.use_cases.import_jobs.extractor import ExtractImportDraftUseCase
+from app.infrastructure.adapters.import_jobs.patient_matcher import RepositoryPatientMatcher
+from app.infrastructure.adapters.import_jobs.pydicom_metadata_reader import PydicomMetadataReader
+from app.infrastructure.adapters.import_jobs.report_serializer import import_draft_result_to_json
+from app.infrastructure.adapters.import_jobs.zip_archive_reader import ZipArchiveReader
 from app.infrastructure.adapters.queue.celery_app import celery_app
 from app.infrastructure.adapters.repositories.import_jobs.sqlalchemy_import_job_repository import (
     SqlAlchemyImportJobRepositoryAdapter,
@@ -57,17 +62,21 @@ def process_import_job(job_id: str) -> None:
             return
         try:
             archive_content = get_file_storage().download(key=job.archive_storage_key)
-            report = extract_import_draft(
-                archive_filename=job.original_filename or 'archive.zip',
-                archive_content=archive_content,
+            patient_repository = SqlAlchemyPatientCardRepositoryAdapter(session=session)
+            use_case = ExtractImportDraftUseCase(
+                archive_reader=ZipArchiveReader(),
+                dicom_metadata_reader=PydicomMetadataReader(),
+                patient_matcher=RepositoryPatientMatcher(patient_repository),
             )
-            _enrich_existing_matches(
-                report=report,
-                patient_repository=SqlAlchemyPatientCardRepositoryAdapter(session=session),
-                requested_by_user_id=job.uploaded_by_user_id,
-                requested_by_role=_user_role(session=session, user_id=job.uploaded_by_user_id),
+            result = use_case.execute(
+                ExtractImportDraftCommand(
+                    archive_filename=job.original_filename or 'archive.zip',
+                    archive_content=archive_content,
+                    requested_by_user_id=job.uploaded_by_user_id,
+                    requested_by_role=_user_role(session=session, user_id=job.uploaded_by_user_id),
+                ),
             )
-            repository.mark_needs_review(job_id=job.id, report_json=report)
+            repository.mark_needs_review(job_id=job.id, report_json=import_draft_result_to_json(result))
         except ArchiveExtractionError as exc:
             repository.mark_failed(
                 job_id=job.id,
@@ -87,70 +96,6 @@ def process_import_job(job_id: str) -> None:
                 },
             )
         session.commit()
-
-
-def _enrich_existing_matches(
-    *,
-    report: dict[str, object],
-    patient_repository: SqlAlchemyPatientCardRepositoryAdapter,
-    requested_by_user_id: UUID,
-    requested_by_role: str,
-) -> None:
-    patients = report.get('patients')
-    if not isinstance(patients, list):
-        return
-    for patient in patients:
-        if not isinstance(patient, dict):
-            continue
-        fio = patient.get('fio')
-        if not isinstance(fio, str) or not fio.strip():
-            patient['existing_matches'] = []
-            continue
-        date_of_birth = _parse_date(patient.get('date_of_birth'))
-        matches = patient_repository.search_patient_passports(
-            query=fio,
-            date_of_birth=date_of_birth,
-            requested_by_user_id=requested_by_user_id,
-            requested_by_role=requested_by_role,
-            limit=5,
-        )
-        patient['existing_matches'] = [
-            {
-                'id': str(match.patient.id),
-                'fio': match.patient.fio,
-                'date_of_birth': match.patient.date_of_birth.isoformat()
-                if match.patient.date_of_birth is not None
-                else None,
-                'status': match.patient.status,
-                'match_score': match.match_score,
-                'match_type': _match_type(fio, date_of_birth, match.patient.fio, match.patient.date_of_birth),
-            }
-            for match in matches
-        ]
-
-
-def _match_type(
-    fio: str,
-    date_of_birth: date | None,
-    matched_fio: str,
-    matched_date_of_birth: date | None,
-) -> str:
-    if (
-        fio.casefold() == matched_fio.casefold()
-        and date_of_birth is not None
-        and date_of_birth == matched_date_of_birth
-    ):
-        return 'exact'
-    return 'fuzzy'
-
-
-def _parse_date(value: object) -> date | None:
-    if not isinstance(value, str):
-        return None
-    try:
-        return date.fromisoformat(value)
-    except ValueError:
-        return None
 
 
 def _user_role(*, session: Session, user_id: UUID) -> str:

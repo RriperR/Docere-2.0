@@ -7,8 +7,30 @@ import pytest
 from pydicom.dataset import FileDataset, FileMetaDataset
 from pydicom.uid import ExplicitVRLittleEndian, generate_uid, SecondaryCaptureImageStorage
 
-from app.application.use_cases.import_jobs import extractor
-from app.application.use_cases.import_jobs.extractor import ArchiveExtractionError, extract_import_draft
+from app.application.use_cases.import_jobs.dtos import ExtractImportDraftCommand
+from app.application.use_cases.import_jobs.errors import ArchiveExtractionError
+from app.application.use_cases.import_jobs.extractor import ExtractImportDraftUseCase
+from app.infrastructure.adapters.import_jobs.patient_matcher import NoopPatientMatcher
+from app.infrastructure.adapters.import_jobs.pydicom_metadata_reader import PydicomMetadataReader
+from app.infrastructure.adapters.import_jobs.report_serializer import import_draft_result_to_json
+from app.infrastructure.adapters.import_jobs.zip_archive_reader import ZipArchiveReader
+
+
+def _extract_report(
+    *,
+    archive_filename: str,
+    archive_content: bytes,
+    archive_reader: ZipArchiveReader | None = None,
+) -> dict[str, object]:
+    use_case = ExtractImportDraftUseCase(
+        archive_reader=archive_reader or ZipArchiveReader(),
+        dicom_metadata_reader=PydicomMetadataReader(),
+        patient_matcher=NoopPatientMatcher(),
+    )
+    result = use_case.execute(
+        ExtractImportDraftCommand(archive_filename=archive_filename, archive_content=archive_content),
+    )
+    return import_draft_result_to_json(result)
 
 
 def _zip_bytes(entries: dict[str, bytes], *, compression: int | None = None) -> bytes:
@@ -48,7 +70,7 @@ def _dicom_bytes(
 
 @pytest.mark.critical
 def test_extract_import_draft_parses_regular_zip_with_explicit_birth_date() -> None:
-    report = extract_import_draft(
+    report = _extract_report(
         archive_filename='records.zip',
         archive_content=_zip_bytes(
             {
@@ -68,7 +90,7 @@ def test_extract_import_draft_parses_regular_zip_with_explicit_birth_date() -> N
 
 @pytest.mark.critical
 def test_extract_import_draft_does_not_use_unmarked_path_date_as_birth_date() -> None:
-    report = extract_import_draft(
+    report = _extract_report(
         archive_filename='records.zip',
         archive_content=_zip_bytes(
             {
@@ -84,7 +106,7 @@ def test_extract_import_draft_does_not_use_unmarked_path_date_as_birth_date() ->
 
 @pytest.mark.critical
 def test_extract_import_draft_offers_multiple_unmarked_dates_for_review() -> None:
-    report = extract_import_draft(
+    report = _extract_report(
         archive_filename='records.zip',
         archive_content=_zip_bytes(
             {
@@ -102,7 +124,7 @@ def test_extract_import_draft_offers_multiple_unmarked_dates_for_review() -> Non
 @pytest.mark.critical
 def test_extract_import_draft_parses_dicom_patient_and_study_metadata() -> None:
     study_uid = generate_uid()
-    report = extract_import_draft(
+    report = _extract_report(
         archive_filename='dicom.zip',
         archive_content=_zip_bytes(
             {
@@ -125,7 +147,7 @@ def test_extract_import_draft_parses_dicom_patient_and_study_metadata() -> None:
 @pytest.mark.critical
 def test_extract_import_draft_groups_dicom_by_study_uid_before_series_uid() -> None:
     study_uid = generate_uid()
-    report = extract_import_draft(
+    report = _extract_report(
         archive_filename='dicom.zip',
         archive_content=_zip_bytes(
             {
@@ -142,12 +164,12 @@ def test_extract_import_draft_groups_dicom_by_study_uid_before_series_uid() -> N
 @pytest.mark.critical
 def test_extract_import_draft_rejects_corrupted_zip() -> None:
     with pytest.raises(ArchiveExtractionError, match='valid ZIP'):
-        extract_import_draft(archive_filename='bad.zip', archive_content=b'not a zip')
+        _extract_report(archive_filename='bad.zip', archive_content=b'not a zip')
 
 
 @pytest.mark.critical
 def test_extract_import_draft_skips_unsafe_system_and_empty_files() -> None:
-    report = extract_import_draft(
+    report = _extract_report(
         archive_filename='records.zip',
         archive_content=_zip_bytes(
             {
@@ -175,10 +197,8 @@ def test_extract_import_draft_skips_unsafe_system_and_empty_files() -> None:
 
 
 @pytest.mark.critical
-def test_extract_import_draft_applies_zip_file_count_limit(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(extractor, '_MAX_ZIP_FILES', 1)
-
-    report = extract_import_draft(
+def test_extract_import_draft_applies_zip_file_count_limit() -> None:
+    report = _extract_report(
         archive_filename='records.zip',
         archive_content=_zip_bytes(
             {
@@ -186,6 +206,7 @@ def test_extract_import_draft_applies_zip_file_count_limit(monkeypatch: pytest.M
                 'valid/two.txt': b'ok',
             },
         ),
+        archive_reader=ZipArchiveReader(max_files=1),
     )
 
     assert report['files_total'] == 1
@@ -193,11 +214,8 @@ def test_extract_import_draft_applies_zip_file_count_limit(monkeypatch: pytest.M
 
 
 @pytest.mark.critical
-def test_extract_import_draft_applies_zip_size_limits(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(extractor, '_MAX_ZIP_FILE_SIZE_BYTES', 4)
-    monkeypatch.setattr(extractor, '_MAX_ZIP_TOTAL_UNCOMPRESSED_SIZE_BYTES', 6)
-
-    report = extract_import_draft(
+def test_extract_import_draft_applies_zip_size_limits() -> None:
+    report = _extract_report(
         archive_filename='records.zip',
         archive_content=_zip_bytes(
             {
@@ -208,6 +226,7 @@ def test_extract_import_draft_applies_zip_size_limits(monkeypatch: pytest.Monkey
                 'valid/four.txt': b'ok',
             },
         ),
+        archive_reader=ZipArchiveReader(max_file_size_bytes=4, max_total_uncompressed_size_bytes=6),
     )
 
     assert report['files_total'] == 3
@@ -216,12 +235,8 @@ def test_extract_import_draft_applies_zip_size_limits(monkeypatch: pytest.Monkey
 
 
 @pytest.mark.critical
-def test_extract_import_draft_applies_zip_compression_ratio_limit(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(extractor, '_MAX_ZIP_FILE_SIZE_BYTES', 2000)
-    monkeypatch.setattr(extractor, '_MAX_ZIP_TOTAL_UNCOMPRESSED_SIZE_BYTES', 5000)
-    monkeypatch.setattr(extractor, '_MAX_ZIP_COMPRESSION_RATIO', 1)
-
-    report = extract_import_draft(
+def test_extract_import_draft_applies_zip_compression_ratio_limit() -> None:
+    report = _extract_report(
         archive_filename='records.zip',
         archive_content=_zip_bytes(
             {
@@ -229,6 +244,11 @@ def test_extract_import_draft_applies_zip_compression_ratio_limit(monkeypatch: p
                 'valid/compressed.txt': b'0' * 1000,
             },
             compression=ZIP_DEFLATED,
+        ),
+        archive_reader=ZipArchiveReader(
+            max_file_size_bytes=2000,
+            max_total_uncompressed_size_bytes=5000,
+            max_compression_ratio=1,
         ),
     )
 

@@ -18,6 +18,7 @@ from app.application.use_cases.import_jobs.use_cases import (
     ListImportJobsUseCase,
     ResolveImportJobUseCase,
 )
+from app.infrastructure.adapters.import_jobs.zip_archive_reader import ZipArchiveReader
 from app.infrastructure.adapters.queue.tasks import process_import_job
 from app.infrastructure.adapters.repositories.audit_events import AuditEventRepositoryAdapter
 from app.infrastructure.adapters.repositories.import_jobs.sqlalchemy_import_job_repository import (
@@ -91,6 +92,7 @@ def get_resolve_import_job_use_case(session: Session = db_session_dependency) ->
         patient_cards=SqlAlchemyPatientCardRepositoryAdapter(session=session),
         medical_records=SqlAlchemyMedicalRecordRepositoryAdapter(session=session),
         storage=get_file_storage(),
+        archive_reader=ZipArchiveReader(),
     )
 
 

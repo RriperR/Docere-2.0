@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 from datetime import date
-from io import BytesIO
 from uuid import UUID, uuid4
-from zipfile import ZipFile
 
+from app.application.ports.import_jobs.archive_reader import ArchiveReaderPort
 from app.application.ports.repositories.import_jobs.port import ImportJobRepositoryPort
 from app.application.ports.repositories.medical_records.port import MedicalRecordRepositoryPort
 from app.application.ports.repositories.patient_cards.port import PatientCardRepositoryPort
 from app.application.ports.storage.file_storage import FileStoragePort
 from app.application.use_cases.import_jobs.dtos import ImportJobDTO
-from app.application.use_cases.import_jobs.errors import ImportJobNotFoundError, ImportJobValidationError
+from app.application.use_cases.import_jobs.errors import (
+    ArchiveExtractionError,
+    ImportJobNotFoundError,
+    ImportJobValidationError,
+)
 from app.domain.entities.file_attachment import FileAttachmentCategory
 from app.domain.entities.import_job import ImportJob
 
@@ -140,12 +143,14 @@ class ResolveImportJobUseCase:
         patient_cards: PatientCardRepositoryPort,
         medical_records: MedicalRecordRepositoryPort,
         storage: FileStoragePort,
+        archive_reader: ArchiveReaderPort,
     ) -> None:
         """Инициализировать use case."""
         self._import_jobs = import_jobs
         self._patient_cards = patient_cards
         self._medical_records = medical_records
         self._storage = storage
+        self._archive_reader = archive_reader
 
     def execute(
         self,
@@ -193,68 +198,70 @@ class ResolveImportJobUseCase:
         created_attachments = 0
         warnings = list(_as_str_list(report.get('warnings')))
 
-        with ZipFile(BytesIO(archive_content)) as archive:
-            for candidate_id, patient in patients.items():
-                decision = decision_by_candidate.get(candidate_id)
-                if decision is None or decision.get('action') == 'skip':
+        for candidate_id, patient in patients.items():
+            decision = decision_by_candidate.get(candidate_id)
+            if decision is None or decision.get('action') == 'skip':
+                continue
+            patient_id = self._resolve_patient_id(
+                actor_user_id=actor_user_id,
+                actor_role=actor_role,
+                patient=patient,
+                decision=decision,
+            )
+            if decision.get('action') == 'create':
+                created_patients += 1
+
+            record_decisions = {
+                str(item.get('group_id')): item
+                for item in _as_dict_list(decision.get('record_groups'))
+                if item.get('group_id')
+            }
+            for group in _as_dict_list(patient.get('record_groups')):
+                group_id = str(group.get('group_id'))
+                group_decision = record_decisions.get(group_id, {})
+                if group_decision.get('action') == 'skip':
                     continue
-                patient_id = self._resolve_patient_id(
-                    actor_user_id=actor_user_id,
-                    actor_role=actor_role,
-                    patient=patient,
-                    decision=decision,
+
+                record = self._medical_records.create_record(
+                    creator_user_id=actor_user_id,
+                    patient_passport_id=patient_id,
+                    author_practitioner_passport_id=None,
+                    record_type=str(group_decision.get('record_type') or group.get('record_type') or 'other'),
+                    event_date=_parse_date(str(group_decision.get('event_date') or group.get('event_date') or ''))
+                    or date.today(),
+                    title=str(
+                        group_decision.get('title') or group.get('title') or 'Импортированная запись',
+                    )[:255],
+                    appointment_location=None,
+                    clinical_summary='Создано из импортированного архива.',
+                    payload_json=_payload_json(group),
                 )
-                if decision.get('action') == 'create':
-                    created_patients += 1
-
-                record_decisions = {
-                    str(item.get('group_id')): item
-                    for item in _as_dict_list(decision.get('record_groups'))
-                    if item.get('group_id')
-                }
-                for group in _as_dict_list(patient.get('record_groups')):
-                    group_id = str(group.get('group_id'))
-                    group_decision = record_decisions.get(group_id, {})
-                    if group_decision.get('action') == 'skip':
+                created_records += 1
+                for file_info in _as_dict_list(group.get('files')):
+                    path = str(file_info.get('path') or '')
+                    try:
+                        archive_file = self._archive_reader.read_file(archive_content=archive_content, path=path)
+                    except ArchiveExtractionError:
+                        warnings.append(f'Archive became unreadable during resolve: {path}')
                         continue
-
-                    record = self._medical_records.create_record(
-                        creator_user_id=actor_user_id,
-                        patient_passport_id=patient_id,
-                        author_practitioner_passport_id=None,
-                        record_type=str(group_decision.get('record_type') or group.get('record_type') or 'other'),
-                        event_date=_parse_date(str(group_decision.get('event_date') or group.get('event_date') or ''))
-                        or date.today(),
-                        title=str(
-                            group_decision.get('title') or group.get('title') or 'Импортированная запись',
-                        )[:255],
-                        appointment_location=None,
-                        clinical_summary='Создано из импортированного архива.',
-                        payload_json=_payload_json(group),
+                    if archive_file is None:
+                        warnings.append(f'File disappeared from archive during resolve: {path}')
+                        continue
+                    storage_key = f'records/{record.record.id}/{uuid4().hex}/{file_info.get("filename") or "file"}'
+                    mime_type = str(file_info.get('mime_type') or archive_file.mime_type)
+                    self._storage.upload(key=storage_key, content=archive_file.content, content_type=mime_type)
+                    self._medical_records.add_attachment(
+                        record_id=record.record.id,
+                        comment_id=None,
+                        uploaded_by_user_id=actor_user_id,
+                        uploaded_by_fio=actor_fio,
+                        category=_attachment_category(mime_type, str(group.get('record_type') or 'other')).value,
+                        filename=str(file_info.get('filename') or archive_file.filename),
+                        storage_key=storage_key,
+                        mime_type=mime_type,
+                        size_bytes=len(archive_file.content),
                     )
-                    created_records += 1
-                    for file_info in _as_dict_list(group.get('files')):
-                        path = str(file_info.get('path') or '')
-                        try:
-                            content = archive.read(path)
-                        except KeyError:
-                            warnings.append(f'File disappeared from archive during resolve: {path}')
-                            continue
-                        storage_key = f'records/{record.record.id}/{uuid4().hex}/{file_info.get("filename") or "file"}'
-                        mime_type = str(file_info.get('mime_type') or 'application/octet-stream')
-                        self._storage.upload(key=storage_key, content=content, content_type=mime_type)
-                        self._medical_records.add_attachment(
-                            record_id=record.record.id,
-                            comment_id=None,
-                            uploaded_by_user_id=actor_user_id,
-                            uploaded_by_fio=actor_fio,
-                            category=_attachment_category(mime_type, str(group.get('record_type') or 'other')).value,
-                            filename=str(file_info.get('filename') or 'file'),
-                            storage_key=storage_key,
-                            mime_type=mime_type,
-                            size_bytes=len(content),
-                        )
-                        created_attachments += 1
+                    created_attachments += 1
 
         final_report = {
             **report,
