@@ -51,6 +51,8 @@ class MedicalRecordRow(Base):
     appointment_location: Mapped[str | None] = mapped_column(String(length=255), nullable=True)
     clinical_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     payload_json: Mapped[dict[str, object]] = mapped_column(JSON)
+    confirmed_by_user_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey('users.id'), nullable=True)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

@@ -570,6 +570,11 @@ const PatientDetailsPage: React.FC = () => {
                         <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs capitalize text-gray-600">
                           {record.status}
                         </span>
+                        {record.confirmedAt && (
+                          <span className="rounded-full bg-success-50 px-2 py-0.5 text-xs text-success-700">
+                            подтверждено {format(new Date(record.confirmedAt), 'dd.MM.yyyy')}
+                          </span>
+                        )}
                       </div>
                       <p className="text-base font-semibold text-gray-900">
                         {record.title || 'Медицинская запись'}

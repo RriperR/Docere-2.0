@@ -82,6 +82,8 @@ def to_medical_record_dto(accessible_record: AccessibleMedicalRecordDTO) -> Medi
         appointment_location=record.appointment_location,
         clinical_summary=record.clinical_summary,
         payload_json=record.payload_json,
+        confirmed_by_user_id=record.confirmed_by_user_id,
+        confirmed_at=record.confirmed_at,
         patient_passport_id=accessible_record.patient_passport_id,
         author_practitioner_passport=(
             PractitionerPassportDTO(

@@ -285,6 +285,8 @@ class SqlAlchemyPatientCardRepositoryAdapter(PatientCardRepositoryPort):
             title=record.title,
             appointment_location=record.appointment_location,
             clinical_summary=record.clinical_summary,
+            confirmed_by_user_id=record.confirmed_by_user_id,
+            confirmed_at=record.confirmed_at,
             creator_user_id=record.creator_user_id,
             creator_fio=creator.fio if creator is not None else '',
             author_practitioner_passport=(

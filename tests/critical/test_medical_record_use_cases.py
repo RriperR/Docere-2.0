@@ -116,6 +116,8 @@ class MedicalRecordRepositoryFake(MedicalRecordRepositoryPort):
                 appointment_location=appointment_location,
                 clinical_summary=clinical_summary,
                 payload_json=payload_json,
+                confirmed_by_user_id=None,
+                confirmed_at=None,
                 created_at=created_at,
                 updated_at=created_at,
             ),

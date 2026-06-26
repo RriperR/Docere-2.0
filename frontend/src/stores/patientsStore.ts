@@ -63,6 +63,8 @@ export interface PatientRecordSummary {
   title?: string
   appointmentLocation?: string
   clinicalSummary?: string
+  confirmedByUserId?: string
+  confirmedAt?: string
   creatorUserId: string
   creatorFio: string
   practitioner?: PractitionerInfo
@@ -154,6 +156,8 @@ interface BackendRecordSummary {
   title: string | null
   appointment_location: string | null
   clinical_summary: string | null
+  confirmed_by_user_id: string | null
+  confirmed_at: string | null
   creator_user_id: string
   creator_fio: string
   author_practitioner_passport: BackendPractitioner | null
@@ -272,6 +276,8 @@ const mapRecordSummary = (r: BackendRecordSummary): PatientRecordSummary => ({
   title: r.title ?? undefined,
   appointmentLocation: r.appointment_location ?? undefined,
   clinicalSummary: r.clinical_summary ?? undefined,
+  confirmedByUserId: r.confirmed_by_user_id ?? undefined,
+  confirmedAt: r.confirmed_at ?? undefined,
   creatorUserId: r.creator_user_id,
   creatorFio: r.creator_fio,
   practitioner: mapPractitioner(r.author_practitioner_passport),

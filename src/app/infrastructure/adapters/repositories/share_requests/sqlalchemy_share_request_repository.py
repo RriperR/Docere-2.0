@@ -367,6 +367,8 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
         creator = self._session.get(UserRow, record_row.creator_user_id)
         if creator is not None and creator.role == UserRole.DOCTOR:
             record_row.status = MedicalRecordStatus.CONFIRMED
+            record_row.confirmed_by_user_id = recipient_user_id
+            record_row.confirmed_at = utc_now()
 
     def _get_request_for_recipient(self, request_id: UUID, user_id: UUID) -> RecordShareRequestRow:
         request_row = self._session.scalar(

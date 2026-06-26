@@ -43,6 +43,8 @@ class PatientRecordSummaryDTO:
     title: str | None
     appointment_location: str | None
     clinical_summary: str | None
+    confirmed_by_user_id: UUID | None
+    confirmed_at: datetime | None
     creator_user_id: UUID
     creator_fio: str
     author_practitioner_passport: PractitionerPassportDTO | None

@@ -265,6 +265,8 @@ def test_patient_can_create_record_for_own_passport_with_external_practitioner(r
     assert response_body['patient_passport_id'] == str(patient_passport_id)
     assert response_body['record_type'] == 'consultation_result'
     assert response_body['status'] == 'unconfirmed'
+    assert response_body['confirmed_by_user_id'] is None
+    assert response_body['confirmed_at'] is None
     assert response_body['appointment_location'] == 'Clinic A'
     assert response_body['clinical_summary'] == 'Patient is stable.'
     assert response_body['author_practitioner_passport']['full_name'] == 'Dr. External'
@@ -1716,6 +1718,10 @@ def test_record_confirmation_rules_and_share_auto_confirm(record_client: TestCli
     assert accept_patient_record_response.status_code == 200
     assert confirm_patient_record_response.status_code == 200
     assert confirm_patient_record_response.json()['status'] == 'confirmed'
+    assert confirm_patient_record_response.json()['confirmed_by_user_id'] == str(
+        _get_user_by_email('confirm-doctor@example.com').id,
+    )
+    assert confirm_patient_record_response.json()['confirmed_at'] is not None
     assert repeat_confirm_response.status_code == 422
     assert doctor_record['status'] == 'unconfirmed'
     assert accept_doctor_record_response.status_code == 200
@@ -1724,6 +1730,8 @@ def test_record_confirmation_rules_and_share_auto_confirm(record_client: TestCli
         confirmed_doctor_record = session.get(MedicalRecordRow, UUID(doctor_record['id']))
     assert confirmed_doctor_record is not None
     assert confirmed_doctor_record.status.value == 'confirmed'
+    assert confirmed_doctor_record.confirmed_by_user_id == _get_user_by_email('confirm-patient@example.com').id
+    assert confirmed_doctor_record.confirmed_at is not None
 
 
 @pytest.mark.critical

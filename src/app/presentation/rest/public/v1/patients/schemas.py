@@ -57,6 +57,8 @@ class PatientRecordSummaryResponseSchema(BaseModel):
     title: str | None
     appointment_location: str | None
     clinical_summary: str | None
+    confirmed_by_user_id: UUID | None
+    confirmed_at: MoscowDatetime | None
     creator_user_id: UUID
     creator_fio: str
     author_practitioner_passport: PractitionerPassportResponseSchema | None

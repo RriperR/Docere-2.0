@@ -304,6 +304,8 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
             return None
 
         record_row.status = MedicalRecordStatus.CONFIRMED
+        record_row.confirmed_by_user_id = actor_user_id
+        record_row.confirmed_at = utc_now()
         self._session.flush()
         return self._assemble_accessible_record(
             record_row=record_row,
@@ -538,6 +540,8 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
             appointment_location=row.appointment_location,
             clinical_summary=row.clinical_summary,
             payload_json=row.payload_json,
+            confirmed_by_user_id=row.confirmed_by_user_id,
+            confirmed_at=row.confirmed_at,
             created_at=row.created_at,
             updated_at=row.updated_at,
         )

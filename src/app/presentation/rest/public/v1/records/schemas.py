@@ -99,6 +99,8 @@ class MedicalRecordResponseSchema(BaseModel):
     appointment_location: str | None
     clinical_summary: str | None
     payload_json: dict[str, object]
+    confirmed_by_user_id: UUID | None
+    confirmed_at: MoscowDatetime | None
     patient_passport_id: UUID | None
     author_practitioner_passport: PractitionerPassportResponseSchema | None
     comments: tuple[RecordCommentResponseSchema, ...]

@@ -38,5 +38,7 @@ class MedicalRecord:
     appointment_location: str | None
     clinical_summary: str | None
     payload_json: dict[str, object]
+    confirmed_by_user_id: UUID | None
+    confirmed_at: datetime | None
     created_at: datetime
     updated_at: datetime
