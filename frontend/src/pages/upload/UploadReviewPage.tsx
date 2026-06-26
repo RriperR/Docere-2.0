@@ -36,6 +36,11 @@ type PatientOption = {
   priority: number
 }
 
+type WarningView = {
+  label: string
+  tone: string
+}
+
 const recordTypeLabels: Record<string, string> = {
   exam_result: 'Обследование',
   lab_result: 'Анализ',
@@ -257,6 +262,29 @@ const UploadReviewPage: React.FC = () => {
                             disabled={decision.action === 'skip' || group.action === 'skip'}
                             onChange={(value) => updateGroup(patientIndex, groupIndex, { event_date: value })}
                           />
+                          {sourceGroup && sourceGroup.event_date_candidates.length > 1 && (
+                            <div className="flex flex-wrap gap-1.5 pt-1">
+                              {sourceGroup.event_date_candidates.map((candidate) => {
+                                const selected = group.event_date === candidate
+                                return (
+                                  <button
+                                    type="button"
+                                    key={`${group.group_id}-${candidate}`}
+                                    disabled={decision.action === 'skip' || group.action === 'skip'}
+                                    className={[
+                                      'rounded border px-2 py-1 text-xs transition-colors',
+                                      selected
+                                        ? 'border-primary-500 bg-primary-50 text-primary-700'
+                                        : 'border-gray-200 bg-white text-gray-600 hover:border-primary-300',
+                                    ].join(' ')}
+                                    onClick={() => updateGroup(patientIndex, groupIndex, { event_date: candidate })}
+                                  >
+                                    {formatDateForDisplay(candidate)}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          )}
                         </label>
                         <label className="space-y-1">
                           <span className="text-xs font-medium text-gray-500">Название</span>
@@ -285,10 +313,18 @@ const UploadReviewPage: React.FC = () => {
 
       {warnings.length > 0 && (
         <Card title="Предупреждения" accent="warning">
-          <ul className="space-y-2 text-sm text-gray-700">
-            {warnings.map((warning, index) => (
-              <li key={`${warning}-${index}`}>{warning}</li>
-            ))}
+          <ul className="space-y-2 text-sm">
+            {warnings.map((warning, index) => {
+              const view = warningView(warning)
+              return (
+                <li key={`${warning}-${index}`} className="flex flex-wrap items-start gap-2 text-gray-700">
+                  <span className={`rounded border px-2 py-0.5 text-xs font-medium ${view.tone}`}>
+                    {view.label}
+                  </span>
+                  <span className="min-w-0 flex-1 break-words">{warning}</span>
+                </li>
+              )
+            })}
           </ul>
         </Card>
       )}
@@ -337,6 +373,23 @@ function buildPatientOptions(accessiblePatients: Patient[], patientCandidate: Im
       }
     })
     .sort((left, right) => left.priority - right.priority || left.label.localeCompare(right.label))
+}
+
+function warningView(warning: string): WarningView {
+  const text = warning.toLowerCase()
+  if (text.includes('unsafe') || text.includes('system file')) {
+    return { label: 'Безопасность', tone: 'border-error-200 bg-error-50 text-error-700' }
+  }
+  if (text.includes('empty file')) {
+    return { label: 'Пустой файл', tone: 'border-gray-200 bg-gray-50 text-gray-700' }
+  }
+  if (text.includes('size limit') || text.includes('file count limit') || text.includes('compressed')) {
+    return { label: 'Лимит архива', tone: 'border-warning-200 bg-warning-50 text-warning-700' }
+  }
+  if (text.includes('multiple date candidates')) {
+    return { label: 'Выбор даты', tone: 'border-primary-200 bg-primary-50 text-primary-700' }
+  }
+  return { label: 'Внимание', tone: 'border-warning-200 bg-warning-50 text-warning-700' }
 }
 
 function toInitialDecision(patient: ImportPatientDraft): PatientDecisionState {
