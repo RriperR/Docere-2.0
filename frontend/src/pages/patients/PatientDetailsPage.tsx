@@ -1,4 +1,4 @@
-import React, { ChangeEvent, FormEvent, useEffect, useState } from 'react'
+import React, { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
@@ -11,6 +11,7 @@ import {
   FileText,
   MessageSquare,
   Paperclip,
+  Search,
   Send,
   Share2,
   Stethoscope,
@@ -21,6 +22,7 @@ import { format } from 'date-fns'
 
 import { AddRecordModal } from '../../components/AddRecordModal'
 import { Button } from '../../components/common/Button'
+import { DateInput } from '../../components/common/DateInput'
 import { useAuthStore } from '../../stores/authStore'
 import { PatientRecordSummary, usePatientsStore } from '../../stores/patientsStore'
 import { CreateShareResult, ShareRecipient, useShareRequestsStore } from '../../stores/shareRequestsStore'
@@ -59,6 +61,11 @@ const typeColors: Record<string, string> = {
   exam_result: 'bg-secondary-100 text-secondary-700',
   lab_result: 'bg-warning-100 text-warning-700',
   other: 'bg-gray-100 text-gray-600',
+}
+
+type TimelineGroup = {
+  label: string
+  records: PatientRecordSummary[]
 }
 
 function getInitials(fio: string): string {
@@ -111,6 +118,11 @@ const PatientDetailsPage: React.FC = () => {
   const [uploadingCommentId, setUploadingCommentId] = useState<string | null>(null)
   const [uploadingRecordId, setUploadingRecordId] = useState<string | null>(null)
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
+  const [recordSearch, setRecordSearch] = useState('')
+  const [recordTypeFilter, setRecordTypeFilter] = useState('all')
+  const [recordStatusFilter, setRecordStatusFilter] = useState('all')
+  const [recordDateFrom, setRecordDateFrom] = useState('')
+  const [recordDateTo, setRecordDateTo] = useState('')
 
   useEffect(() => {
     if (id) {
@@ -135,6 +147,50 @@ const PatientDetailsPage: React.FC = () => {
   }, [isShareModalOpen, shareEmail, searchRecipients])
 
   const canComment = user?.role === 'doctor' || user?.role === 'admin'
+
+  const filteredRecords = useMemo(() => {
+    const query = recordSearch.trim().toLowerCase()
+    const fromTime = recordDateFrom ? new Date(recordDateFrom).getTime() : null
+    const toTime = recordDateTo ? new Date(recordDateTo).getTime() : null
+
+    return patientRecords
+      .filter((record) => {
+        const recordTime = new Date(record.eventDate).getTime()
+        const matchesQuery = !query || [
+          record.title,
+          record.clinicalSummary,
+          record.appointmentLocation,
+          record.creatorFio,
+          record.practitioner?.full_name,
+          record.practitioner?.organization,
+          typeLabel[record.recordType],
+        ].some((value) => value?.toLowerCase().includes(query))
+
+        return (
+          matchesQuery &&
+          (recordTypeFilter === 'all' || record.recordType === recordTypeFilter) &&
+          (recordStatusFilter === 'all' || record.status === recordStatusFilter) &&
+          (fromTime === null || recordTime >= fromTime) &&
+          (toTime === null || recordTime <= toTime)
+        )
+      })
+      .sort((left, right) => new Date(right.eventDate).getTime() - new Date(left.eventDate).getTime())
+  }, [patientRecords, recordDateFrom, recordDateTo, recordSearch, recordStatusFilter, recordTypeFilter])
+
+  const timelineGroups = useMemo<TimelineGroup[]>(() => {
+    const groups = new Map<string, PatientRecordSummary[]>()
+    filteredRecords.forEach((record) => {
+      const label = new Date(record.eventDate).toLocaleDateString('ru-RU', {
+        month: 'long',
+        year: 'numeric',
+      })
+      groups.set(label, [...(groups.get(label) ?? []), record])
+    })
+    return Array.from(groups.entries()).map(([label, records]) => ({ label, records }))
+  }, [filteredRecords])
+
+  const unconfirmedRecordsCount = patientRecords.filter((record) => record.status === 'unconfirmed').length
+  const recordsWithAttachmentsCount = patientRecords.filter((record) => record.attachmentsCount > 0).length
 
   const handleOpenRecord = (record: PatientRecordSummary) => {
     setSelectedRecordId((c) => (c === record.id ? null : record.id))
@@ -340,6 +396,14 @@ const PatientDetailsPage: React.FC = () => {
               <span className="font-medium">{currentPatient.lastVisit ? format(new Date(currentPatient.lastVisit), 'dd.MM.yyyy') : '—'}</span>
             </div>
             <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-500">Неподтверждённые</span>
+              <span className="font-medium">{unconfirmedRecordsCount}</span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-500">С вложениями</span>
+              <span className="font-medium">{recordsWithAttachmentsCount}</span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
               <span className="text-gray-500">Статус</span>
               <span className="font-medium capitalize">{currentPatient.status}</span>
             </div>
@@ -360,15 +424,76 @@ const PatientDetailsPage: React.FC = () => {
 
       {/* Records */}
       <div>
-        <div className="mb-3 flex items-end justify-between px-1">
+        <div className="mb-3 flex flex-col gap-3 px-1 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h2 className="font-semibold text-gray-900">Медицинские записи</h2>
-            <p className="mt-0.5 text-xs text-gray-400">Нажмите на запись, чтобы раскрыть детали</p>
+            <p className="mt-0.5 text-xs text-gray-400">
+              Нажмите на запись, чтобы раскрыть детали. История сгруппирована по дате события.
+            </p>
           </div>
           {patientRecords.length > 0 && (
-            <span className="text-xs text-gray-400">{patientRecords.length} всего</span>
+            <span className="text-xs text-gray-400">{filteredRecords.length} из {patientRecords.length}</span>
           )}
         </div>
+
+        {patientRecords.length > 0 && (
+          <div className="mb-4 grid gap-3 rounded-xl border border-gray-100 bg-white p-4 shadow-card lg:grid-cols-[minmax(220px,1.3fr)_minmax(150px,0.8fr)_minmax(150px,0.8fr)_minmax(150px,0.8fr)_minmax(150px,0.8fr)]">
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-gray-500">Поиск</span>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  value={recordSearch}
+                  onChange={(event) => setRecordSearch(event.target.value)}
+                  className="w-full rounded-md border border-gray-200 py-2 pl-9 pr-3 text-sm focus:border-primary-300 focus:outline-none focus:ring-2 focus:ring-primary-100"
+                  placeholder="Название, врач, место..."
+                />
+              </div>
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-gray-500">Тип</span>
+              <select
+                value={recordTypeFilter}
+                onChange={(event) => setRecordTypeFilter(event.target.value)}
+                className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-primary-300 focus:outline-none focus:ring-2 focus:ring-primary-100"
+              >
+                <option value="all">Все типы</option>
+                {Object.entries(typeLabel).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-gray-500">Статус</span>
+              <select
+                value={recordStatusFilter}
+                onChange={(event) => setRecordStatusFilter(event.target.value)}
+                className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-primary-300 focus:outline-none focus:ring-2 focus:ring-primary-100"
+              >
+                <option value="all">Все статусы</option>
+                <option value="confirmed">Подтверждённые</option>
+                <option value="unconfirmed">Неподтверждённые</option>
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-gray-500">С даты</span>
+              <DateInput
+                value={recordDateFrom}
+                onChange={(value) => setRecordDateFrom(value ?? '')}
+                className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-gray-500">По дату</span>
+              <DateInput
+                value={recordDateTo}
+                onChange={(value) => setRecordDateTo(value ?? '')}
+                className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm"
+              />
+            </label>
+          </div>
+        )}
 
         {patientRecords.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-xl border border-gray-100 bg-white py-14 text-center shadow-card">
@@ -378,9 +503,24 @@ const PatientDetailsPage: React.FC = () => {
             <p className="mt-3 text-sm font-medium text-gray-900">Записей пока нет</p>
             <p className="mt-1 text-xs text-gray-500">Нажмите «Добавить запись» чтобы создать первую</p>
           </div>
+        ) : filteredRecords.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-xl border border-gray-100 bg-white py-14 text-center shadow-card">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gray-100">
+              <Search className="h-6 w-6 text-gray-400" />
+            </div>
+            <p className="mt-3 text-sm font-medium text-gray-900">Ничего не найдено</p>
+            <p className="mt-1 text-xs text-gray-500">Измените фильтры или период истории</p>
+          </div>
         ) : (
-          <div className="space-y-3">
-            {patientRecords.map((record) => {
+          <div className="space-y-6">
+            {timelineGroups.map((group) => (
+              <section key={group.label} className="space-y-3">
+                <div className="flex items-center gap-3 px-1">
+                  <h3 className="text-sm font-semibold capitalize text-gray-700">{group.label}</h3>
+                  <span className="h-px flex-1 bg-gray-100" />
+                  <span className="text-xs text-gray-400">{group.records.length}</span>
+                </div>
+                {group.records.map((record) => {
               const isOpen = selectedRecordId === record.id
               const detail = isOpen && activeRecord?.id === record.id ? activeRecord : null
               const isSelectedForShare = selectedShareRecordIds.includes(record.id)
@@ -635,7 +775,9 @@ const PatientDetailsPage: React.FC = () => {
                   </AnimatePresence>
                 </div>
               )
-            })}
+                })}
+              </section>
+            ))}
           </div>
         )}
       </div>

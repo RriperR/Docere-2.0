@@ -5,7 +5,10 @@ import {
   ArrowUpRight,
   Calendar,
   ChevronRight,
+  Clock,
   FileText,
+  Inbox,
+  Share2,
   TrendingUp,
   Users,
 } from 'lucide-react'
@@ -13,6 +16,8 @@ import {
 import { Button } from '../../components/common/Button'
 import { useAuthStore } from '../../stores/authStore'
 import { usePatientsStore } from '../../stores/patientsStore'
+import { useShareRequestsStore } from '../../stores/shareRequestsStore'
+import { useUploadStore } from '../../stores/uploadStore'
 import { format } from 'date-fns'
 
 function KpiCard({
@@ -70,15 +75,53 @@ const avatarColors = [
 const DoctorDashboard: React.FC = () => {
   const { user } = useAuthStore()
   const { patients, fetchPatients } = usePatientsStore()
+  const { jobs, listJobs } = useUploadStore()
+  const { inbox, fetchInbox } = useShareRequestsStore()
 
   useEffect(() => {
     void fetchPatients()
-  }, [fetchPatients])
+    void listJobs()
+    void fetchInbox()
+  }, [fetchPatients, listJobs, fetchInbox])
 
   const totalRecords = useMemo(
     () => patients.reduce((acc, p) => acc + p.recordCount, 0),
     [patients],
   )
+
+  const reviewTasks = useMemo(() => {
+    const importTasks = jobs
+      .filter((job) => ['needs_review', 'failed', 'completed_with_warnings'].includes(job.status))
+      .slice(0, 5)
+      .map((job) => ({
+        id: `import-${job.id}`,
+        title: job.status === 'needs_review' ? 'Проверить импорт архива' : job.status === 'failed' ? 'Разобрать ошибку импорта' : 'Импорт с предупреждениями',
+        description: job.original_filename ?? 'archive.zip',
+        meta: new Date(job.created_at).toLocaleString('ru-RU'),
+        timestamp: new Date(job.created_at).getTime(),
+        to: job.status === 'needs_review' ? `/upload/review/${job.id}` : `/upload/status/${job.id}`,
+        icon: <Inbox className="h-4 w-4" />,
+        tone: job.status === 'failed' ? 'text-error-700 bg-error-50' : 'text-warning-700 bg-warning-50',
+      }))
+
+    const shareTasks = inbox
+      .filter((request) => request.status === 'pending')
+      .slice(0, 5)
+      .map((request) => ({
+        id: `share-${request.id}`,
+        title: 'Новый sharing-запрос',
+        description: `${request.from_user.fio} · ${request.shares.length} записей`,
+        meta: new Date(request.created_at).toLocaleString('ru-RU'),
+        timestamp: new Date(request.created_at).getTime(),
+        to: '/share-requests',
+        icon: <Share2 className="h-4 w-4" />,
+        tone: 'text-primary-700 bg-primary-50',
+      }))
+
+    return [...importTasks, ...shareTasks]
+      .sort((left, right) => right.timestamp - left.timestamp)
+      .slice(0, 6)
+  }, [inbox, jobs])
 
   const recentPatients = useMemo(
     () =>
@@ -146,6 +189,60 @@ const DoctorDashboard: React.FC = () => {
           delay={0.15}
         />
       </div>
+
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.18, duration: 0.4 }}
+        className="rounded-xl border border-gray-100 bg-white shadow-card"
+      >
+        <div className="flex flex-col gap-3 border-b border-gray-100 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="font-semibold text-gray-900">Рабочая очередь</h2>
+            <p className="mt-0.5 text-xs text-gray-500">Импорты, входящие доступы и действия, которые требуют внимания</p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs">
+            <span className="rounded-full bg-warning-50 px-2.5 py-1 font-medium text-warning-700">
+              Архивы: {jobs.filter((job) => job.status === 'needs_review').length}
+            </span>
+            <span className="rounded-full bg-primary-50 px-2.5 py-1 font-medium text-primary-700">
+              Sharing: {inbox.filter((request) => request.status === 'pending').length}
+            </span>
+          </div>
+        </div>
+
+        {reviewTasks.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 text-center">
+            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-success-50">
+              <Clock className="h-5 w-5 text-success-600" />
+            </div>
+            <p className="mt-3 text-sm font-medium text-gray-900">Очередь пуста</p>
+            <p className="mt-1 text-xs text-gray-500">Новых импортов и sharing-запросов сейчас нет</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-50">
+            {reviewTasks.map((task) => (
+              <Link
+                key={task.id}
+                to={task.to}
+                className="group flex items-center gap-4 px-6 py-4 transition-colors hover:bg-gray-50"
+              >
+                <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${task.tone}`}>
+                  {task.icon}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-gray-900 group-hover:text-primary-700">
+                    {task.title}
+                  </p>
+                  <p className="mt-0.5 truncate text-xs text-gray-500">{task.description}</p>
+                </div>
+                <div className="hidden text-xs text-gray-400 sm:block">{task.meta}</div>
+                <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-primary-400 transition-colors" />
+              </Link>
+            ))}
+          </div>
+        )}
+      </motion.div>
 
       <motion.div
         initial={{ opacity: 0, y: 16 }}
