@@ -168,6 +168,16 @@ def test_extract_import_draft_rejects_corrupted_zip() -> None:
 
 
 @pytest.mark.critical
+def test_extract_import_draft_returns_unknown_patient_for_empty_zip() -> None:
+    report = _extract_report(archive_filename='empty.zip', archive_content=_zip_bytes({}))
+
+    assert report['files_total'] == 0
+    assert report['warnings'] == []
+    assert report['patients'][0]['fio'] is None
+    assert report['patients'][0]['record_groups'] == []
+
+
+@pytest.mark.critical
 def test_extract_import_draft_skips_unsafe_system_and_empty_files() -> None:
     report = _extract_report(
         archive_filename='records.zip',

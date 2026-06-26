@@ -14,6 +14,7 @@ from pydicom.dataset import FileDataset, FileMetaDataset
 from pydicom.uid import ExplicitVRLittleEndian, generate_uid, SecondaryCaptureImageStorage
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.application.ports.storage.file_storage import FileStoragePort
 from app.domain.entities.file_attachment import FileAttachmentCategory
@@ -558,6 +559,31 @@ def test_import_job_upload_status_and_worker_completion(
     assert resolve_response.json()['report_json']['patients_created'] == 1
     assert resolve_response.json()['report_json']['records_created'] == 1
     assert resolve_response.json()['report_json']['attachments_created'] == 1
+    repeat_resolve_response = record_client.post(
+        f'/api/archives/imports/{uploaded_job["id"]}/resolve',
+        headers={'Authorization': f'Bearer {token}'},
+        json={
+            'decisions': [
+                {
+                    'candidate_id': report['patients'][0]['candidate_id'],
+                    'action': 'create',
+                    'fio': report['patients'][0]['fio'],
+                    'date_of_birth': report['patients'][0]['date_of_birth'],
+                    'record_groups': [
+                        {
+                            'group_id': report['patients'][0]['record_groups'][0]['group_id'],
+                            'action': 'create',
+                            'record_type': 'lab_result',
+                            'event_date': '2026-04-05',
+                            'title': 'Повторный импорт',
+                        },
+                    ],
+                },
+            ],
+        },
+    )
+    assert repeat_resolve_response.status_code == 200
+    assert repeat_resolve_response.json()['status'] == 'completed_with_warnings'
     with get_session_factory()() as session:
         job = session.get(ImportJobRow, UUID(uploaded_job['id']))
         audit_event = session.scalar(
@@ -574,10 +600,134 @@ def test_import_job_upload_status_and_worker_completion(
         assert record is not None
         attachment = session.scalar(select(FileAttachmentRow).where(FileAttachmentRow.record_id == record.id))
         assert attachment is not None
+        records_count = len(session.scalars(select(MedicalRecordRow)).all())
     assert job is not None
     assert job.archive_storage_key in storage.objects
     assert audit_event is not None
     assert audit_event.entity_type == 'import_job'
+    assert records_count == 1
+
+
+@pytest.mark.critical
+def test_import_job_resolve_warns_when_report_file_disappeared(
+    record_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage = _InMemoryStorage()
+    monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.get_file_storage', lambda: storage)
+    monkeypatch.setattr('app.infrastructure.adapters.queue.tasks.get_file_storage', lambda: storage)
+    monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.process_import_job.delay', lambda _: None)
+    _create_doctor(email='import-missing-file@example.com')
+    token = _login(record_client, 'import-missing-file@example.com', TEST_DOCTOR_PASSWORD)
+
+    upload_response = record_client.post(
+        '/api/archives/imports',
+        headers={'Authorization': f'Bearer {token}'},
+        files={'file': ('records.zip', _build_patient_archive_bytes(), 'application/zip')},
+    )
+    process_import_job(upload_response.json()['id'])
+    with get_session_factory()() as session:
+        job = session.get(ImportJobRow, UUID(upload_response.json()['id']))
+        assert job is not None
+        report = dict(job.report_json)
+        report['patients'][0]['record_groups'][0]['files'][0]['path'] = 'missing/result.pdf'
+        job.report_json = report
+        flag_modified(job, 'report_json')
+        session.commit()
+
+    status_response = record_client.get(
+        f'/api/archives/imports/{upload_response.json()["id"]}',
+        headers={'Authorization': f'Bearer {token}'},
+    )
+    report = status_response.json()['report_json']
+    resolve_response = record_client.post(
+        f'/api/archives/imports/{upload_response.json()["id"]}/resolve',
+        headers={'Authorization': f'Bearer {token}'},
+        json={
+            'decisions': [
+                {
+                    'candidate_id': report['patients'][0]['candidate_id'],
+                    'action': 'create',
+                    'fio': report['patients'][0]['fio'],
+                    'date_of_birth': report['patients'][0]['date_of_birth'],
+                    'record_groups': [
+                        {
+                            'group_id': report['patients'][0]['record_groups'][0]['group_id'],
+                            'action': 'create',
+                            'record_type': 'lab_result',
+                            'event_date': '2026-04-05',
+                            'title': 'Импорт без файла',
+                        },
+                    ],
+                },
+            ],
+        },
+    )
+
+    body = resolve_response.json()
+    assert resolve_response.status_code == 200
+    assert body['status'] == 'completed_with_warnings'
+    assert body['report_json']['records_created'] == 1
+    assert body['report_json']['attachments_created'] == 0
+    assert any('File disappeared from archive during resolve' in warning for warning in body['report_json']['warnings'])
+
+
+@pytest.mark.critical
+def test_import_job_resolve_warns_when_archive_becomes_unreadable(
+    record_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage = _InMemoryStorage()
+    monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.get_file_storage', lambda: storage)
+    monkeypatch.setattr('app.infrastructure.adapters.queue.tasks.get_file_storage', lambda: storage)
+    monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.process_import_job.delay', lambda _: None)
+    _create_doctor(email='import-unreadable-resolve@example.com')
+    token = _login(record_client, 'import-unreadable-resolve@example.com', TEST_DOCTOR_PASSWORD)
+
+    upload_response = record_client.post(
+        '/api/archives/imports',
+        headers={'Authorization': f'Bearer {token}'},
+        files={'file': ('records.zip', _build_patient_archive_bytes(), 'application/zip')},
+    )
+    process_import_job(upload_response.json()['id'])
+    uploaded_job = upload_response.json()
+    storage.objects[uploaded_job['archive_storage_key']] = b'not a zip anymore'
+    status_response = record_client.get(
+        f'/api/archives/imports/{uploaded_job["id"]}',
+        headers={'Authorization': f'Bearer {token}'},
+    )
+    report = status_response.json()['report_json']
+
+    resolve_response = record_client.post(
+        f'/api/archives/imports/{uploaded_job["id"]}/resolve',
+        headers={'Authorization': f'Bearer {token}'},
+        json={
+            'decisions': [
+                {
+                    'candidate_id': report['patients'][0]['candidate_id'],
+                    'action': 'create',
+                    'fio': report['patients'][0]['fio'],
+                    'date_of_birth': report['patients'][0]['date_of_birth'],
+                    'record_groups': [
+                        {
+                            'group_id': report['patients'][0]['record_groups'][0]['group_id'],
+                            'action': 'create',
+                            'record_type': 'lab_result',
+                            'event_date': '2026-04-05',
+                            'title': 'Импорт с битым архивом',
+                        },
+                    ],
+                },
+            ],
+        },
+    )
+
+    body = resolve_response.json()
+    assert resolve_response.status_code == 200
+    assert body['status'] == 'completed_with_warnings'
+    assert body['report_json']['records_created'] == 1
+    assert body['report_json']['attachments_created'] == 0
+    assert any('Archive became unreadable during resolve' in warning for warning in body['report_json']['warnings'])
 
 
 @pytest.mark.critical
