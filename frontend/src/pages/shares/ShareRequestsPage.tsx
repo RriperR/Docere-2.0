@@ -64,7 +64,7 @@ const ShareRequestsPage = () => {
   const pendingInbox = inbox.filter((r) => r.status === 'pending').length
   const requests = filterRequests(tab === 'inbox' ? inbox : outbox, statusFilter, searchQuery)
   const activeSharedCount = outbox.reduce((sum, request) => (
-    sum + request.shares.filter((share) => share.status === 'accepted').length
+    sum + request.shares.filter((share) => share.status === 'accepted' && !isExpired(request.expires_at)).length
   ), 0)
   const closedRequestsCount = [...inbox, ...outbox].filter((request) => (
     request.status === 'cancelled' || request.status === 'revoked' || request.status === 'declined'
@@ -232,6 +232,7 @@ function ShareRequestCard({
 }) {
   const counterparty = mode === 'inbox' ? request.from_user : request.to_user
   const status = statusConfig[request.status]
+  const expired = isExpired(request.expires_at)
   const initials = counterparty.fio
     ? counterparty.fio.split(' ').slice(0, 2).map((p) => p[0]).join('').toUpperCase()
     : counterparty.email[0].toUpperCase()
@@ -258,7 +259,7 @@ function ShareRequestCard({
                   {counterparty.role}
                 </span>
                 <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-medium ${status.className}`}>
-                  {status.label}
+                  {request.status === 'accepted' && expired ? 'Истёк' : status.label}
                 </span>
               </div>
               <p className="mt-1 text-sm text-gray-500">{counterparty.email}</p>
@@ -266,6 +267,9 @@ function ShareRequestCard({
                 <Clock className="h-3 w-3" />
                 {formatDateTime(request.created_at)}
               </div>
+              <p className={`mt-1 text-xs ${expired ? 'text-error-600' : 'text-gray-400'}`}>
+                Срок доступа: {request.expires_at ? `до ${formatDateTime(request.expires_at)}` : 'без срока'}
+              </p>
               {request.message && (
                 <p className="mt-2 rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-700">
                   {request.message}
@@ -365,6 +369,10 @@ function filterRequests(requests: ShareRequest[], statusFilter: StatusFilter, se
 
 function confirmAction(message: string): boolean {
   return window.confirm(message)
+}
+
+function isExpired(expiresAt: string | null): boolean {
+  return Boolean(expiresAt && new Date(expiresAt).getTime() <= Date.now())
 }
 
 export default ShareRequestsPage

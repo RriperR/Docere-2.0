@@ -45,6 +45,7 @@ class ShareRequestDTO:
     to_user: ShareUserDTO
     status: str
     message: str | None
+    expires_at: datetime | None
     shares: tuple[RecordShareDTO, ...]
     created_at: datetime
     responded_at: datetime | None

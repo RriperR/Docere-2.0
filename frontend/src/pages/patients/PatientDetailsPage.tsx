@@ -109,6 +109,7 @@ const PatientDetailsPage: React.FC = () => {
   const [isShareModalOpen, setIsShareModalOpen] = useState(false)
   const [shareEmail, setShareEmail] = useState('')
   const [shareMessage, setShareMessage] = useState('')
+  const [shareExpiresAt, setShareExpiresAt] = useState('')
   const [shareResult, setShareResult] = useState<CreateShareResult | null>(null)
   const [shareError, setShareError] = useState<string | null>(null)
   const [shareSubmitting, setShareSubmitting] = useState(false)
@@ -269,6 +270,7 @@ const PatientDetailsPage: React.FC = () => {
         to_user_email: shareEmail.trim(),
         record_ids: selectedShareRecordIds,
         message: shareMessage.trim() || undefined,
+        expires_at: shareExpiresAt || null,
       })
       setShareResult(result)
       if (result.request) setSelectedShareRecordIds([])
@@ -283,6 +285,7 @@ const PatientDetailsPage: React.FC = () => {
     setIsShareModalOpen(false)
     setShareEmail('')
     setShareMessage('')
+    setShareExpiresAt('')
     setShareResult(null)
     setShareError(null)
     clearRecipients()
@@ -798,12 +801,14 @@ const PatientDetailsPage: React.FC = () => {
           selectedRecords={selectedShareRecords}
           email={shareEmail}
           message={shareMessage}
+          expiresAt={shareExpiresAt}
           result={shareResult}
           error={shareError}
           isSubmitting={shareSubmitting}
           recipients={recipients}
           onEmailChange={setShareEmail}
           onMessageChange={setShareMessage}
+          onExpiresAtChange={setShareExpiresAt}
           onSelectRecipient={setShareEmail}
           onSubmit={handleShareSubmit}
           onClose={closeShareModal}
@@ -814,19 +819,21 @@ const PatientDetailsPage: React.FC = () => {
 }
 
 function ShareRecordsModal({
-  selectedCount, selectedRecords, email, message, result, error, isSubmitting, recipients,
-  onEmailChange, onMessageChange, onSelectRecipient, onSubmit, onClose,
+  selectedCount, selectedRecords, email, message, expiresAt, result, error, isSubmitting, recipients,
+  onEmailChange, onMessageChange, onExpiresAtChange, onSelectRecipient, onSubmit, onClose,
 }: {
   selectedCount: number
   selectedRecords: PatientRecordSummary[]
   email: string
   message: string
+  expiresAt: string
   result: CreateShareResult | null
   error: string | null
   isSubmitting: boolean
   recipients: ShareRecipient[]
   onEmailChange: (v: string) => void
   onMessageChange: (v: string) => void
+  onExpiresAtChange: (v: string) => void
   onSelectRecipient: (email: string) => void
   onSubmit: (e: FormEvent) => void
   onClose: () => void
@@ -927,6 +934,15 @@ function ShareRecordsModal({
               className="mt-1.5 w-full resize-none rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-200"
               placeholder="Контекст для получателя..."
             />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Срок доступа</label>
+            <DateInput
+              value={expiresAt}
+              onChange={(value) => onExpiresAtChange(value ?? '')}
+              className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-200"
+            />
+            <p className="mt-1 text-xs text-gray-400">Пусто — доступ без срока. В выбранный день доступ действует до конца дня.</p>
           </div>
         </div>
 

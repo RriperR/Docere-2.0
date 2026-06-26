@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
 from app.application.ports.repositories.share_requests.dtos import (
@@ -29,6 +30,7 @@ class CreateShareRequestUseCase:
         to_user_email: str,
         record_ids: tuple[UUID, ...],
         message: str | None,
+        expires_at: datetime | None,
     ) -> CreateShareRequestResultDTO:
         """Выполнить создание sharing-запроса.
 
@@ -37,6 +39,7 @@ class CreateShareRequestUseCase:
             to_user_email: Email получателя.
             record_ids: Идентификаторы записей для sharing.
             message: Сообщение получателю.
+            expires_at: Момент истечения доступа или ``None`` для бессрочного доступа.
 
         Returns:
             Созданный sharing-запрос и пропущенные записи.
@@ -46,6 +49,7 @@ class CreateShareRequestUseCase:
             to_user_email=to_user_email.strip().lower(),
             record_ids=tuple(dict.fromkeys(record_ids)),
             message=message.strip() if message else None,
+            expires_at=expires_at,
         )
 
 

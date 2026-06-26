@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import datetime, UTC
 from uuid import UUID
 
-from sqlalchemy import exists, func, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.application.ports.repositories.share_requests.dtos import (
     CreateShareRequestResultDTO,
@@ -56,6 +58,7 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
         to_user_email: str,
         record_ids: tuple[UUID, ...],
         message: str | None,
+        expires_at: datetime | None,
     ) -> CreateShareRequestResultDTO:
         """Создать sharing-запрос.
 
@@ -99,6 +102,7 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
             to_user_id=target_user.id,
             status=RecordShareStatusRow.PENDING,
             message=message,
+            expires_at=expires_at,
         )
         self._session.add(request_row)
         self._session.flush()
@@ -149,24 +153,40 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
 
         Returns:
             Обновленный запрос.
+
+        Raises:
+            ShareRequestAccessDeniedError: Если запрос уже истёк или не находится в статусе pending.
         """
         request_row = self._get_request_for_recipient(request_id, user_id)
         self._ensure_pending(request_row)
 
         now = utc_now()
+        if _is_expired(request_row.expires_at, now):
+            raise ShareRequestAccessDeniedError
         for share_row in self._get_request_shares(request_row.id):
             if share_row.status != RecordShareStatusRow.PENDING:
                 continue
             if not self._target_already_has_access(user_id=user_id, record_id=share_row.record_id):
-                self._session.add(
-                    UserRecordLinkRow(
-                        user_id=user_id,
-                        record_id=share_row.record_id,
-                        patient_passport_id=share_row.patient_passport_id,
-                        source=UserRecordLinkSourceRow.SHARE_ACCEPTED,
-                        source_record_share_id=share_row.id,
-                    ),
+                existing_link = self._get_existing_record_link(
+                    user_id=user_id,
+                    record_id=share_row.record_id,
+                    patient_passport_id=share_row.patient_passport_id,
                 )
+                if existing_link is None:
+                    self._session.add(
+                        UserRecordLinkRow(
+                            user_id=user_id,
+                            record_id=share_row.record_id,
+                            patient_passport_id=share_row.patient_passport_id,
+                            source=UserRecordLinkSourceRow.SHARE_ACCEPTED,
+                            source_record_share_id=share_row.id,
+                            expires_at=request_row.expires_at,
+                        ),
+                    )
+                else:
+                    existing_link.source = UserRecordLinkSourceRow.SHARE_ACCEPTED
+                    existing_link.source_record_share_id = share_row.id
+                    existing_link.expires_at = request_row.expires_at
             share_row.status = RecordShareStatusRow.ACCEPTED
             share_row.responded_at = now
             self._confirm_record_if_patient_accepts_own_doctor_record(share_row=share_row, recipient_user_id=user_id)
@@ -277,6 +297,7 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
                     exists().where(
                         UserRecordLinkRow.user_id == user_id,
                         UserRecordLinkRow.record_id == record_id,
+                        self._active_access_condition(),
                     ),
                 ),
             ),
@@ -291,6 +312,7 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
                         RecordShareRequestRow.id == RecordShareRow.request_id,
                         RecordShareRequestRow.to_user_id == to_user_id,
                         RecordShareRow.record_id == record_id,
+                        self._active_share_request_condition(),
                         RecordShareRow.status.in_(
                             [RecordShareStatusRow.PENDING, RecordShareStatusRow.ACCEPTED],
                         ),
@@ -299,6 +321,31 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
                 ),
             ),
         )
+
+    def _get_existing_record_link(
+        self,
+        *,
+        user_id: UUID,
+        record_id: UUID,
+        patient_passport_id: UUID | None,
+    ) -> UserRecordLinkRow | None:
+        query = select(UserRecordLinkRow).where(
+            UserRecordLinkRow.user_id == user_id,
+            UserRecordLinkRow.record_id == record_id,
+        )
+        if patient_passport_id is None:
+            query = query.where(UserRecordLinkRow.patient_passport_id.is_(None))
+        else:
+            query = query.where(UserRecordLinkRow.patient_passport_id == patient_passport_id)
+        return self._session.scalar(query.limit(1))
+
+    @staticmethod
+    def _active_access_condition() -> ColumnElement[bool]:
+        return or_(UserRecordLinkRow.expires_at.is_(None), UserRecordLinkRow.expires_at > utc_now())
+
+    @staticmethod
+    def _active_share_request_condition() -> ColumnElement[bool]:
+        return or_(RecordShareRequestRow.expires_at.is_(None), RecordShareRequestRow.expires_at > utc_now())
 
     def _confirm_record_if_patient_accepts_own_doctor_record(
         self,
@@ -368,6 +415,7 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
             to_user=self._to_user_dto(to_user),
             status=row.status.value,
             message=row.message,
+            expires_at=row.expires_at,
             shares=tuple(self._to_share_dto(share_row) for share_row in self._get_request_shares(row.id)),
             created_at=row.created_at,
             responded_at=row.responded_at,
@@ -414,3 +462,10 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
         return self._session.scalar(
             select(func.count(RecordCommentRow.id)).where(RecordCommentRow.record_id == record_id),
         ) or 0
+
+
+def _is_expired(expires_at: datetime | None, now: datetime) -> bool:
+    if expires_at is None:
+        return False
+    value = expires_at if expires_at.tzinfo is not None else expires_at.replace(tzinfo=UTC)
+    return value <= now

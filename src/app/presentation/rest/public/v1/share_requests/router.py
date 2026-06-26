@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date, datetime, time, UTC
 from uuid import UUID
 
 from fastapi import APIRouter, Query, status
@@ -70,6 +71,7 @@ def create_share_request(
             to_user_email=str(payload.to_user_email),
             record_ids=tuple(payload.record_ids),
             message=payload.message,
+            expires_at=_expires_at_end_of_day(payload.expires_at),
         )
         if result.request is not None:
             AuditEventRepositoryAdapter(session).record(
@@ -77,7 +79,10 @@ def create_share_request(
                 event_type='share',
                 entity_type='record_share_request',
                 entity_id=result.request.id,
-                metadata_json={'record_ids': [str(record_id) for record_id in payload.record_ids]},
+                metadata_json={
+                    'record_ids': [str(record_id) for record_id in payload.record_ids],
+                    'expires_at': payload.expires_at.isoformat() if payload.expires_at else None,
+                },
             )
         session.commit()
         return result
@@ -93,6 +98,12 @@ def create_share_request(
     except Exception:
         session.rollback()
         raise
+
+
+def _expires_at_end_of_day(value: date | None) -> datetime | None:
+    if value is None:
+        return None
+    return datetime.combine(value, time.max, tzinfo=UTC)
 
 
 @router.get('/inbox', response_model=list[ShareRequestResponseSchema])

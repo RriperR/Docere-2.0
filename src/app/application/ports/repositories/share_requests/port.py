@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
 from app.application.ports.repositories.share_requests.dtos import (
@@ -20,6 +21,7 @@ class ShareRequestRepositoryPort:
         to_user_email: str,
         record_ids: tuple[UUID, ...],
         message: str | None,
+        expires_at: datetime | None,
     ) -> CreateShareRequestResultDTO:
         """Создать sharing-запрос.
 

@@ -8,6 +8,7 @@ from uuid import UUID
 
 from sqlalchemy import case, exists, or_, Select, select
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.application.ports.repositories.medical_records.dtos import AccessibleMedicalRecordDTO
 from app.application.ports.repositories.medical_records.port import MedicalRecordRepositoryPort
@@ -16,6 +17,7 @@ from app.domain.entities.medical_record import MedicalRecord, MedicalRecordStatu
 from app.domain.entities.patient_passport import PatientPassport, PatientPassportStatus
 from app.domain.entities.practitioner_passport import PractitionerPassport, PractitionerPassportStatus
 from app.domain.entities.record_comment import RecordComment
+from app.infrastructure.db.models._time import utc_now
 from app.infrastructure.db.models.auth.user import UserRole, UserRow
 from app.infrastructure.db.models.medical_records.file_attachment import FileAttachmentRow
 from app.infrastructure.db.models.medical_records.medical_record import MedicalRecordRow
@@ -70,6 +72,7 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
                 .outerjoin(UserRecordLinkRow, UserRecordLinkRow.patient_passport_id == PatientPassportRow.id)
                 .where(
                     PatientPassportRow.id == patient_passport_id,
+                    self._active_access_condition(),
                     or_(*access_conditions),
                 )
                 .limit(1),
@@ -439,10 +442,15 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
             .where(
                 MedicalRecordRow.id == record_id,
                 UserRecordLinkRow.user_id == user_id,
+                self._active_access_condition(),
             )
             .order_by(priority_expression, UserRecordLinkRow.created_at.desc())
             .limit(1)
         )
+
+    @staticmethod
+    def _active_access_condition() -> ColumnElement[bool]:
+        return or_(UserRecordLinkRow.expires_at.is_(None), UserRecordLinkRow.expires_at > utc_now())
 
     def _can_confirm_record(
         self,

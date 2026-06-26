@@ -33,6 +33,7 @@ export interface ShareRequest {
   to_user: ShareUser
   status: ShareStatus
   message: string | null
+  expires_at: string | null
   shares: SharedRecord[]
   created_at: string
   responded_at: string | null
@@ -67,6 +68,7 @@ interface ShareRequestsState {
     to_user_email: string
     record_ids: string[]
     message?: string
+    expires_at?: string | null
   }) => Promise<CreateShareResult>
   fetchInbox: () => Promise<void>
   fetchOutbox: () => Promise<void>

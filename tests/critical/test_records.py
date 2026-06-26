@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from datetime import datetime, UTC
 from io import BytesIO
 from pathlib import Path
 from uuid import UUID
@@ -166,15 +167,19 @@ def _create_share_request(
     to_user_email: str,
     record_ids: list[str],
     message: str | None = 'Please review.',
+    expires_at: str | None = None,
 ) -> dict[str, object]:
+    payload: dict[str, object] = {
+        'to_user_email': to_user_email,
+        'record_ids': record_ids,
+        'message': message,
+    }
+    if expires_at is not None:
+        payload['expires_at'] = expires_at
     response = client.post(
         '/api/share-requests',
         headers={'Authorization': f'Bearer {access_token}'},
-        json={
-            'to_user_email': to_user_email,
-            'record_ids': record_ids,
-            'message': message,
-        },
+        json=payload,
     )
     assert response.status_code == 201
     return response.json()
@@ -1519,6 +1524,73 @@ def test_share_request_accept_grants_record_access_to_registered_user(record_cli
     assert link is not None
     assert link.source_record_share_id == UUID(accept_response.json()['shares'][0]['id'])
     assert {'share', 'accept'}.issubset(set(audit_events))
+
+
+@pytest.mark.critical
+def test_expired_share_access_is_not_usable(record_client: TestClient) -> None:
+    _register_patient(record_client, 'expiring-owner@example.com')
+    _register_patient(record_client, 'expiring-recipient@example.com', fio='Expiring Recipient')
+    owner_token = _login(record_client, 'expiring-owner@example.com', TEST_PATIENT_PASSWORD)
+    recipient_token = _login(record_client, 'expiring-recipient@example.com', TEST_PATIENT_PASSWORD)
+    owner_passport_id = _get_patient_passport_id_by_email('expiring-owner@example.com')
+    created_record = _create_record(
+        record_client,
+        owner_token,
+        owner_passport_id,
+        author_practitioner_full_name='Dr. Expiration',
+        title='Expiring shared record',
+    )
+
+    share_response = _create_share_request(
+        record_client,
+        owner_token,
+        to_user_email='expiring-recipient@example.com',
+        record_ids=[created_record['id']],
+        expires_at='2099-01-02',
+    )
+    accept_response = record_client.post(
+        f'/api/share-requests/{share_response["request"]["id"]}/accept',
+        headers={'Authorization': f'Bearer {recipient_token}'},
+    )
+    active_record_response = record_client.get(
+        f'/api/records/{created_record["id"]}',
+        headers={'Authorization': f'Bearer {recipient_token}'},
+    )
+
+    assert share_response['request']['expires_at'] is not None
+    assert accept_response.status_code == 200
+    assert active_record_response.status_code == 200
+
+    recipient = _get_user_by_email('expiring-recipient@example.com')
+    expired_at = datetime(2020, 1, 1, tzinfo=UTC)
+    with get_session_factory()() as session:
+        request_row = session.get(RecordShareRequestRow, UUID(share_response['request']['id']))
+        link = session.scalar(
+            select(UserRecordLinkRow).where(
+                UserRecordLinkRow.user_id == recipient.id,
+                UserRecordLinkRow.record_id == UUID(created_record['id']),
+                UserRecordLinkRow.source == UserRecordLinkSourceRow.SHARE_ACCEPTED,
+            ),
+        )
+        assert request_row is not None
+        assert link is not None
+        assert link.expires_at is not None
+        request_row.expires_at = expired_at
+        link.expires_at = expired_at
+        session.commit()
+
+    expired_record_response = record_client.get(
+        f'/api/records/{created_record["id"]}',
+        headers={'Authorization': f'Bearer {recipient_token}'},
+    )
+    expired_patients_response = record_client.get(
+        '/api/patients',
+        headers={'Authorization': f'Bearer {recipient_token}'},
+    )
+
+    assert expired_record_response.status_code == 403
+    assert expired_patients_response.status_code == 200
+    assert all(patient['id'] != str(owner_passport_id) for patient in expired_patients_response.json())
 
 
 @pytest.mark.critical
