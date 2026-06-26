@@ -4,12 +4,11 @@ from collections.abc import Callable
 from datetime import date
 from typing import cast
 from uuid import UUID
-from zipfile import BadZipFile
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.application.use_cases.import_jobs.extractor import extract_import_draft
+from app.application.use_cases.import_jobs.extractor import ArchiveExtractionError, extract_import_draft
 from app.infrastructure.adapters.queue.celery_app import celery_app
 from app.infrastructure.adapters.repositories.import_jobs.sqlalchemy_import_job_repository import (
     SqlAlchemyImportJobRepositoryAdapter,
@@ -69,12 +68,12 @@ def process_import_job(job_id: str) -> None:
                 requested_by_role=_user_role(session=session, user_id=job.uploaded_by_user_id),
             )
             repository.mark_needs_review(job_id=job.id, report_json=report)
-        except BadZipFile:
+        except ArchiveExtractionError as exc:
             repository.mark_failed(
                 job_id=job.id,
                 report_json={
                     'message': 'Archive is not a valid ZIP file',
-                    'errors': ['ZIP archive is corrupted or unreadable'],
+                    'errors': [str(exc)],
                     'source_archive': job.original_filename,
                 },
             )

@@ -445,7 +445,7 @@ def _build_zip_bytes() -> bytes:
 def _build_patient_archive_bytes() -> bytes:
     buffer = BytesIO()
     with ZipFile(buffer, mode='w') as archive:
-        archive.writestr('Иванов Иван Иванович 1980-01-02/lab 2026-04-05/result.pdf', b'%PDF-1.4')
+        archive.writestr('Иванов Иван Иванович/dob 1980-01-02/lab 2026-04-05/result.pdf', b'%PDF-1.4')
         archive.writestr('__MACOSX/.DS_Store', b'noise')
     return buffer.getvalue()
 
