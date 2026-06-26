@@ -14,7 +14,9 @@ export interface ImportRecordGroupDraft {
   group_id: string
   record_type: string
   event_date: string | null
+  event_date_candidates: string[]
   title: string
+  payload_json: Record<string, unknown>
   files: ImportFileDraft[]
 }
 

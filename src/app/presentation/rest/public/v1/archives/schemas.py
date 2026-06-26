@@ -10,6 +10,66 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.presentation.rest.serialization import MoscowDatetime
 
 
+class ImportFileDraftSchema(BaseModel):
+    """Файл-кандидат из отчёта импорта."""
+
+    path: str
+    filename: str
+    mime_type: str
+    size_bytes: int
+    is_dicom: bool = False
+
+
+class ImportPatientMatchSchema(BaseModel):
+    """Найденное совпадение пациента для отчёта импорта."""
+
+    id: str
+    fio: str
+    date_of_birth: date | None = None
+    status: str
+    match_score: float
+    match_type: str = Field(pattern='^(exact|fuzzy)$')
+
+
+class ImportRecordGroupDraftSchema(BaseModel):
+    """Группа файлов, из которой можно создать медицинскую запись."""
+
+    group_id: str
+    record_type: str = Field(pattern='^(consultation_result|exam_result|lab_result|other)$')
+    event_date: date | None = None
+    event_date_candidates: list[date] = Field(default_factory=list)
+    title: str
+    payload_json: dict[str, object] = Field(default_factory=dict)
+    files: list[ImportFileDraftSchema] = Field(default_factory=list)
+
+
+class ImportPatientDraftSchema(BaseModel):
+    """Пациент-кандидат из отчёта импорта."""
+
+    candidate_id: str
+    fio: str | None = None
+    date_of_birth: date | None = None
+    sources: list[str] = Field(default_factory=list)
+    existing_matches: list[ImportPatientMatchSchema] = Field(default_factory=list)
+    record_groups: list[ImportRecordGroupDraftSchema] = Field(default_factory=list)
+
+
+class ImportReportSchema(BaseModel):
+    """Типизированный отчёт ImportJob."""
+
+    message: str | None = None
+    source_archive: str | None = None
+    patients: list[ImportPatientDraftSchema] = Field(default_factory=list)
+    files_total: int | None = None
+    warnings: list[str] = Field(default_factory=list)
+    skipped_files: int | None = None
+    patients_created: int | None = None
+    records_created: int | None = None
+    attachments_created: int | None = None
+    errors: list[str] = Field(default_factory=list)
+    resolved_at: date | None = None
+
+
 class ImportJobResponseSchema(BaseModel):
     """Схема ответа ImportJob."""
 
@@ -21,7 +81,7 @@ class ImportJobResponseSchema(BaseModel):
     original_filename: str | None
     archive_storage_key: str | None
     size_bytes: int | None
-    report_json: dict[str, object]
+    report_json: ImportReportSchema
     created_at: MoscowDatetime
     finished_at: MoscowDatetime | None
 
