@@ -6,6 +6,7 @@ import { Upload, FileText, X, AlertCircle, FileSearch, RefreshCw } from 'lucide-
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { UploadJob, useUploadStore } from '../../stores/uploadStore';
+import { groupedWarnings } from '../../utils/importWarnings';
 
 type StatusFilter = UploadJob['status'] | 'all';
 type SortOrder = 'newest' | 'oldest';
@@ -41,6 +42,12 @@ const UploadPage = () => {
       const diff = new Date(left.created_at).getTime() - new Date(right.created_at).getTime();
       return sortOrder === 'newest' ? -diff : diff;
     });
+  const counters = {
+    total: jobs.length,
+    needsReview: jobs.filter((job) => job.status === 'needs_review').length,
+    failed: jobs.filter((job) => job.status === 'failed').length,
+    warnings: jobs.filter((job) => getWarnings(job).length > 0).length,
+  };
 
   useEffect(() => {
     void listJobs();
@@ -263,6 +270,13 @@ const UploadPage = () => {
             </div>
           }
         >
+          <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+            <ArchiveCounter label="Всего" value={counters.total} />
+            <ArchiveCounter label="К проверке" value={counters.needsReview} />
+            <ArchiveCounter label="Ошибки" value={counters.failed} tone="error" />
+            <ArchiveCounter label="С предупреждениями" value={counters.warnings} tone="warning" />
+          </div>
+
           <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <select
               value={statusFilter}
@@ -292,15 +306,35 @@ const UploadPage = () => {
               {filteredJobs.map((job) => (
                 <div key={job.id} className="flex flex-col gap-3 py-3 md:flex-row md:items-center md:justify-between">
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-gray-900">
-                      {job.original_filename ?? 'archive.zip'}
-                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="truncate text-sm font-medium text-gray-900">
+                        {job.original_filename ?? 'archive.zip'}
+                      </p>
+                      <span className={`rounded border px-2 py-0.5 text-xs font-medium ${statusTone(job.status)}`}>
+                        {statusLabel[job.status]}
+                      </span>
+                    </div>
                     <p className="text-xs text-gray-500">
-                      {statusLabel[job.status]} · {new Date(job.created_at).toLocaleString()}
+                      {new Date(job.created_at).toLocaleString()}
                     </p>
                     <p className="mt-1 text-xs text-gray-500">
                       Пациентов: {getPatientCount(job)} · Записей: {getRecordCount(job)} · Вложений: {getAttachmentCount(job)}
                     </p>
+                    {getWarnings(job).length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {groupedWarnings(getWarnings(job)).map((group) => (
+                          <span key={group.label} className={`rounded border px-2 py-0.5 text-xs font-medium ${group.tone}`}>
+                            {group.label}: {group.warnings.length}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {job.status === 'failed' && getFirstError(job) && (
+                      <p className="mt-2 flex items-center gap-1 text-xs text-error-700">
+                        <AlertCircle className="h-3.5 w-3.5" />
+                        {getFirstError(job)}
+                      </p>
+                    )}
                   </div>
                   <Button
                     type="button"
@@ -309,7 +343,7 @@ const UploadPage = () => {
                     icon={job.status === 'needs_review' ? <FileSearch className="h-4 w-4" /> : <FileText className="h-4 w-4" />}
                     onClick={() => openJob(job)}
                   >
-                    {job.status === 'needs_review' ? 'Проверить импорт' : 'Статус'}
+                    {job.status === 'needs_review' ? 'Проверить импорт' : job.status === 'failed' ? 'Открыть ошибку' : 'Статус'}
                   </Button>
                 </div>
               ))}
@@ -335,6 +369,38 @@ function getAttachmentCount(job: UploadJob) {
   return job.report_json.patients?.reduce((sum, patient) => {
     return sum + patient.record_groups.reduce((inner, group) => inner + group.files.length, 0);
   }, 0) ?? 0;
+}
+
+function getWarnings(job: UploadJob) {
+  return Array.isArray(job.report_json.warnings) ? job.report_json.warnings : [];
+}
+
+function getFirstError(job: UploadJob) {
+  const errors = job.report_json.errors;
+  if (!Array.isArray(errors) || errors.length === 0) return null;
+  return String(errors[0]);
+}
+
+function statusTone(status: UploadJob['status']) {
+  if (status === 'failed') return 'border-error-200 bg-error-50 text-error-700';
+  if (status === 'needs_review') return 'border-warning-200 bg-warning-50 text-warning-700';
+  if (status === 'completed_with_warnings') return 'border-warning-200 bg-warning-50 text-warning-700';
+  if (status === 'completed') return 'border-success-200 bg-success-50 text-success-700';
+  return 'border-primary-200 bg-primary-50 text-primary-700';
+}
+
+function ArchiveCounter({ label, value, tone = 'default' }: { label: string; value: number; tone?: 'default' | 'warning' | 'error' }) {
+  const toneClass = tone === 'error'
+    ? 'border-error-200 bg-error-50 text-error-700'
+    : tone === 'warning'
+      ? 'border-warning-200 bg-warning-50 text-warning-700'
+      : 'border-gray-200 bg-gray-50 text-gray-700';
+  return (
+    <div className={`rounded-md border px-3 py-2 ${toneClass}`}>
+      <p className="text-xs font-medium">{label}</p>
+      <p className="mt-1 text-xl font-semibold">{value}</p>
+    </div>
+  );
 }
 
 export default UploadPage;
