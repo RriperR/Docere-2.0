@@ -215,11 +215,13 @@ def _create_record(
     title: str = 'Initial visit',
     appointment_location: str | None = 'Clinic A',
     clinical_summary: str | None = 'Patient is stable.',
+    record_type: str = 'consultation_result',
+    event_date: str = '2026-03-11',
 ) -> dict[str, object]:
     payload: dict[str, object] = {
         'patient_passport_id': str(patient_passport_id),
-        'record_type': 'consultation_result',
-        'event_date': '2026-03-11',
+        'record_type': record_type,
+        'event_date': event_date,
         'title': title,
         'appointment_location': appointment_location,
         'clinical_summary': clinical_summary,
@@ -763,6 +765,14 @@ def test_import_job_suggests_exact_accessible_patient_match(
         },
     )
     assert create_patient_response.status_code == 201
+    existing_record = _create_record(
+        record_client,
+        token,
+        UUID(create_patient_response.json()['id']),
+        title='Импортированный анализ',
+        record_type='lab_result',
+        event_date='2026-04-05',
+    )
 
     upload_response = record_client.post(
         '/api/archives/imports',
@@ -780,6 +790,9 @@ def test_import_job_suggests_exact_accessible_patient_match(
     patient = status_response.json()['report_json']['patients'][0]
     exact_matches = [match for match in patient['existing_matches'] if match['match_type'] == 'exact']
     assert exact_matches[0]['id'] == create_patient_response.json()['id']
+    duplicate_candidates = patient['record_groups'][0]['duplicate_candidates']
+    assert duplicate_candidates[0]['record_id'] == existing_record['id']
+    assert duplicate_candidates[0]['match_reason'] == 'same_date'
 
 
 @pytest.mark.critical

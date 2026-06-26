@@ -74,13 +74,19 @@ class CreateImportJobUseCase:
 class GetImportJobUseCase:
     """Вернуть статус ImportJob."""
 
-    def __init__(self, repository: ImportJobRepositoryPort) -> None:
+    def __init__(
+        self,
+        repository: ImportJobRepositoryPort,
+        medical_records: MedicalRecordRepositoryPort | None = None,
+    ) -> None:
         """Инициализировать use case.
 
         Args:
             repository: Репозиторий ImportJob.
+            medical_records: Репозиторий записей для обогащения review-кандидатов.
         """
         self._repository = repository
+        self._medical_records = medical_records
 
     def execute(self, *, job_id: UUID, requested_by_user_id: UUID, requested_by_role: str) -> ImportJobDTO:
         """Вернуть ImportJob, если он доступен пользователю.
@@ -103,7 +109,56 @@ class GetImportJobUseCase:
         )
         if job is None:
             raise ImportJobNotFoundError
-        return _to_dto(job)
+        return _to_dto(job, report_json=self._enrich_report_for_review(job))
+
+    def _enrich_report_for_review(self, job: ImportJob) -> dict[str, object]:
+        if self._medical_records is None or job.status.value != 'needs_review':
+            return job.report_json
+        patients = []
+        for patient in _as_dict_list(job.report_json.get('patients')):
+            patients.append(self._enrich_patient_duplicates(patient))
+        return {**job.report_json, 'patients': patients}
+
+    def _enrich_patient_duplicates(self, patient: dict[str, object]) -> dict[str, object]:
+        if self._medical_records is None:
+            return patient
+        medical_records = self._medical_records
+        matches = _as_dict_list(patient.get('existing_matches'))
+        matched_patient_ids = []
+        for match in matches:
+            raw_id = match.get('id')
+            if raw_id is None:
+                continue
+            try:
+                matched_patient_ids.append(UUID(str(raw_id)))
+            except ValueError:
+                continue
+
+        record_groups = []
+        for group in _as_dict_list(patient.get('record_groups')):
+            duplicate_candidates: list[dict[str, object]] = []
+            for patient_id in matched_patient_ids:
+                for candidate in medical_records.find_duplicate_candidates(
+                    patient_passport_id=patient_id,
+                    record_type=str(group.get('record_type') or 'other'),
+                    event_date=_parse_date(str(group.get('event_date') or '')),
+                    title=str(group.get('title') or '') or None,
+                ):
+                    if any(item['record_id'] == str(candidate.record_id) for item in duplicate_candidates):
+                        continue
+                    duplicate_candidates.append(
+                        {
+                            'record_id': str(candidate.record_id),
+                            'patient_passport_id': str(candidate.patient_passport_id),
+                            'title': candidate.title,
+                            'record_type': candidate.record_type,
+                            'event_date': candidate.event_date.isoformat(),
+                            'status': candidate.status,
+                            'match_reason': candidate.match_reason,
+                        },
+                    )
+            record_groups.append({**group, 'duplicate_candidates': duplicate_candidates})
+        return {**patient, 'record_groups': record_groups}
 
 
 class ListImportJobsUseCase:
@@ -323,7 +378,7 @@ class ResolveImportJobUseCase:
         raise ImportJobValidationError
 
 
-def _to_dto(job: ImportJob) -> ImportJobDTO:
+def _to_dto(job: ImportJob, report_json: dict[str, object] | None = None) -> ImportJobDTO:
     return ImportJobDTO(
         id=job.id,
         uploaded_by_user_id=job.uploaded_by_user_id,
@@ -331,7 +386,7 @@ def _to_dto(job: ImportJob) -> ImportJobDTO:
         original_filename=job.original_filename,
         archive_storage_key=job.archive_storage_key,
         size_bytes=job.size_bytes,
-        report_json=job.report_json,
+        report_json=report_json if report_json is not None else job.report_json,
         created_at=job.created_at,
         finished_at=job.finished_at,
     )

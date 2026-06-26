@@ -69,7 +69,10 @@ def get_import_job_use_case(session: Session = db_session_dependency) -> GetImpo
     Returns:
         Настроенный use case.
     """
-    return GetImportJobUseCase(repository=_build_repository(session))
+    return GetImportJobUseCase(
+        repository=_build_repository(session),
+        medical_records=SqlAlchemyMedicalRecordRepositoryAdapter(session=session),
+    )
 
 
 def get_list_import_jobs_use_case(session: Session = db_session_dependency) -> ListImportJobsUseCase:

@@ -10,7 +10,10 @@ from sqlalchemy import case, exists, or_, Select, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
-from app.application.ports.repositories.medical_records.dtos import AccessibleMedicalRecordDTO
+from app.application.ports.repositories.medical_records.dtos import (
+    AccessibleMedicalRecordDTO,
+    DuplicateMedicalRecordCandidateDTO,
+)
 from app.application.ports.repositories.medical_records.port import MedicalRecordRepositoryPort
 from app.domain.entities.file_attachment import FileAttachment, FileAttachmentCategory
 from app.domain.entities.medical_record import MedicalRecord, MedicalRecordStatus, MedicalRecordType
@@ -199,6 +202,57 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
             patient_passport_id=patient_passport_id,
             author_practitioner_row=author_practitioner_row,
         )
+
+    def find_duplicate_candidates(
+        self,
+        *,
+        patient_passport_id: UUID,
+        record_type: str,
+        event_date: date | None,
+        title: str | None,
+        limit: int = 5,
+    ) -> tuple[DuplicateMedicalRecordCandidateDTO, ...]:
+        """Найти похожие записи пациента для review импорта.
+
+        Returns:
+            Кандидаты похожих записей.
+        """
+        duplicate_conditions = []
+        if event_date is not None:
+            duplicate_conditions.append(MedicalRecordRow.event_date == event_date)
+        if title:
+            duplicate_conditions.append(MedicalRecordRow.title.ilike(f'%{title[:80]}%'))
+        if not duplicate_conditions:
+            return ()
+
+        rows = self._session.execute(
+            select(MedicalRecordRow, UserRecordLinkRow.patient_passport_id)
+            .join(UserRecordLinkRow, UserRecordLinkRow.record_id == MedicalRecordRow.id)
+            .where(
+                UserRecordLinkRow.patient_passport_id == patient_passport_id,
+                self._active_access_condition(),
+                MedicalRecordRow.record_type == MedicalRecordType(record_type),
+                or_(*duplicate_conditions),
+            )
+            .order_by(MedicalRecordRow.event_date.desc(), MedicalRecordRow.created_at.desc())
+            .limit(limit),
+        ).all()
+        candidates: list[DuplicateMedicalRecordCandidateDTO] = []
+        for row, linked_patient_id in rows:
+            candidates.append(
+                DuplicateMedicalRecordCandidateDTO(
+                    record_id=row.id,
+                    patient_passport_id=linked_patient_id,
+                    title=row.title,
+                    record_type=row.record_type.value,
+                    event_date=row.event_date,
+                    status=row.status.value,
+                    match_reason=(
+                        'same_date' if event_date is not None and row.event_date == event_date else 'similar_title'
+                    ),
+                ),
+            )
+        return tuple(candidates)
 
     def get_accessible_record(
         self,

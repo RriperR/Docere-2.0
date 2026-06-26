@@ -31,6 +31,18 @@ class ImportPatientMatchSchema(BaseModel):
     match_type: str = Field(pattern='^(exact|fuzzy)$')
 
 
+class ImportDuplicateRecordSchema(BaseModel):
+    """Похожая существующая запись пациента."""
+
+    record_id: UUID
+    patient_passport_id: UUID
+    title: str | None = None
+    record_type: str
+    event_date: date
+    status: str
+    match_reason: str
+
+
 class ImportRecordGroupDraftSchema(BaseModel):
     """Группа файлов, из которой можно создать медицинскую запись."""
 
@@ -41,6 +53,7 @@ class ImportRecordGroupDraftSchema(BaseModel):
     title: str
     payload_json: dict[str, object] = Field(default_factory=dict)
     files: list[ImportFileDraftSchema] = Field(default_factory=list)
+    duplicate_candidates: list[ImportDuplicateRecordSchema] = Field(default_factory=list)
 
 
 class ImportPatientDraftSchema(BaseModel):

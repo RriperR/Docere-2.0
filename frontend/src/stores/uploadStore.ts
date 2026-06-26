@@ -10,6 +10,16 @@ export interface ImportFileDraft {
   is_dicom: boolean
 }
 
+export interface ImportDuplicateRecord {
+  record_id: string
+  patient_passport_id: string
+  title: string | null
+  record_type: string
+  event_date: string
+  status: string
+  match_reason: string
+}
+
 export interface ImportRecordGroupDraft {
   group_id: string
   record_type: string
@@ -18,6 +28,7 @@ export interface ImportRecordGroupDraft {
   title: string
   payload_json: Record<string, unknown>
   files: ImportFileDraft[]
+  duplicate_candidates: ImportDuplicateRecord[]
 }
 
 export interface ImportPatientMatch {

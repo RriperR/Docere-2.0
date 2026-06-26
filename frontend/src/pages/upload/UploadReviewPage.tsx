@@ -302,6 +302,7 @@ const UploadReviewPage: React.FC = () => {
                 {decision.record_groups.map((group, groupIndex) => {
                   const sourceGroup = patientCandidate.record_groups.find((item) => item.group_id === group.group_id)
                   const needsDate = Boolean(sourceGroup && sourceGroup.event_date_candidates.length > 1 && group.action === 'create' && !group.event_date)
+                  const hasDuplicates = Boolean(sourceGroup && sourceGroup.duplicate_candidates.length > 0)
                   const isSelected = getSelectedGroupIds(decision.candidate_id).includes(group.group_id)
                   return (
                     <div key={group.group_id} className="rounded-lg border border-gray-100 p-4">
@@ -312,6 +313,11 @@ const UploadReviewPage: React.FC = () => {
                           <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${group.action === 'skip' ? 'border-gray-200 bg-gray-50 text-gray-600' : needsDate ? 'border-warning-200 bg-warning-50 text-warning-700' : 'border-success-200 bg-success-50 text-success-700'}`}>
                             {group.action === 'skip' ? 'Пропущено' : needsDate ? 'Нужно выбрать дату' : 'Готово'}
                           </span>
+                          {hasDuplicates && (
+                            <span className="rounded-full border border-warning-200 bg-warning-50 px-2 py-0.5 text-xs font-medium text-warning-700">
+                              Возможный дубль
+                            </span>
+                          )}
                         </div>
                         <div className="flex flex-wrap items-center gap-3">
                           <label className="flex items-center gap-2 text-sm text-gray-700">
@@ -333,6 +339,24 @@ const UploadReviewPage: React.FC = () => {
                           </label>
                         </div>
                       </div>
+
+                      {sourceGroup && sourceGroup.duplicate_candidates.length > 0 && (
+                        <div className="mb-3 rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-800">
+                          <p className="font-medium">Похожие записи уже есть у пациента</p>
+                          <div className="mt-2 space-y-1">
+                            {sourceGroup.duplicate_candidates.map((candidate) => (
+                              <div key={candidate.record_id} className="flex flex-wrap items-center gap-2 text-xs">
+                                <span>{candidate.title || 'Медицинская запись'}</span>
+                                <span>{recordTypeLabels[candidate.record_type] ?? candidate.record_type}</span>
+                                <span>{formatDateForDisplay(candidate.event_date)}</span>
+                                <span className="text-warning-700">
+                                  {candidate.match_reason === 'same_date' ? 'совпадает дата' : 'похоже название'}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
 
                       <div className="grid gap-3 md:grid-cols-3">
                         <label className="space-y-1">

@@ -5,7 +5,10 @@ from __future__ import annotations
 from datetime import date
 from uuid import UUID
 
-from app.application.ports.repositories.medical_records.dtos import AccessibleMedicalRecordDTO
+from app.application.ports.repositories.medical_records.dtos import (
+    AccessibleMedicalRecordDTO,
+    DuplicateMedicalRecordCandidateDTO,
+)
 from app.domain.entities.file_attachment import FileAttachment
 from app.domain.entities.patient_passport import PatientPassport
 from app.domain.entities.practitioner_passport import PractitionerPassport
@@ -69,6 +72,18 @@ class MedicalRecordRepositoryPort:
         payload_json: dict[str, object],
     ) -> AccessibleMedicalRecordDTO:
         """Создать медицинскую запись и вернуть ее доступную проекцию."""
+        raise NotImplementedError
+
+    def find_duplicate_candidates(
+        self,
+        *,
+        patient_passport_id: UUID,
+        record_type: str,
+        event_date: date | None,
+        title: str | None,
+        limit: int = 5,
+    ) -> tuple[DuplicateMedicalRecordCandidateDTO, ...]:
+        """Найти записи пациента, похожие на импортируемую группу."""
         raise NotImplementedError
 
     def get_accessible_record(
