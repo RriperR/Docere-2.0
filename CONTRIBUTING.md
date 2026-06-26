@@ -71,5 +71,3 @@ make project-check
 - `presentation` — слой входа в систему (например, HTTP/FastAPI).
   Он принимает запрос, валидирует данные, вызывает нужный use-case и возвращает ответ.
   Бизнес-логика и прямой доступ к БД здесь не пишутся.
-- Технические детали импорта архивов (`zipfile`, `pydicom`, `mimetypes`, `BytesIO`)
-  должны оставаться в `infrastructure` adapters. `application` работает с ними только через ports.
