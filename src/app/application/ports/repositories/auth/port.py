@@ -96,3 +96,14 @@ class AuthRepositoryPort:
             Пользователь, если найден, иначе `None`.
         """
         raise NotImplementedError
+
+    def list_users(self, *, limit: int) -> tuple[AuthUserDTO, ...]:
+        """Вернуть последних пользователей.
+
+        Args:
+            limit: Максимальное количество пользователей.
+
+        Returns:
+            Пользователи, отсортированные по дате создания.
+        """
+        raise NotImplementedError

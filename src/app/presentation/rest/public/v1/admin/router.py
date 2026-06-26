@@ -17,10 +17,15 @@ from app.application.use_cases.auth.create_staff_user.use_case import (
     StaffUserValidationError,
 )
 from app.application.use_cases.auth.errors import EmailAlreadyExistsError
+from app.application.use_cases.auth.list_users.use_case import ListUsersAccessDeniedError, ListUsersUseCase
 from app.infrastructure.adapters.repositories.audit_events import AuditEventRepositoryAdapter
 from app.infrastructure.adapters.repositories.auth.sqlalchemy_auth_repository import SqlAlchemyAuthRepositoryAdapter
 from app.infrastructure.adapters.security.pbkdf2_password_hasher import Pbkdf2PasswordHasherAdapter
-from app.presentation.rest.public.v1.admin.schemas import AuditEventResponseSchema, CreateStaffUserRequestSchema
+from app.presentation.rest.public.v1.admin.schemas import (
+    AdminUserResponseSchema,
+    AuditEventResponseSchema,
+    CreateStaffUserRequestSchema,
+)
 from app.presentation.rest.public.v1.auth.dependencies import db_session_dependency
 from app.presentation.rest.public.v1.auth.schemas import AuthUserResponseSchema
 from app.presentation.rest.public.v1.records.dependencies import current_authenticated_user_dependency
@@ -47,6 +52,21 @@ def get_create_staff_user_use_case(session: Session = db_session_dependency) -> 
 create_staff_user_use_case_dependency = Depends(get_create_staff_user_use_case)
 
 
+def get_list_users_use_case(session: Session = db_session_dependency) -> ListUsersUseCase:
+    """Создать use case просмотра пользователей.
+
+    Args:
+        session: Активная сессия БД.
+
+    Returns:
+        Настроенный use case.
+    """
+    return ListUsersUseCase(repository=SqlAlchemyAuthRepositoryAdapter(session=session))
+
+
+list_users_use_case_dependency = Depends(get_list_users_use_case)
+
+
 def get_list_audit_events_use_case(session: Session = db_session_dependency) -> ListAuditEventsUseCase:
     """Создать use case просмотра audit log.
 
@@ -60,6 +80,29 @@ def get_list_audit_events_use_case(session: Session = db_session_dependency) -> 
 
 
 list_audit_events_use_case_dependency = Depends(get_list_audit_events_use_case)
+
+
+@router.get('/users', response_model=list[AdminUserResponseSchema])
+def list_users(
+    limit: int = Query(default=200, ge=1, le=500),
+    current_user: AuthenticatedUserDTO = current_authenticated_user_dependency,
+    use_case: ListUsersUseCase = list_users_use_case_dependency,
+) -> tuple[AdminUserResponseSchema, ...]:
+    """Вернуть пользователей для административной панели.
+
+    Args:
+        limit: Максимальное количество пользователей.
+        current_user: Текущий аутентифицированный пользователь.
+        use_case: Use case просмотра пользователей.
+
+    Returns:
+        Пользователи в административной проекции.
+    """
+    try:
+        users = use_case.execute(actor_role=current_user.role, limit=limit)
+    except ListUsersAccessDeniedError:
+        raise_forbidden('Only admin can view users')
+    return tuple(AdminUserResponseSchema.model_validate(user, from_attributes=True) for user in users)
 
 
 @router.post('/users', response_model=AuthUserResponseSchema, status_code=status.HTTP_201_CREATED)

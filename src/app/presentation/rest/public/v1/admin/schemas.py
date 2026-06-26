@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
@@ -50,3 +50,17 @@ class AuditEventResponseSchema(BaseModel):
     entity_id: UUID
     metadata_json: dict[str, object]
     created_at: datetime
+
+
+class AdminUserResponseSchema(BaseModel):
+    """Пользователь в административном списке."""
+
+    id: UUID
+    fio: str
+    email: EmailStr
+    phone: str
+    date_of_birth: date | None
+    role: str
+    status: str
+    created_at: datetime
+    updated_at: datetime

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from app.application.ports.repositories.auth.dtos import AuthUserDTO
@@ -157,6 +157,20 @@ class SqlAlchemyAuthRepositoryAdapter(AuthRepositoryPort):
         if user_row is None:
             return None
         return self._to_domain(user_row)
+
+    def list_users(self, *, limit: int) -> tuple[AuthUserDTO, ...]:
+        """Вернуть последних пользователей.
+
+        Args:
+            limit: Максимальное количество пользователей.
+
+        Returns:
+            Пользователи, отсортированные по дате создания.
+        """
+        rows = self._session.scalars(
+            select(UserRow).order_by(desc(UserRow.created_at), desc(UserRow.id)).limit(limit),
+        ).all()
+        return tuple(self._to_domain(row) for row in rows)
 
     @staticmethod
     def _to_domain(user_row: UserRow) -> AuthUserDTO:

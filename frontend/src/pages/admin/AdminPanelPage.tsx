@@ -9,11 +9,14 @@ import api from '../../api/api';
 
 interface User {
   id: string;
-  name: string;
+  fio: string;
   email: string;
+  phone: string;
+  date_of_birth: string | null;
   role: string;
   status: string;
-  lastActive: string;
+  created_at: string;
+  updated_at: string;
 }
 
 interface RoleRequest {
@@ -45,30 +48,16 @@ const AdminPanelPage = () => {
   const [activeTab, setActiveTab] = useState('users');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [users, setUsers] = useState<User[]>([]);
+  const [roleFilter, setRoleFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [isUsersLoading, setIsUsersLoading] = useState(false);
+  const [usersError, setUsersError] = useState<string | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [isAuditLoading, setIsAuditLoading] = useState(false);
   const [auditError, setAuditError] = useState<string | null>(null);
 
-  // Mock data
-  const users: User[] = [
-    {
-      id: '1',
-      name: 'John Doe',
-      email: 'john.doe@example.com',
-      role: 'doctor',
-      status: 'active',
-      lastActive: '2023-03-15T10:30:00'
-    },
-    {
-      id: '2',
-      name: 'Jane Smith',
-      email: 'jane.smith@example.com',
-      role: 'patient',
-      status: 'active',
-      lastActive: '2023-03-14T15:45:00'
-    },
-    // Add more mock users...
-  ];
+  const pageSize = 10;
 
   const roleRequests: RoleRequest[] = [
     {
@@ -100,6 +89,27 @@ const AdminPanelPage = () => {
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
   };
+
+  useEffect(() => {
+    if (activeTab !== 'users') {
+      return;
+    }
+
+    const loadUsers = async () => {
+      setIsUsersLoading(true);
+      setUsersError(null);
+      try {
+        const { data } = await api.get<User[]>('/admin/users', { params: { limit: 500 } });
+        setUsers(data);
+      } catch {
+        setUsersError('Не удалось загрузить пользователей');
+      } finally {
+        setIsUsersLoading(false);
+      }
+    };
+
+    void loadUsers();
+  }, [activeTab]);
 
   useEffect(() => {
     if (activeTab !== 'audit') {
@@ -143,6 +153,29 @@ const AdminPanelPage = () => {
     });
   }, [auditLogs, searchQuery]);
 
+  const filteredUsers = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return users.filter((user) => {
+      const matchesSearch =
+        !query ||
+        [user.fio, user.email, user.phone, user.role, user.status].join(' ').toLowerCase().includes(query);
+      const matchesRole = roleFilter === 'all' || user.role === roleFilter;
+      const matchesStatus = statusFilter === 'all' || user.status === statusFilter;
+      return matchesSearch && matchesRole && matchesStatus;
+    });
+  }, [roleFilter, searchQuery, statusFilter, users]);
+
+  const totalUserPages = Math.max(1, Math.ceil(filteredUsers.length / pageSize));
+  const pagedUsers = filteredUsers.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const userRangeStart = filteredUsers.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const userRangeEnd = Math.min(currentPage * pageSize, filteredUsers.length);
+
+  useEffect(() => {
+    if (currentPage > totalUserPages) {
+      setCurrentPage(totalUserPages);
+    }
+  }, [currentPage, totalUserPages]);
+
   const formatAuditDate = (value: string) =>
     new Intl.DateTimeFormat('ru-RU', {
       day: '2-digit',
@@ -163,24 +196,82 @@ const AdminPanelPage = () => {
       .join(', ');
   };
 
+  const formatDateTime = (value: string) =>
+    new Intl.DateTimeFormat('ru-RU', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date(value));
+
+  const getInitials = (fio: string) =>
+    fio
+      .split(' ')
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0])
+      .join('')
+      .toUpperCase();
+
   const renderUsersList = () => {
     return (
       <div>
         <div className="mb-6 flex flex-wrap gap-4">
           <Input
-            placeholder="Search users..."
+            placeholder="Поиск по ФИО, email, телефону"
             icon={<Search className="h-5 w-5" />}
             value={searchQuery}
             onChange={(e) => handleSearch(e.target.value)}
             className="flex-1"
           />
-          <Button
-            variant="outline"
-            icon={<Filter className="h-5 w-5" />}
-          >
-            Filters
-          </Button>
+          <div className="flex items-center gap-2">
+            <Filter className="h-5 w-5 text-gray-400" />
+            <select
+              value={roleFilter}
+              onChange={(event) => {
+                setRoleFilter(event.target.value);
+                setCurrentPage(1);
+              }}
+              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700"
+            >
+              <option value="all">Все роли</option>
+              <option value="admin">Администраторы</option>
+              <option value="doctor">Врачи</option>
+              <option value="patient">Пациенты</option>
+            </select>
+            <select
+              value={statusFilter}
+              onChange={(event) => {
+                setStatusFilter(event.target.value);
+                setCurrentPage(1);
+              }}
+              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700"
+            >
+              <option value="all">Все статусы</option>
+              <option value="active">Активные</option>
+              <option value="blocked">Заблокированные</option>
+            </select>
+          </div>
         </div>
+
+        {isUsersLoading && (
+          <div className="rounded-md border border-gray-200 p-4 text-sm text-gray-500">
+            Загрузка пользователей...
+          </div>
+        )}
+
+        {usersError && (
+          <div className="rounded-md border border-error-200 bg-error-50 p-4 text-sm text-error-700">
+            {usersError}
+          </div>
+        )}
+
+        {!isUsersLoading && !usersError && filteredUsers.length === 0 && (
+          <div className="rounded-md border border-gray-200 p-4 text-sm text-gray-500">
+            Пользователей не найдено
+          </div>
+        )}
 
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
@@ -196,24 +287,22 @@ const AdminPanelPage = () => {
                   Status
                 </th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Last Active
-                </th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
+                  Created
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {users.map((user) => (
+              {pagedUsers.map((user) => (
                 <tr key={user.id}>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
                       <div className="h-10 w-10 rounded-full bg-primary-100 flex items-center justify-center text-primary-700 font-medium">
-                        {user.name.split(' ').map(n => n[0]).join('')}
+                        {getInitials(user.fio)}
                       </div>
                       <div className="ml-4">
-                        <div className="text-sm font-medium text-gray-900">{user.name}</div>
+                        <div className="text-sm font-medium text-gray-900">{user.fio}</div>
                         <div className="text-sm text-gray-500">{user.email}</div>
+                        <div className="text-xs text-gray-400">{user.phone}</div>
                       </div>
                     </div>
                   </td>
@@ -232,12 +321,7 @@ const AdminPanelPage = () => {
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {new Date(user.lastActive).toLocaleString()}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm">
-                    <Button variant="outline" size="sm">
-                      Edit
-                    </Button>
+                    {formatDateTime(user.created_at)}
                   </td>
                 </tr>
               ))}
@@ -257,7 +341,7 @@ const AdminPanelPage = () => {
             <Button
               variant="outline"
               onClick={() => handlePageChange(currentPage + 1)}
-              disabled={currentPage === 5} // Example total pages
+              disabled={currentPage === totalUserPages}
             >
               Next
             </Button>
@@ -265,9 +349,9 @@ const AdminPanelPage = () => {
           <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
             <div>
               <p className="text-sm text-gray-700">
-                Showing <span className="font-medium">1</span> to{' '}
-                <span className="font-medium">10</span> of{' '}
-                <span className="font-medium">50</span> results
+                Showing <span className="font-medium">{userRangeStart}</span> to{' '}
+                <span className="font-medium">{userRangeEnd}</span> of{' '}
+                <span className="font-medium">{filteredUsers.length}</span> results
               </p>
             </div>
             <div>
@@ -280,7 +364,7 @@ const AdminPanelPage = () => {
                   <span className="sr-only">Previous</span>
                   <ChevronLeft className="h-5 w-5" />
                 </button>
-                {[1, 2, 3, 4, 5].map((page) => (
+                {Array.from({ length: totalUserPages }, (_, index) => index + 1).map((page) => (
                   <button
                     key={page}
                     onClick={() => handlePageChange(page)}
@@ -295,7 +379,7 @@ const AdminPanelPage = () => {
                 ))}
                 <button
                   onClick={() => handlePageChange(currentPage + 1)}
-                  disabled={currentPage === 5}
+                  disabled={currentPage === totalUserPages}
                   className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
                 >
                   <span className="sr-only">Next</span>

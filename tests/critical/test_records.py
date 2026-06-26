@@ -1413,6 +1413,31 @@ def test_only_admin_can_create_staff_users_and_email_must_be_unique(record_clien
 
 
 @pytest.mark.critical
+def test_admin_can_list_users_without_password_hash_and_doctor_cannot(record_client: TestClient) -> None:
+    _create_doctor(email='users-doctor@example.com')
+    _create_admin(email='users-admin@example.com')
+    doctor_token = _login(record_client, 'users-doctor@example.com', TEST_DOCTOR_PASSWORD)
+    admin_token = _login(record_client, 'users-admin@example.com', TEST_DOCTOR_PASSWORD)
+
+    forbidden_response = record_client.get(
+        '/api/admin/users',
+        headers={'Authorization': f'Bearer {doctor_token}'},
+    )
+    response = record_client.get(
+        '/api/admin/users',
+        headers={'Authorization': f'Bearer {admin_token}'},
+    )
+
+    assert forbidden_response.status_code == 403
+    assert response.status_code == 200
+    users = response.json()
+    assert {user['email'] for user in users}.issuperset(
+        {'users-doctor@example.com', 'users-admin@example.com'},
+    )
+    assert all('password_hash' not in user for user in users)
+
+
+@pytest.mark.critical
 def test_admin_can_list_audit_events_and_doctor_cannot(record_client: TestClient) -> None:
     _create_doctor(email='audit-doctor@example.com')
     _create_admin(email='audit-admin@example.com')
@@ -1433,11 +1458,13 @@ def test_admin_can_list_audit_events_and_doctor_cannot(record_client: TestClient
     assert response.status_code == 200
     events = response.json()
     assert events
-    assert events[0]['event_type'] == 'login'
-    assert events[0]['entity_type'] == 'user'
-    assert events[0]['actor_fio'] == 'System Admin'
-    assert events[0]['actor_email'] == 'audit-admin@example.com'
-    assert events[0]['metadata_json']['email'] == 'audit-admin@example.com'
+    admin_login_event = next(
+        event for event in events if event['metadata_json'].get('email') == 'audit-admin@example.com'
+    )
+    assert admin_login_event['event_type'] == 'login'
+    assert admin_login_event['entity_type'] == 'user'
+    assert admin_login_event['actor_fio'] == 'System Admin'
+    assert admin_login_event['actor_email'] == 'audit-admin@example.com'
 
 
 @pytest.mark.critical
