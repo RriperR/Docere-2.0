@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
@@ -34,3 +36,17 @@ class CreateStaffUserRequestSchema(BaseModel):
         if not normalized:
             raise ValueError('value must not be empty')
         return normalized
+
+
+class AuditEventResponseSchema(BaseModel):
+    """Событие audit log для административного UI."""
+
+    id: UUID
+    actor_user_id: UUID | None
+    actor_fio: str | None
+    actor_email: EmailStr | None
+    event_type: str
+    entity_type: str
+    entity_id: UUID
+    metadata_json: dict[str, object]
+    created_at: datetime

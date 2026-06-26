@@ -1413,6 +1413,34 @@ def test_only_admin_can_create_staff_users_and_email_must_be_unique(record_clien
 
 
 @pytest.mark.critical
+def test_admin_can_list_audit_events_and_doctor_cannot(record_client: TestClient) -> None:
+    _create_doctor(email='audit-doctor@example.com')
+    _create_admin(email='audit-admin@example.com')
+    doctor_token = _login(record_client, 'audit-doctor@example.com', TEST_DOCTOR_PASSWORD)
+    admin_token = _login(record_client, 'audit-admin@example.com', TEST_DOCTOR_PASSWORD)
+
+    forbidden_response = record_client.get(
+        '/api/admin/audit-events',
+        headers={'Authorization': f'Bearer {doctor_token}'},
+    )
+    response = record_client.get(
+        '/api/admin/audit-events',
+        headers={'Authorization': f'Bearer {admin_token}'},
+        params={'limit': 10},
+    )
+
+    assert forbidden_response.status_code == 403
+    assert response.status_code == 200
+    events = response.json()
+    assert events
+    assert events[0]['event_type'] == 'login'
+    assert events[0]['entity_type'] == 'user'
+    assert events[0]['actor_fio'] == 'System Admin'
+    assert events[0]['actor_email'] == 'audit-admin@example.com'
+    assert events[0]['metadata_json']['email'] == 'audit-admin@example.com'
+
+
+@pytest.mark.critical
 def test_doctor_created_empty_patient_card_is_not_visible_to_other_doctor(record_client: TestClient) -> None:
     _create_doctor(email='doctor-card-owner@example.com')
     _create_doctor(email='doctor-card-stranger@example.com')

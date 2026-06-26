@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.application.use_cases.audit_events.list_audit_events import (
+    AuditEventAccessDeniedError,
+    ListAuditEventsUseCase,
+)
 from app.application.use_cases.auth.common.dtos import AuthenticatedUserDTO
 from app.application.use_cases.auth.create_staff_user.use_case import (
     CreateStaffUserUseCase,
@@ -13,9 +17,10 @@ from app.application.use_cases.auth.create_staff_user.use_case import (
     StaffUserValidationError,
 )
 from app.application.use_cases.auth.errors import EmailAlreadyExistsError
+from app.infrastructure.adapters.repositories.audit_events import AuditEventRepositoryAdapter
 from app.infrastructure.adapters.repositories.auth.sqlalchemy_auth_repository import SqlAlchemyAuthRepositoryAdapter
 from app.infrastructure.adapters.security.pbkdf2_password_hasher import Pbkdf2PasswordHasherAdapter
-from app.presentation.rest.public.v1.admin.schemas import CreateStaffUserRequestSchema
+from app.presentation.rest.public.v1.admin.schemas import AuditEventResponseSchema, CreateStaffUserRequestSchema
 from app.presentation.rest.public.v1.auth.dependencies import db_session_dependency
 from app.presentation.rest.public.v1.auth.schemas import AuthUserResponseSchema
 from app.presentation.rest.public.v1.records.dependencies import current_authenticated_user_dependency
@@ -40,6 +45,21 @@ def get_create_staff_user_use_case(session: Session = db_session_dependency) -> 
 
 
 create_staff_user_use_case_dependency = Depends(get_create_staff_user_use_case)
+
+
+def get_list_audit_events_use_case(session: Session = db_session_dependency) -> ListAuditEventsUseCase:
+    """Создать use case просмотра audit log.
+
+    Args:
+        session: Активная сессия БД.
+
+    Returns:
+        Настроенный use case.
+    """
+    return ListAuditEventsUseCase(repository=AuditEventRepositoryAdapter(session=session))
+
+
+list_audit_events_use_case_dependency = Depends(get_list_audit_events_use_case)
 
 
 @router.post('/users', response_model=AuthUserResponseSchema, status_code=status.HTTP_201_CREATED)
@@ -93,3 +113,26 @@ def create_staff_user(
     except Exception:
         session.rollback()
         raise
+
+
+@router.get('/audit-events', response_model=list[AuditEventResponseSchema])
+def list_audit_events(
+    limit: int = Query(default=50, ge=1, le=200),
+    current_user: AuthenticatedUserDTO = current_authenticated_user_dependency,
+    use_case: ListAuditEventsUseCase = list_audit_events_use_case_dependency,
+) -> tuple[AuditEventResponseSchema, ...]:
+    """Вернуть последние события audit log.
+
+    Args:
+        limit: Максимальное количество событий.
+        current_user: Текущий аутентифицированный пользователь.
+        use_case: Use case просмотра audit log.
+
+    Returns:
+        Последние события audit log.
+    """
+    try:
+        events = use_case.execute(actor_role=current_user.role, limit=limit)
+    except AuditEventAccessDeniedError:
+        raise_forbidden('Only admin can view audit events')
+    return tuple(AuditEventResponseSchema.model_validate(event, from_attributes=True) for event in events)

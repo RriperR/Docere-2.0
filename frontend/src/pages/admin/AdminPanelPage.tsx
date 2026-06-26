@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Users, Shield, FileText, AlertCircle, Search, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Card } from '../../components/common/Card';
 import { Input } from '../../components/common/Input';
 import { Button } from '../../components/common/Button';
 import { Tabs } from '../../components/common/Tabs';
+import api from '../../api/api';
 
 interface User {
   id: string;
@@ -30,17 +31,23 @@ interface RoleRequest {
 
 interface AuditLog {
   id: string;
-  action: string;
-  user: string;
-  target: string;
-  timestamp: string;
-  details: string;
+  actor_user_id: string | null;
+  actor_fio: string | null;
+  actor_email: string | null;
+  event_type: string;
+  entity_type: string;
+  entity_id: string;
+  metadata_json: Record<string, unknown>;
+  created_at: string;
 }
 
 const AdminPanelPage = () => {
   const [activeTab, setActiveTab] = useState('users');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [isAuditLoading, setIsAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState<string | null>(null);
 
   // Mock data
   const users: User[] = [
@@ -79,18 +86,6 @@ const AdminPanelPage = () => {
     // Add more mock requests...
   ];
 
-  const auditLogs: AuditLog[] = [
-    {
-      id: '1',
-      action: 'Role Change',
-      user: 'Admin',
-      target: 'Dr. Alex Smith',
-      timestamp: '2023-03-15T14:30:00',
-      details: 'Changed role from patient to doctor'
-    },
-    // Add more mock logs...
-  ];
-
   const tabs = [
     { id: 'users', label: 'Users', icon: <Users className="h-4 w-4" /> },
     { id: 'roles', label: 'Role Requests', icon: <Shield className="h-4 w-4" /> },
@@ -104,6 +99,68 @@ const AdminPanelPage = () => {
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
+  };
+
+  useEffect(() => {
+    if (activeTab !== 'audit') {
+      return;
+    }
+
+    const loadAuditEvents = async () => {
+      setIsAuditLoading(true);
+      setAuditError(null);
+      try {
+        const { data } = await api.get<AuditLog[]>('/admin/audit-events', { params: { limit: 100 } });
+        setAuditLogs(data);
+      } catch {
+        setAuditError('Не удалось загрузить audit log');
+      } finally {
+        setIsAuditLoading(false);
+      }
+    };
+
+    void loadAuditEvents();
+  }, [activeTab]);
+
+  const filteredAuditLogs = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) {
+      return auditLogs;
+    }
+    return auditLogs.filter((log) => {
+      const haystack = [
+        log.actor_fio,
+        log.actor_email,
+        log.event_type,
+        log.entity_type,
+        log.entity_id,
+        JSON.stringify(log.metadata_json),
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [auditLogs, searchQuery]);
+
+  const formatAuditDate = (value: string) =>
+    new Intl.DateTimeFormat('ru-RU', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date(value));
+
+  const formatMetadata = (metadata: Record<string, unknown>) => {
+    const entries = Object.entries(metadata).filter(([, value]) => value !== null && value !== undefined);
+    if (entries.length === 0) {
+      return 'Без дополнительных данных';
+    }
+    return entries
+      .slice(0, 4)
+      .map(([key, value]) => `${key}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`)
+      .join(', ');
   };
 
   const renderUsersList = () => {
@@ -301,7 +358,35 @@ const AdminPanelPage = () => {
   const renderAuditLog = () => {
     return (
       <div className="space-y-4">
-        {auditLogs.map((log) => (
+        <div className="flex flex-wrap gap-4">
+          <Input
+            placeholder="Поиск по пользователю, действию или сущности"
+            icon={<Search className="h-5 w-5" />}
+            value={searchQuery}
+            onChange={(e) => handleSearch(e.target.value)}
+            className="flex-1"
+          />
+        </div>
+
+        {isAuditLoading && (
+          <div className="rounded-md border border-gray-200 p-4 text-sm text-gray-500">
+            Загрузка audit log...
+          </div>
+        )}
+
+        {auditError && (
+          <div className="rounded-md border border-error-200 bg-error-50 p-4 text-sm text-error-700">
+            {auditError}
+          </div>
+        )}
+
+        {!isAuditLoading && !auditError && filteredAuditLogs.length === 0 && (
+          <div className="rounded-md border border-gray-200 p-4 text-sm text-gray-500">
+            Событий пока нет
+          </div>
+        )}
+
+        {filteredAuditLogs.map((log) => (
           <div
             key={log.id}
             className="flex items-start space-x-3 p-4 border rounded-lg hover:bg-gray-50 transition-colors duration-200"
@@ -313,17 +398,18 @@ const AdminPanelPage = () => {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-gray-900">
-                {log.action}
+                {log.event_type}
               </p>
               <p className="text-sm text-gray-500">
-                {log.user} performed action on {log.target}
+                {log.actor_fio ?? 'Системное событие'}
+                {log.actor_email ? ` (${log.actor_email})` : ''} {'->'} {log.entity_type} {log.entity_id}
               </p>
               <p className="text-sm text-gray-500 mt-1">
-                {log.details}
+                {formatMetadata(log.metadata_json)}
               </p>
             </div>
             <div className="flex-shrink-0 text-sm text-gray-500">
-              {new Date(log.timestamp).toLocaleString()}
+              {formatAuditDate(log.created_at)}
             </div>
           </div>
         ))}
