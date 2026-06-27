@@ -250,23 +250,104 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
         for share_row in self._get_request_shares(request_row.id):
             if share_row.status != RecordShareStatusRow.ACCEPTED:
                 continue
-            link_rows = self._session.scalars(
-                select(UserRecordLinkRow).where(
-                    UserRecordLinkRow.user_id == request_row.to_user_id,
-                    UserRecordLinkRow.record_id == share_row.record_id,
-                    UserRecordLinkRow.source == UserRecordLinkSourceRow.SHARE_ACCEPTED,
-                    UserRecordLinkRow.source_record_share_id == share_row.id,
-                ),
-            ).all()
-            for link_row in link_rows:
-                self._session.delete(link_row)
-            share_row.status = RecordShareStatusRow.REVOKED
-            share_row.revoked_at = now
+            self._revoke_accepted_share(share_row=share_row, recipient_user_id=request_row.to_user_id, now=now)
+            self._session.flush()
+            if not self._target_already_has_access(
+                user_id=request_row.to_user_id,
+                record_id=share_row.record_id,
+            ):
+                self._revoke_downstream_shares(
+                    user_id=request_row.to_user_id,
+                    record_id=share_row.record_id,
+                    now=now,
+                    visited={(request_row.to_user_id, share_row.record_id)},
+                )
 
         request_row.status = RecordShareStatusRow.REVOKED
         request_row.revoked_at = now
         self._session.flush()
         return self._to_request_dto(request_row)
+
+    def _revoke_downstream_shares(
+        self,
+        *,
+        user_id: UUID,
+        record_id: UUID,
+        now: datetime,
+        visited: set[tuple[UUID, UUID]],
+    ) -> None:
+        downstream_rows = self._session.execute(
+            select(RecordShareRow, RecordShareRequestRow)
+            .join(RecordShareRequestRow, RecordShareRequestRow.id == RecordShareRow.request_id)
+            .where(
+                RecordShareRequestRow.from_user_id == user_id,
+                RecordShareRow.record_id == record_id,
+                RecordShareRow.status.in_([RecordShareStatusRow.PENDING, RecordShareStatusRow.ACCEPTED]),
+            )
+            .order_by(RecordShareRow.created_at.asc()),
+        ).all()
+        affected_request_ids: set[UUID] = set()
+        for share_row, request_row in downstream_rows:
+            affected_request_ids.add(request_row.id)
+            was_accepted = share_row.status == RecordShareStatusRow.ACCEPTED
+            if was_accepted:
+                self._revoke_accepted_share(
+                    share_row=share_row,
+                    recipient_user_id=request_row.to_user_id,
+                    now=now,
+                )
+            else:
+                share_row.status = RecordShareStatusRow.REVOKED
+                share_row.revoked_at = now
+
+            self._session.flush()
+            recipient_branch = (request_row.to_user_id, record_id)
+            if (
+                was_accepted
+                and recipient_branch not in visited
+                and not self._target_already_has_access(user_id=request_row.to_user_id, record_id=record_id)
+            ):
+                self._revoke_downstream_shares(
+                    user_id=request_row.to_user_id,
+                    record_id=record_id,
+                    now=now,
+                    visited={*visited, recipient_branch},
+                )
+
+        for affected_request_id in affected_request_ids:
+            self._mark_request_revoked_if_empty(request_id=affected_request_id, now=now)
+
+    def _revoke_accepted_share(
+        self,
+        *,
+        share_row: RecordShareRow,
+        recipient_user_id: UUID,
+        now: datetime,
+    ) -> None:
+        link_rows = self._session.scalars(
+            select(UserRecordLinkRow).where(
+                UserRecordLinkRow.user_id == recipient_user_id,
+                UserRecordLinkRow.record_id == share_row.record_id,
+                UserRecordLinkRow.source == UserRecordLinkSourceRow.SHARE_ACCEPTED,
+                UserRecordLinkRow.source_record_share_id == share_row.id,
+            ),
+        ).all()
+        for link_row in link_rows:
+            self._session.delete(link_row)
+        share_row.status = RecordShareStatusRow.REVOKED
+        share_row.revoked_at = now
+
+    def _mark_request_revoked_if_empty(self, *, request_id: UUID, now: datetime) -> None:
+        request_row = self._session.get(RecordShareRequestRow, request_id)
+        if request_row is None:
+            return
+        has_open_shares = any(
+            share.status in {RecordShareStatusRow.PENDING, RecordShareStatusRow.ACCEPTED}
+            for share in self._get_request_shares(request_id)
+        )
+        if not has_open_shares:
+            request_row.status = RecordShareStatusRow.REVOKED
+            request_row.revoked_at = now
 
     def _get_active_user_by_email(self, email: str) -> UserRow | None:
         return self._session.scalar(

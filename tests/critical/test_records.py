@@ -2740,6 +2740,167 @@ def test_revoke_accepted_share_removes_record_access(record_client: TestClient) 
 
 
 @pytest.mark.critical
+def test_revoke_accepted_share_cascades_through_reshared_record(record_client: TestClient) -> None:
+    _register_patient(record_client, 'cascade-owner@example.com')
+    _register_patient(record_client, 'cascade-middle@example.com', fio='Middle Patient')
+    _register_patient(record_client, 'cascade-recipient@example.com', fio='Final Recipient')
+    owner_token = _login(record_client, 'cascade-owner@example.com', TEST_PATIENT_PASSWORD)
+    middle_token = _login(record_client, 'cascade-middle@example.com', TEST_PATIENT_PASSWORD)
+    recipient_token = _login(record_client, 'cascade-recipient@example.com', TEST_PATIENT_PASSWORD)
+    owner_passport_id = _get_patient_passport_id_by_email('cascade-owner@example.com')
+    created_record = _create_record(
+        record_client,
+        owner_token,
+        owner_passport_id,
+        author_practitioner_full_name='Dr. Cascade',
+        title='Cascade revoked record',
+    )
+
+    owner_share = _create_share_request(
+        record_client,
+        owner_token,
+        to_user_email='cascade-middle@example.com',
+        record_ids=[created_record['id']],
+    )
+    owner_accept_response = record_client.post(
+        f'/api/share-requests/{owner_share["request"]["id"]}/accept',
+        headers={'Authorization': f'Bearer {middle_token}'},
+    )
+    downstream_share = _create_share_request(
+        record_client,
+        middle_token,
+        to_user_email='cascade-recipient@example.com',
+        record_ids=[created_record['id']],
+    )
+    downstream_accept_response = record_client.post(
+        f'/api/share-requests/{downstream_share["request"]["id"]}/accept',
+        headers={'Authorization': f'Bearer {recipient_token}'},
+    )
+
+    revoke_response = record_client.post(
+        f'/api/share-requests/{owner_share["request"]["id"]}/revoke',
+        headers={'Authorization': f'Bearer {owner_token}'},
+    )
+    middle_record_response = record_client.get(
+        f'/api/records/{created_record["id"]}',
+        headers={'Authorization': f'Bearer {middle_token}'},
+    )
+    recipient_record_response = record_client.get(
+        f'/api/records/{created_record["id"]}',
+        headers={'Authorization': f'Bearer {recipient_token}'},
+    )
+
+    assert owner_accept_response.status_code == 200
+    assert downstream_accept_response.status_code == 200
+    assert revoke_response.status_code == 200
+    assert middle_record_response.status_code == 403
+    assert recipient_record_response.status_code == 403
+
+    with get_session_factory()() as session:
+        downstream_request = session.get(
+            RecordShareRequestRow,
+            UUID(downstream_share['request']['id']),
+        )
+        downstream_record_share = session.scalar(
+            select(RecordShareRow).where(
+                RecordShareRow.request_id == UUID(downstream_share['request']['id']),
+                RecordShareRow.record_id == UUID(created_record['id']),
+            ),
+        )
+        recipient_links = session.scalars(
+            select(UserRecordLinkRow).where(
+                UserRecordLinkRow.record_id == UUID(created_record['id']),
+                UserRecordLinkRow.source == UserRecordLinkSourceRow.SHARE_ACCEPTED,
+            ),
+        ).all()
+
+    assert downstream_request is not None
+    assert downstream_request.status == RecordShareStatusRow.REVOKED
+    assert downstream_request.revoked_at is not None
+    assert downstream_record_share is not None
+    assert downstream_record_share.status == RecordShareStatusRow.REVOKED
+    assert downstream_record_share.revoked_at is not None
+    assert recipient_links == []
+
+
+@pytest.mark.critical
+def test_revoke_does_not_cascade_when_recipient_has_independent_access(record_client: TestClient) -> None:
+    _register_patient(record_client, 'independent-owner@example.com')
+    _register_patient(record_client, 'independent-middle@example.com', fio='Independent Middle')
+    _register_patient(record_client, 'independent-recipient@example.com', fio='Independent Recipient')
+    owner_token = _login(record_client, 'independent-owner@example.com', TEST_PATIENT_PASSWORD)
+    middle_token = _login(record_client, 'independent-middle@example.com', TEST_PATIENT_PASSWORD)
+    recipient_token = _login(record_client, 'independent-recipient@example.com', TEST_PATIENT_PASSWORD)
+    owner_passport_id = _get_patient_passport_id_by_email('independent-owner@example.com')
+    created_record = _create_record(
+        record_client,
+        owner_token,
+        owner_passport_id,
+        author_practitioner_full_name='Dr. Independent',
+        title='Independently accessible record',
+    )
+    record_id = UUID(created_record['id'])
+
+    owner_share = _create_share_request(
+        record_client,
+        owner_token,
+        to_user_email='independent-middle@example.com',
+        record_ids=[created_record['id']],
+    )
+    record_client.post(
+        f'/api/share-requests/{owner_share["request"]["id"]}/accept',
+        headers={'Authorization': f'Bearer {middle_token}'},
+    )
+    downstream_share = _create_share_request(
+        record_client,
+        middle_token,
+        to_user_email='independent-recipient@example.com',
+        record_ids=[created_record['id']],
+    )
+    record_client.post(
+        f'/api/share-requests/{downstream_share["request"]["id"]}/accept',
+        headers={'Authorization': f'Bearer {recipient_token}'},
+    )
+
+    middle_user = _get_user_by_email('independent-middle@example.com')
+    with get_session_factory()() as session:
+        middle_link = session.scalar(
+            select(UserRecordLinkRow).where(
+                UserRecordLinkRow.user_id == middle_user.id,
+                UserRecordLinkRow.record_id == record_id,
+            ),
+        )
+        assert middle_link is not None
+        middle_link.source = UserRecordLinkSourceRow.MANUAL_ATTACH
+        middle_link.source_record_share_id = None
+        session.commit()
+
+    revoke_response = record_client.post(
+        f'/api/share-requests/{owner_share["request"]["id"]}/revoke',
+        headers={'Authorization': f'Bearer {owner_token}'},
+    )
+    middle_record_response = record_client.get(
+        f'/api/records/{created_record["id"]}',
+        headers={'Authorization': f'Bearer {middle_token}'},
+    )
+    recipient_record_response = record_client.get(
+        f'/api/records/{created_record["id"]}',
+        headers={'Authorization': f'Bearer {recipient_token}'},
+    )
+
+    assert revoke_response.status_code == 200
+    assert middle_record_response.status_code == 200
+    assert recipient_record_response.status_code == 200
+    with get_session_factory()() as session:
+        downstream_request = session.get(
+            RecordShareRequestRow,
+            UUID(downstream_share['request']['id']),
+        )
+    assert downstream_request is not None
+    assert downstream_request.status == RecordShareStatusRow.ACCEPTED
+
+
+@pytest.mark.critical
 def test_duplicate_share_records_are_skipped(record_client: TestClient) -> None:
     _register_patient(record_client, 'share-owner-4@example.com')
     _register_patient(record_client, 'share-recipient-4@example.com', fio='Recipient Patient')
