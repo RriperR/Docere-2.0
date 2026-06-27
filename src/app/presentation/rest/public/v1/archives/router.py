@@ -11,7 +11,11 @@ from sqlalchemy.orm import Session
 
 from app.application.use_cases.auth.common.dtos import AuthenticatedUserDTO
 from app.application.use_cases.import_jobs.dtos import ImportJobDTO
-from app.application.use_cases.import_jobs.errors import ImportJobNotFoundError, ImportJobValidationError
+from app.application.use_cases.import_jobs.errors import (
+    ImportJobDuplicateConfirmationRequiredError,
+    ImportJobNotFoundError,
+    ImportJobValidationError,
+)
 from app.application.use_cases.import_jobs.use_cases import (
     CreateImportJobUseCase,
     GetImportJobUseCase,
@@ -235,6 +239,15 @@ def resolve_import_job(
     except ImportJobNotFoundError:
         session.rollback()
         raise_not_found('Import job not found')
+    except ImportJobDuplicateConfirmationRequiredError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                'code': 'duplicate_confirmation_required',
+                'group_id': exc.group_id,
+            },
+        ) from exc
     except ImportJobValidationError as exc:
         session.rollback()
         raise HTTPException(

@@ -107,6 +107,7 @@ class ImportRecordGroupResolveSchema(BaseModel):
     record_type: str | None = Field(default=None, pattern='^(consultation_result|exam_result|lab_result|other)$')
     event_date: date | None = None
     title: str | None = Field(default=None, max_length=255)
+    duplicate_confirmed: bool = False
 
 
 class ImportPatientResolveSchema(BaseModel):

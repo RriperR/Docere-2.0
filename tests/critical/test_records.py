@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import datetime, timedelta, UTC
+from datetime import date, datetime, timedelta, UTC
 from io import BytesIO
 from pathlib import Path
 from uuid import UUID
@@ -816,6 +816,50 @@ def test_import_job_suggests_exact_accessible_patient_match(
     duplicate_candidates = patient['record_groups'][0]['duplicate_candidates']
     assert duplicate_candidates[0]['record_id'] == existing_record['id']
     assert duplicate_candidates[0]['match_reason'] == 'same_date'
+
+    decision = {
+        'candidate_id': patient['candidate_id'],
+        'action': 'existing',
+        'patient_passport_id': create_patient_response.json()['id'],
+        'record_groups': [
+            {
+                'group_id': patient['record_groups'][0]['group_id'],
+                'action': 'create',
+                'record_type': 'lab_result',
+                'event_date': '2026-04-05',
+                'title': 'Импортированный анализ',
+            },
+        ],
+    }
+    blocked_resolve = record_client.post(
+        f'/api/archives/imports/{upload_response.json()["id"]}/resolve',
+        headers={'Authorization': f'Bearer {token}'},
+        json={'decisions': [decision]},
+    )
+
+    assert blocked_resolve.status_code == 422
+    assert blocked_resolve.json()['detail'] == {
+        'code': 'duplicate_confirmation_required',
+        'group_id': patient['record_groups'][0]['group_id'],
+    }
+    with get_session_factory()() as session:
+        records_before_confirmation = session.scalars(
+            select(MedicalRecordRow).where(
+                MedicalRecordRow.id != UUID(existing_record['id']),
+                MedicalRecordRow.event_date == date(2026, 4, 5),
+            ),
+        ).all()
+    assert records_before_confirmation == []
+
+    decision['record_groups'][0]['duplicate_confirmed'] = True
+    confirmed_resolve = record_client.post(
+        f'/api/archives/imports/{upload_response.json()["id"]}/resolve',
+        headers={'Authorization': f'Bearer {token}'},
+        json={'decisions': [decision]},
+    )
+
+    assert confirmed_resolve.status_code == 200
+    assert confirmed_resolve.json()['report_json']['records_created'] == 1
 
 
 @pytest.mark.critical

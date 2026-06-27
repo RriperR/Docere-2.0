@@ -13,6 +13,7 @@ from app.application.ports.storage.file_storage import FileStoragePort
 from app.application.use_cases.import_jobs.dtos import ImportJobDTO
 from app.application.use_cases.import_jobs.errors import (
     ArchiveExtractionError,
+    ImportJobDuplicateConfirmationRequiredError,
     ImportJobNotFoundError,
     ImportJobValidationError,
 )
@@ -224,6 +225,7 @@ class ResolveImportJobUseCase:
         Raises:
             ImportJobNotFoundError: Если job не найден или недоступен.
             ImportJobValidationError: Если job не готов к resolve или решение некорректно.
+            ImportJobDuplicateConfirmationRequiredError: Если найдена похожая запись без подтверждения.
         """
         job = self._import_jobs.get_job(
             job_id=job_id,
@@ -277,16 +279,30 @@ class ResolveImportJobUseCase:
                 if group_decision.get('action') == 'skip':
                     continue
 
+                record_type = str(group_decision.get('record_type') or group.get('record_type') or 'other')
+                event_date = (
+                    _parse_date(str(group_decision.get('event_date') or group.get('event_date') or ''))
+                    or date.today()
+                )
+                title = str(
+                    group_decision.get('title') or group.get('title') or 'Импортированная запись',
+                )[:255]
+                duplicate_candidates = self._medical_records.find_duplicate_candidates(
+                    patient_passport_id=patient_id,
+                    record_type=record_type,
+                    event_date=event_date,
+                    title=title,
+                )
+                if duplicate_candidates and group_decision.get('duplicate_confirmed') is not True:
+                    raise ImportJobDuplicateConfirmationRequiredError(group_id=group_id)
+
                 record = self._medical_records.create_record(
                     creator_user_id=actor_user_id,
                     patient_passport_id=patient_id,
                     author_practitioner_passport_id=None,
-                    record_type=str(group_decision.get('record_type') or group.get('record_type') or 'other'),
-                    event_date=_parse_date(str(group_decision.get('event_date') or group.get('event_date') or ''))
-                    or date.today(),
-                    title=str(
-                        group_decision.get('title') or group.get('title') or 'Импортированная запись',
-                    )[:255],
+                    record_type=record_type,
+                    event_date=event_date,
+                    title=title,
                     appointment_location=None,
                     clinical_summary='Создано из импортированного архива.',
                     payload_json=_payload_json(

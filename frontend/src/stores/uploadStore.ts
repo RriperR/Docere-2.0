@@ -83,6 +83,7 @@ export interface ImportRecordGroupDecision {
   record_type?: string
   event_date?: string | null
   title?: string
+  duplicate_confirmed?: boolean
 }
 
 export interface ImportPatientDecision {
@@ -113,14 +114,22 @@ interface UploadState {
 }
 
 type ApiError = {
-  response?: { data?: { detail?: string } }
+  response?: { data?: { detail?: unknown } }
   message?: string
 }
 
 const normalizeError = (error: unknown, fallback: string): string => {
   if (typeof error !== 'object' || error === null) return fallback
   const apiError = error as ApiError
-  return apiError.response?.data?.detail || apiError.message || fallback
+  const detail = apiError.response?.data?.detail
+  if (typeof detail === 'string' && detail) return detail
+  if (detail && typeof detail === 'object' && 'code' in detail) {
+    const payload = detail as { code?: unknown }
+    if (payload.code === 'duplicate_confirmation_required') {
+      return 'Появилась похожая запись. Проверьте дубликаты и подтвердите импорт повторно.'
+    }
+  }
+  return apiError.message || fallback
 }
 
 export const useUploadStore = create<UploadState>((set, get) => ({

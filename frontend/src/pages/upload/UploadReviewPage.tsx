@@ -147,7 +147,7 @@ const UploadReviewPage: React.FC = () => {
                 >
                   <span className="font-medium text-gray-900">{patient.fio ?? 'Пациент не распознан'}</span>
                   <span className="ml-2 text-xs text-gray-500">
-                    готово {summary.ready} · даты {summary.needsDate} · пропущено {summary.skipped}
+                    готово {summary.ready} · даты {summary.needsDate} · дубли {summary.needsDuplicate} · пропущено {summary.skipped}
                   </span>
                 </a>
               )
@@ -302,7 +302,9 @@ const UploadReviewPage: React.FC = () => {
                 {decision.record_groups.map((group, groupIndex) => {
                   const sourceGroup = patientCandidate.record_groups.find((item) => item.group_id === group.group_id)
                   const needsDate = Boolean(sourceGroup && sourceGroup.event_date_candidates.length > 1 && group.action === 'create' && !group.event_date)
-                  const hasDuplicates = Boolean(sourceGroup && sourceGroup.duplicate_candidates.length > 0)
+                  const duplicateCandidates = getRelevantDuplicateCandidates(sourceGroup, decision)
+                  const hasDuplicates = duplicateCandidates.length > 0
+                  const needsDuplicateConfirmation = hasDuplicates && group.action === 'create' && !group.duplicate_confirmed
                   const isSelected = getSelectedGroupIds(decision.candidate_id).includes(group.group_id)
                   return (
                     <div key={group.group_id} className="rounded-lg border border-gray-100 p-4">
@@ -310,12 +312,12 @@ const UploadReviewPage: React.FC = () => {
                         <div className="flex items-center gap-2">
                           <FileText className="h-4 w-4 text-primary-600" />
                           <p className="font-medium text-gray-900">{group.title || sourceGroup?.title || 'Запись'}</p>
-                          <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${group.action === 'skip' ? 'border-gray-200 bg-gray-50 text-gray-600' : needsDate ? 'border-warning-200 bg-warning-50 text-warning-700' : 'border-success-200 bg-success-50 text-success-700'}`}>
-                            {group.action === 'skip' ? 'Пропущено' : needsDate ? 'Нужно выбрать дату' : 'Готово'}
+                          <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${group.action === 'skip' ? 'border-gray-200 bg-gray-50 text-gray-600' : needsDate || needsDuplicateConfirmation ? 'border-warning-200 bg-warning-50 text-warning-700' : 'border-success-200 bg-success-50 text-success-700'}`}>
+                            {group.action === 'skip' ? 'Пропущено' : needsDate ? 'Нужно выбрать дату' : needsDuplicateConfirmation ? 'Нужно решить по дублю' : 'Готово'}
                           </span>
                           {hasDuplicates && (
                             <span className="rounded-full border border-warning-200 bg-warning-50 px-2 py-0.5 text-xs font-medium text-warning-700">
-                              Возможный дубль
+                              {group.duplicate_confirmed ? 'Дубль подтверждён' : 'Возможный дубль'}
                             </span>
                           )}
                         </div>
@@ -340,11 +342,11 @@ const UploadReviewPage: React.FC = () => {
                         </div>
                       </div>
 
-                      {sourceGroup && sourceGroup.duplicate_candidates.length > 0 && (
+                      {duplicateCandidates.length > 0 && (
                         <div className="mb-3 rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-800">
                           <p className="font-medium">Похожие записи уже есть у пациента</p>
                           <div className="mt-2 space-y-1">
-                            {sourceGroup.duplicate_candidates.map((candidate) => (
+                            {duplicateCandidates.map((candidate) => (
                               <div key={candidate.record_id} className="flex flex-wrap items-center gap-2 text-xs">
                                 <span>{candidate.title || 'Медицинская запись'}</span>
                                 <span>{recordTypeLabels[candidate.record_type] ?? candidate.record_type}</span>
@@ -352,9 +354,35 @@ const UploadReviewPage: React.FC = () => {
                                 <span className="text-warning-700">
                                   {candidate.match_reason === 'same_date' ? 'совпадает дата' : 'похоже название'}
                                 </span>
+                                <Link
+                                  to={`/patients/${candidate.patient_passport_id}`}
+                                  className="font-medium text-primary-700 hover:underline"
+                                >
+                                  Открыть карточку
+                                </Link>
                               </div>
                             ))}
                           </div>
+                          {group.action === 'create' && (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant={group.duplicate_confirmed ? 'outline' : 'primary'}
+                                onClick={() => updateGroup(patientIndex, groupIndex, { duplicate_confirmed: !group.duplicate_confirmed })}
+                              >
+                                {group.duplicate_confirmed ? 'Отменить подтверждение' : 'Импортировать всё равно'}
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => updateGroup(patientIndex, groupIndex, { action: 'skip' })}
+                              >
+                                Пропустить запись
+                              </Button>
+                            </div>
+                          )}
                         </div>
                       )}
 
@@ -481,7 +509,17 @@ const UploadReviewPage: React.FC = () => {
   )
 
   function updatePatient(index: number, patch: Partial<PatientDecisionState>) {
-    setDecisions((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)))
+    setDecisions((current) => current.map((item, itemIndex) => {
+      if (itemIndex !== index) return item
+      const resetsDuplicateDecision = patch.action !== undefined || patch.patient_passport_id !== undefined
+      return {
+        ...item,
+        ...patch,
+        record_groups: resetsDuplicateDecision
+          ? item.record_groups.map((group) => ({ ...group, duplicate_confirmed: false }))
+          : item.record_groups,
+      }
+    }))
   }
 
   function updateGroup(patientIndex: number, groupIndex: number, patch: Partial<GroupDecisionState>) {
@@ -491,7 +529,16 @@ const UploadReviewPage: React.FC = () => {
         return {
           ...patient,
           record_groups: patient.record_groups.map((group, innerIndex) => (
-            innerIndex === groupIndex ? { ...group, ...patch } : group
+            innerIndex === groupIndex
+              ? {
+                  ...group,
+                  ...patch,
+                  duplicate_confirmed:
+                    patch.record_type !== undefined || patch.event_date !== undefined || patch.title !== undefined
+                      ? false
+                      : patch.duplicate_confirmed ?? group.duplicate_confirmed,
+                }
+              : group
           )),
         }
       }),
@@ -542,7 +589,16 @@ const UploadReviewPage: React.FC = () => {
         return {
           ...patient,
           record_groups: patient.record_groups.map((group) => (
-            selectedGroupIds.includes(group.group_id) ? { ...group, ...patch } : group
+            selectedGroupIds.includes(group.group_id)
+              ? {
+                  ...group,
+                  ...patch,
+                  duplicate_confirmed:
+                    patch.record_type !== undefined || patch.event_date !== undefined || patch.title !== undefined
+                      ? false
+                      : patch.duplicate_confirmed ?? group.duplicate_confirmed,
+                }
+              : group
           )),
         }
       }),
@@ -558,7 +614,9 @@ const UploadReviewPage: React.FC = () => {
           record_groups: decision.record_groups.map((group) => {
             const sourceGroup = patient.record_groups.find((item) => item.group_id === group.group_id)
             const firstCandidate = sourceGroup?.event_date_candidates[0]
-            return firstCandidate && !group.event_date ? { ...group, event_date: firstCandidate } : group
+            return firstCandidate && !group.event_date
+              ? { ...group, event_date: firstCandidate, duplicate_confirmed: false }
+              : group
           }),
         }
       }),
@@ -599,6 +657,7 @@ function toInitialDecision(patient: ImportPatientDraft): PatientDecisionState {
       record_type: group.record_type,
       event_date: group.event_date,
       title: group.title,
+      duplicate_confirmed: false,
     })),
   }
 }
@@ -618,6 +677,13 @@ function validateDecisions(decisions: PatientDecisionState[], patients: ImportPa
       if (group.action === 'create' && sourceGroup && sourceGroup.event_date_candidates.length > 1 && !group.event_date) {
         return 'Выберите дату события для записей с несколькими найденными датами.'
       }
+      if (
+        group.action === 'create' &&
+        getRelevantDuplicateCandidates(sourceGroup, decision).length > 0 &&
+        !group.duplicate_confirmed
+      ) {
+        return 'Для возможного дубля выберите «Импортировать всё равно» или пропустите запись.'
+      }
     }
   }
   return ''
@@ -636,20 +702,34 @@ function toPayload(decision: PatientDecisionState): ImportPatientDecision {
       record_type: group.record_type,
       event_date: group.event_date || null,
       title: group.title,
+      duplicate_confirmed: group.duplicate_confirmed ?? false,
     })),
   }
 }
 
+function getRelevantDuplicateCandidates(
+  sourceGroup: ImportPatientDraft['record_groups'][number] | undefined,
+  decision: PatientDecisionState,
+) {
+  if (!sourceGroup || decision.action !== 'existing' || !decision.patient_passport_id) return []
+  return sourceGroup.duplicate_candidates.filter(
+    (candidate) => candidate.patient_passport_id === decision.patient_passport_id,
+  )
+}
+
 function reviewSummary(patient: ImportPatientDraft, decision: PatientDecisionState | undefined) {
-  if (!decision) return { ready: 0, needsDate: 0, skipped: 0 }
+  if (!decision) return { ready: 0, needsDate: 0, needsDuplicate: 0, skipped: 0 }
   return decision.record_groups.reduce((summary, group) => {
     const sourceGroup = patient.record_groups.find((item) => item.group_id === group.group_id)
     if (group.action === 'skip') return { ...summary, skipped: summary.skipped + 1 }
     if (sourceGroup && sourceGroup.event_date_candidates.length > 1 && !group.event_date) {
       return { ...summary, needsDate: summary.needsDate + 1 }
     }
+    if (getRelevantDuplicateCandidates(sourceGroup, decision).length > 0 && !group.duplicate_confirmed) {
+      return { ...summary, needsDuplicate: summary.needsDuplicate + 1 }
+    }
     return { ...summary, ready: summary.ready + 1 }
-  }, { ready: 0, needsDate: 0, skipped: 0 })
+  }, { ready: 0, needsDate: 0, needsDuplicate: 0, skipped: 0 })
 }
 
 function formatFileSize(bytes: number) {
