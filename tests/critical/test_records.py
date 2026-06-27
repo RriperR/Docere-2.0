@@ -1838,14 +1838,20 @@ def test_admin_can_block_and_unblock_user_with_immediate_access_revocation(recor
     assert block_response.status_code == 200
     assert block_response.json()['status'] == 'blocked'
     assert repeated_block_response.status_code == 200
-    assert record_client.get(
-        '/api/auth/me',
-        headers={'Authorization': f'Bearer {doctor_token}'},
-    ).status_code == 401
-    assert record_client.post(
-        '/api/auth/login',
-        json={'email': doctor_email, 'password': TEST_DOCTOR_PASSWORD},
-    ).status_code == 401
+    assert (
+        record_client.get(
+            '/api/auth/me',
+            headers={'Authorization': f'Bearer {doctor_token}'},
+        ).status_code
+        == 401
+    )
+    assert (
+        record_client.post(
+            '/api/auth/login',
+            json={'email': doctor_email, 'password': TEST_DOCTOR_PASSWORD},
+        ).status_code
+        == 401
+    )
 
     unblock_response = record_client.patch(
         f'/api/admin/users/{doctor_user.id}/status',
@@ -1855,10 +1861,13 @@ def test_admin_can_block_and_unblock_user_with_immediate_access_revocation(recor
 
     assert unblock_response.status_code == 200
     assert unblock_response.json()['status'] == 'active'
-    assert record_client.post(
-        '/api/auth/login',
-        json={'email': doctor_email, 'password': TEST_DOCTOR_PASSWORD},
-    ).status_code == 200
+    assert (
+        record_client.post(
+            '/api/auth/login',
+            json={'email': doctor_email, 'password': TEST_DOCTOR_PASSWORD},
+        ).status_code
+        == 200
+    )
     with get_session_factory()() as session:
         status_events = session.scalars(
             select(AuditEventRow).where(
@@ -1992,10 +2001,13 @@ def test_patient_becomes_doctor_after_two_same_specialty_approvals(record_client
     )
     assert first_review.status_code == 200
     assert first_review.json()['status'] == 'pending'
-    assert record_client.get(
-        '/api/auth/me',
-        headers={'Authorization': f'Bearer {patient_token}'},
-    ).json()['role'] == 'patient'
+    assert (
+        record_client.get(
+            '/api/auth/me',
+            headers={'Authorization': f'Bearer {patient_token}'},
+        ).json()['role']
+        == 'patient'
+    )
 
     second_review = record_client.post(
         f'/api/doctor-role-applications/{application["id"]}/review',
@@ -2004,10 +2016,13 @@ def test_patient_becomes_doctor_after_two_same_specialty_approvals(record_client
     )
     assert second_review.status_code == 200
     assert second_review.json()['status'] == 'approved'
-    assert record_client.get(
-        '/api/auth/me',
-        headers={'Authorization': f'Bearer {patient_token}'},
-    ).json()['role'] == 'doctor'
+    assert (
+        record_client.get(
+            '/api/auth/me',
+            headers={'Authorization': f'Bearer {patient_token}'},
+        ).json()['role']
+        == 'doctor'
+    )
     with get_session_factory()() as session:
         patient = session.scalar(select(UserRow).where(UserRow.email == patient_email))
         assert patient is not None

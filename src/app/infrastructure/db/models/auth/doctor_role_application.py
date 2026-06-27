@@ -52,9 +52,7 @@ class DoctorRoleReviewRow(Base):
     """ORM-представление решения выбранного проверяющего."""
 
     __tablename__ = 'doctor_role_reviews'
-    __table_args__ = (
-        UniqueConstraint('application_id', 'reviewer_user_id', name='uq_doctor_role_review_reviewer'),
-    )
+    __table_args__ = (UniqueConstraint('application_id', 'reviewer_user_id', name='uq_doctor_role_review_reviewer'),)
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     application_id: Mapped[UUID] = mapped_column(

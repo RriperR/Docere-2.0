@@ -124,8 +124,7 @@ class CreateDoctorRoleApplicationUseCase:
 
         admin_count = sum(candidate.role == 'admin' for candidate in selected)
         doctor_count = sum(
-            candidate.role == 'doctor'
-            and (candidate.specialty or '').casefold() == normalized_specialty.casefold()
+            candidate.role == 'doctor' and (candidate.specialty or '').casefold() == normalized_specialty.casefold()
             for candidate in selected
         )
         if admin_count < 1 and doctor_count < 2:

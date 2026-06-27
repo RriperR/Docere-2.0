@@ -537,14 +537,20 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
         )
 
     def _record_attachments_count(self, record_id: UUID) -> int:
-        return self._session.scalar(
-            select(func.count(FileAttachmentRow.id)).where(FileAttachmentRow.record_id == record_id),
-        ) or 0
+        return (
+            self._session.scalar(
+                select(func.count(FileAttachmentRow.id)).where(FileAttachmentRow.record_id == record_id),
+            )
+            or 0
+        )
 
     def _record_comments_count(self, record_id: UUID) -> int:
-        return self._session.scalar(
-            select(func.count(RecordCommentRow.id)).where(RecordCommentRow.record_id == record_id),
-        ) or 0
+        return (
+            self._session.scalar(
+                select(func.count(RecordCommentRow.id)).where(RecordCommentRow.record_id == record_id),
+            )
+            or 0
+        )
 
 
 def _is_expired(expires_at: datetime | None, now: datetime) -> bool:

@@ -65,26 +65,21 @@ def evaluate_doctor_role_application(application: DoctorRoleApplication) -> Doct
         return application.status
 
     reviews = application.reviews
-    if any(
-        review.reviewer_role == 'admin' and review.status == DoctorRoleReviewStatus.APPROVED
-        for review in reviews
-    ):
+    if any(review.reviewer_role == 'admin' and review.status == DoctorRoleReviewStatus.APPROVED for review in reviews):
         return DoctorRoleApplicationStatus.APPROVED
 
     normalized_specialty = application.specialty.casefold()
     doctor_reviews = tuple(
         review
         for review in reviews
-        if review.reviewer_role == 'doctor'
-        and (review.reviewer_specialty or '').casefold() == normalized_specialty
+        if review.reviewer_role == 'doctor' and (review.reviewer_specialty or '').casefold() == normalized_specialty
     )
     doctor_approvals = sum(review.status == DoctorRoleReviewStatus.APPROVED for review in doctor_reviews)
     if doctor_approvals >= 2:
         return DoctorRoleApplicationStatus.APPROVED
 
     admin_pending = any(
-        review.reviewer_role == 'admin' and review.status == DoctorRoleReviewStatus.PENDING
-        for review in reviews
+        review.reviewer_role == 'admin' and review.status == DoctorRoleReviewStatus.PENDING for review in reviews
     )
     doctor_pending = sum(review.status == DoctorRoleReviewStatus.PENDING for review in doctor_reviews)
     if not admin_pending and doctor_approvals + doctor_pending < 2:
