@@ -287,3 +287,56 @@ def test_protected_endpoint_requires_valid_token(auth_client: TestClient) -> Non
 
     refresh_as_access_response = auth_client.get('/api/auth/me', headers={'Authorization': f'Bearer {refresh_token}'})
     assert refresh_as_access_response.status_code == 401
+
+
+@pytest.mark.critical
+def test_authenticated_user_can_change_password(auth_client: TestClient) -> None:
+    payload = _build_registration_payload()
+    assert auth_client.post('/api/auth/register', json=payload).status_code == 201
+    login_response = auth_client.post(
+        '/api/auth/login',
+        json={'email': payload['email'], 'password': payload['password']},
+    )
+    assert login_response.status_code == 200
+    headers = {'Authorization': f'Bearer {login_response.json()["access_token"]}'}
+
+    wrong_current_response = auth_client.post(
+        '/api/auth/me/password',
+        headers=headers,
+        json={'current_password': 'wrong-password', 'new_password': 'DifferentPass123'},
+    )
+    assert wrong_current_response.status_code == 400
+    assert wrong_current_response.json()['detail'] == 'Current password is incorrect'
+
+    unchanged_response = auth_client.post(
+        '/api/auth/me/password',
+        headers=headers,
+        json={'current_password': payload['password'], 'new_password': payload['password']},
+    )
+    assert unchanged_response.status_code == 400
+    assert unchanged_response.json()['detail'] == 'New password must differ from current password'
+
+    change_response = auth_client.post(
+        '/api/auth/me/password',
+        headers=headers,
+        json={'current_password': payload['password'], 'new_password': 'DifferentPass123'},
+    )
+    assert change_response.status_code == 204
+
+    old_login_response = auth_client.post(
+        '/api/auth/login',
+        json={'email': payload['email'], 'password': payload['password']},
+    )
+    assert old_login_response.status_code == 401
+    new_login_response = auth_client.post(
+        '/api/auth/login',
+        json={'email': payload['email'], 'password': 'DifferentPass123'},
+    )
+    assert new_login_response.status_code == 200
+
+    with get_session_factory()() as session:
+        audit_event = session.scalar(
+            select(AuditEventRow).where(AuditEventRow.event_type == 'password_changed'),
+        )
+    assert audit_event is not None
+    assert audit_event.metadata_json == {}

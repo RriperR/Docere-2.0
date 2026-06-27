@@ -119,3 +119,15 @@ class AuthRepositoryPort:
             Обновленный пользователь или `None`, если пользователь не найден.
         """
         raise NotImplementedError
+
+    def set_password_hash(self, *, user_id: UUID, password_hash: str) -> bool:
+        """Заменить хеш пароля пользователя.
+
+        Args:
+            user_id: Идентификатор пользователя.
+            password_hash: Новый безопасный хеш пароля.
+
+        Returns:
+            `True`, если пользователь найден и хеш обновлен.
+        """
+        raise NotImplementedError

@@ -39,9 +39,11 @@ const roleLabel: Record<string, string> = {
 }
 
 const AccountSettingsPage: React.FC = () => {
-  const { user, isLoading, updateProfile } = useAuthStore()
+  const { user, isLoading, updateProfile, changePassword } = useAuthStore()
   const [isEditing, setIsEditing] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [passwordSaved, setPasswordSaved] = useState(false)
+  const [passwordError, setPasswordError] = useState<string | null>(null)
   const [formData, setFormData] = useState<FormData>({
     firstName: '',
     lastName: '',
@@ -86,6 +88,40 @@ const AccountSettingsPage: React.FC = () => {
       setTimeout(() => setSaved(false), 3000)
     } catch {
       // ошибка в сторе
+    }
+  }
+
+  const handleChangePassword = async () => {
+    setPasswordError(null)
+    setPasswordSaved(false)
+    if (!formData.currentPassword || !formData.newPassword || !formData.confirmPassword) {
+      setPasswordError('Заполните все поля смены пароля.')
+      return
+    }
+    if (formData.newPassword.length < 8) {
+      setPasswordError('Новый пароль должен содержать не менее 8 символов.')
+      return
+    }
+    if (formData.newPassword !== formData.confirmPassword) {
+      setPasswordError('Новый пароль и подтверждение не совпадают.')
+      return
+    }
+    if (formData.currentPassword === formData.newPassword) {
+      setPasswordError('Новый пароль должен отличаться от текущего.')
+      return
+    }
+
+    try {
+      await changePassword(formData.currentPassword, formData.newPassword)
+      setFormData((prev) => ({
+        ...prev,
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: '',
+      }))
+      setPasswordSaved(true)
+    } catch (error: unknown) {
+      setPasswordError(error instanceof Error ? error.message : 'Не удалось изменить пароль.')
     }
   }
 
@@ -256,6 +292,16 @@ const AccountSettingsPage: React.FC = () => {
             <h3 className="font-semibold text-gray-900">Изменить пароль</h3>
           </div>
           <div className="p-6">
+            {passwordError && (
+              <div className="mb-4 rounded-lg border border-error-200 bg-error-50 px-4 py-3 text-sm text-error-700">
+                {passwordError}
+              </div>
+            )}
+            {passwordSaved && (
+              <div className="mb-4 rounded-lg border border-success-200 bg-success-50 px-4 py-3 text-sm text-success-800">
+                Пароль успешно изменён.
+              </div>
+            )}
             <div className="grid max-w-xl grid-cols-1 gap-4 sm:grid-cols-3">
               <Input
                 label="Текущий пароль"
@@ -286,7 +332,8 @@ const AccountSettingsPage: React.FC = () => {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => alert('Смена пароля будет реализована')}
+                isLoading={isLoading}
+                onClick={() => void handleChangePassword()}
               >
                 Обновить пароль
               </Button>

@@ -52,6 +52,7 @@ interface AuthState {
   ) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   refreshUser: () => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   logout: () => void;
   restoreSession: () => void;
   updateProfile: (updates: {
@@ -245,6 +246,26 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ user, isAuthenticated: true });
     } catch {
       // The API interceptor handles an expired session; keep transient network failures non-destructive.
+    }
+  },
+
+  changePassword: async (currentPassword, newPassword) => {
+    set({ isLoading: true, error: null });
+    try {
+      await api.post('/auth/me/password', {
+        current_password: currentPassword,
+        new_password: newPassword,
+      });
+      set({ isLoading: false });
+    } catch (err: unknown) {
+      const apiMessage = normalizeApiErrorMessage(err, 'Не удалось изменить пароль. Попробуйте позже.');
+      const message = apiMessage === 'Current password is incorrect'
+        ? 'Текущий пароль указан неверно.'
+        : apiMessage === 'New password must differ from current password'
+          ? 'Новый пароль должен отличаться от текущего.'
+          : apiMessage;
+      set({ error: message, isLoading: false });
+      throw new Error(message);
     }
   },
 

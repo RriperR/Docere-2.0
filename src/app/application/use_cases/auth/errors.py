@@ -23,3 +23,11 @@ class InvalidRefreshTokenError(AuthError):
 
 class UserNotFoundError(AuthError):
     """Пользователь не найден."""
+
+
+class InvalidCurrentPasswordError(AuthError):
+    """Текущий пароль пользователя указан неверно."""
+
+
+class NewPasswordMatchesCurrentError(AuthError):
+    """Новый пароль совпадает с текущим."""

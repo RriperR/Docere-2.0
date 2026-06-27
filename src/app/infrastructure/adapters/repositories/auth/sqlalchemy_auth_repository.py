@@ -189,6 +189,23 @@ class SqlAlchemyAuthRepositoryAdapter(AuthRepositoryPort):
         self._session.flush()
         return self._to_domain(user_row)
 
+    def set_password_hash(self, *, user_id: UUID, password_hash: str) -> bool:
+        """Заменить хеш пароля пользователя.
+
+        Args:
+            user_id: Идентификатор пользователя.
+            password_hash: Новый безопасный хеш пароля.
+
+        Returns:
+            `True`, если пользователь найден и хеш обновлен.
+        """
+        user_row = self._session.get(UserRow, user_id)
+        if user_row is None:
+            return False
+        user_row.password_hash = password_hash
+        self._session.flush()
+        return True
+
     @staticmethod
     def _to_domain(user_row: UserRow) -> AuthUserDTO:
         """Преобразовать ORM-модель пользователя в application-снимок.

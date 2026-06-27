@@ -6,6 +6,7 @@ from fastapi import Depends, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
+from app.application.use_cases.auth.change_password.use_case import ChangePasswordUseCase
 from app.application.use_cases.auth.get_authenticated_user.use_case import GetAuthenticatedUserUseCase
 from app.application.use_cases.auth.login_user.use_case import LoginUserUseCase
 from app.application.use_cases.auth.refresh_access_token.use_case import RefreshAccessTokenUseCase
@@ -128,8 +129,26 @@ def get_refresh_access_token_use_case(
     )
 
 
+def get_change_password_use_case(
+    session: Session = db_session_dependency,
+) -> ChangePasswordUseCase:
+    """Создать use case смены пароля текущего пользователя.
+
+    Args:
+        session: Активная сессия БД.
+
+    Returns:
+        Настроенный use case смены пароля.
+    """
+    return ChangePasswordUseCase(
+        repository=SqlAlchemyAuthRepositoryAdapter(session=session),
+        password_hasher=Pbkdf2PasswordHasherAdapter(),
+    )
+
+
 register_user_dependency = Depends(get_register_user)
 login_user_dependency = Depends(get_login_user)
 refresh_access_token_dependency = Depends(get_refresh_access_token_use_case)
 authenticated_user_use_case_dependency = Depends(get_authenticated_user_use_case)
+change_password_use_case_dependency = Depends(get_change_password_use_case)
 bearer_token_extraction_dependency = Depends(extract_bearer_token)

@@ -4,16 +4,19 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, HTTPException, Response, status
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.application.use_cases.auth.change_password.use_case import ChangePasswordUseCase
 from app.application.use_cases.auth.common.dtos import AuthenticatedUserDTO, AuthTokenDTO
 from app.application.use_cases.auth.errors import (
     EmailAlreadyExistsError,
     InvalidCredentialsError,
+    InvalidCurrentPasswordError,
     InvalidRefreshTokenError,
     InvalidTokenError,
+    NewPasswordMatchesCurrentError,
     UserNotFoundError,
 )
 from app.application.use_cases.auth.get_authenticated_user.use_case import GetAuthenticatedUserUseCase
@@ -25,6 +28,7 @@ from app.infrastructure.adapters.repositories.auth.sqlalchemy_auth_repository im
 from app.presentation.rest.public.v1.auth.dependencies import (
     authenticated_user_use_case_dependency,
     bearer_token_extraction_dependency,
+    change_password_use_case_dependency,
     db_session_dependency,
     login_user_dependency,
     refresh_access_token_dependency,
@@ -33,10 +37,12 @@ from app.presentation.rest.public.v1.auth.dependencies import (
 from app.presentation.rest.public.v1.auth.schemas import (
     AuthTokenResponseSchema,
     AuthUserResponseSchema,
+    ChangePasswordRequestSchema,
     LoginRequestSchema,
     RefreshTokenRequestSchema,
     RegisterUserRequestSchema,
 )
+from app.presentation.rest.public.v1.records.dependencies import current_authenticated_user_dependency
 from app.presentation.webserver.http_errors import (
     raise_email_already_exists,
     raise_invalid_credentials,
@@ -177,4 +183,60 @@ def get_authenticated_user(
     try:
         return use_case.execute(token=token)
     except (InvalidTokenError, UserNotFoundError):
+        raise_unauthorized('Invalid or expired token')
+
+
+@router.post(
+    '/me/password',
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+def change_password(
+    payload: ChangePasswordRequestSchema,
+    current_user: AuthenticatedUserDTO = current_authenticated_user_dependency,
+    use_case: ChangePasswordUseCase = change_password_use_case_dependency,
+    session: Session = db_session_dependency,
+) -> Response:
+    """Сменить пароль текущего пользователя.
+
+    Args:
+        payload: Текущий и новый пароль.
+        current_user: Текущий аутентифицированный пользователь.
+        use_case: Сценарий смены пароля.
+        session: Сессия БД для общей транзакции и аудита.
+
+    Returns:
+        Пустой HTTP-ответ после успешной смены пароля.
+
+    Raises:
+        HTTPException: Если текущий пароль неверен или новый совпадает с ним.
+    """
+    try:
+        use_case.execute(
+            user_id=current_user.id,
+            current_password=payload.current_password,
+            new_password=payload.new_password,
+        )
+        AuditEventRepositoryAdapter(session).record(
+            actor_user_id=current_user.id,
+            event_type='password_changed',
+            entity_type='user',
+            entity_id=current_user.id,
+        )
+        session.commit()
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    except InvalidCurrentPasswordError:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='Current password is incorrect',
+        ) from None
+    except NewPasswordMatchesCurrentError:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='New password must differ from current password',
+        ) from None
+    except UserNotFoundError:
+        session.rollback()
         raise_unauthorized('Invalid or expired token')
