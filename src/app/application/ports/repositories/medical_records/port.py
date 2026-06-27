@@ -77,6 +77,7 @@ class MedicalRecordRepositoryPort:
     def find_duplicate_candidates(
         self,
         *,
+        actor_user_id: UUID,
         patient_passport_id: UUID,
         record_type: str,
         event_date: date | None,

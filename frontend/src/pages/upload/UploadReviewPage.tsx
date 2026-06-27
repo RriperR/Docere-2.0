@@ -372,7 +372,7 @@ const UploadReviewPage: React.FC = () => {
                   const needsDate = group.action === 'create' && !group.event_date
                   const duplicateCandidates = getRelevantDuplicateCandidates(sourceGroup, decision)
                   const hasDuplicates = duplicateCandidates.length > 0
-                  const needsDuplicateConfirmation = hasDuplicates && group.action === 'create' && !group.duplicate_confirmed
+                  const needsDuplicateConfirmation = hasDuplicates && group.action === 'create' && !group.allow_possible_duplicate
                   const isSelected = getSelectedGroupIds(decision.candidate_id).includes(group.group_id)
                   return (
                     <div key={group.group_id} className="rounded-lg border border-gray-100 p-4">
@@ -385,7 +385,7 @@ const UploadReviewPage: React.FC = () => {
                           </span>
                           {hasDuplicates && (
                             <span className="rounded-full border border-warning-200 bg-warning-50 px-2 py-0.5 text-xs font-medium text-warning-700">
-                              {group.duplicate_confirmed ? 'Дубль подтверждён' : 'Возможный дубль'}
+                              {group.allow_possible_duplicate ? 'Дубль подтверждён' : 'Возможный дубль'}
                             </span>
                           )}
                         </div>
@@ -420,7 +420,7 @@ const UploadReviewPage: React.FC = () => {
                                 <span>{recordTypeLabels[candidate.record_type] ?? candidate.record_type}</span>
                                 <span>{formatDateForDisplay(candidate.event_date)}</span>
                                 <span className="text-warning-700">
-                                  {candidate.match_reason === 'same_date' ? 'совпадает дата' : 'похоже название'}
+                                  совпадают дата и название
                                 </span>
                                 <Link
                                   to={`/patients/${candidate.patient_passport_id}`}
@@ -436,10 +436,10 @@ const UploadReviewPage: React.FC = () => {
                               <Button
                                 type="button"
                                 size="sm"
-                                variant={group.duplicate_confirmed ? 'outline' : 'primary'}
-                                onClick={() => updateGroup(patientIndex, groupIndex, { duplicate_confirmed: !group.duplicate_confirmed })}
+                                variant={group.allow_possible_duplicate ? 'outline' : 'primary'}
+                                onClick={() => updateGroup(patientIndex, groupIndex, { allow_possible_duplicate: !group.allow_possible_duplicate })}
                               >
-                                {group.duplicate_confirmed ? 'Отменить подтверждение' : 'Импортировать всё равно'}
+                                {group.allow_possible_duplicate ? 'Отменить подтверждение' : 'Импортировать всё равно'}
                               </Button>
                               <Button
                                 type="button"
@@ -586,7 +586,7 @@ const UploadReviewPage: React.FC = () => {
         ...item,
         ...patch,
         record_groups: resetsDuplicateDecision
-          ? item.record_groups.map((group) => ({ ...group, duplicate_confirmed: false }))
+          ? item.record_groups.map((group) => ({ ...group, allow_possible_duplicate: false }))
           : item.record_groups,
       }
     }))
@@ -603,10 +603,10 @@ const UploadReviewPage: React.FC = () => {
               ? {
                   ...group,
                   ...patch,
-                  duplicate_confirmed:
+                  allow_possible_duplicate:
                     patch.record_type !== undefined || patch.event_date !== undefined || patch.title !== undefined
                       ? false
-                      : patch.duplicate_confirmed ?? group.duplicate_confirmed,
+                      : patch.allow_possible_duplicate ?? group.allow_possible_duplicate,
                 }
               : group
           )),
@@ -663,10 +663,10 @@ const UploadReviewPage: React.FC = () => {
               ? {
                   ...group,
                   ...patch,
-                  duplicate_confirmed:
+                  allow_possible_duplicate:
                     patch.record_type !== undefined || patch.event_date !== undefined || patch.title !== undefined
                       ? false
-                      : patch.duplicate_confirmed ?? group.duplicate_confirmed,
+                      : patch.allow_possible_duplicate ?? group.allow_possible_duplicate,
                 }
               : group
           )),
@@ -685,7 +685,7 @@ const UploadReviewPage: React.FC = () => {
             const sourceGroup = patient.record_groups.find((item) => item.group_id === group.group_id)
             const firstCandidate = sourceGroup?.event_date_candidates[0]
             return firstCandidate && !group.event_date
-              ? { ...group, event_date: firstCandidate, duplicate_confirmed: false }
+              ? { ...group, event_date: firstCandidate, allow_possible_duplicate: false }
               : group
           }),
         }
@@ -735,7 +735,7 @@ function toInitialDecision(patient: ImportPatientDraft): PatientDecisionState {
       record_type: group.record_type,
       event_date: group.event_date,
       title: group.title,
-      duplicate_confirmed: false,
+      allow_possible_duplicate: false,
     })),
   }
 }
@@ -763,7 +763,7 @@ function restoreDecisions(
               ...group,
               ...savedGroup,
               event_date: savedGroup.event_date ?? null,
-              duplicate_confirmed: savedGroup.duplicate_confirmed ?? false,
+              allow_possible_duplicate: savedGroup.allow_possible_duplicate ?? false,
             }
           : group
       }),
@@ -789,7 +789,7 @@ function validateDecisions(decisions: PatientDecisionState[], patients: ImportPa
       if (
         group.action === 'create' &&
         getRelevantDuplicateCandidates(sourceGroup, decision).length > 0 &&
-        !group.duplicate_confirmed
+        !group.allow_possible_duplicate
       ) {
         return 'Для возможного дубля выберите «Импортировать всё равно» или пропустите запись.'
       }
@@ -811,7 +811,7 @@ function toPayload(decision: PatientDecisionState): ImportPatientDecision {
       record_type: group.record_type,
       event_date: group.event_date || null,
       title: group.title,
-      duplicate_confirmed: group.duplicate_confirmed ?? false,
+      allow_possible_duplicate: group.allow_possible_duplicate ?? false,
     })),
   }
 }
@@ -834,7 +834,7 @@ function reviewSummary(patient: ImportPatientDraft, decision: PatientDecisionSta
     if (!group.event_date) {
       return { ...summary, needsDate: summary.needsDate + 1 }
     }
-    if (getRelevantDuplicateCandidates(sourceGroup, decision).length > 0 && !group.duplicate_confirmed) {
+    if (getRelevantDuplicateCandidates(sourceGroup, decision).length > 0 && !group.allow_possible_duplicate) {
       return { ...summary, needsDuplicate: summary.needsDuplicate + 1 }
     }
     return { ...summary, ready: summary.ready + 1 }

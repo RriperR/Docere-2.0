@@ -206,6 +206,7 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
     def find_duplicate_candidates(
         self,
         *,
+        actor_user_id: UUID,
         patient_passport_id: UUID,
         record_type: str,
         event_date: date | None,
@@ -217,28 +218,26 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
         Returns:
             Кандидаты похожих записей.
         """
-        duplicate_conditions = []
-        if event_date is not None:
-            duplicate_conditions.append(MedicalRecordRow.event_date == event_date)
-        if title:
-            duplicate_conditions.append(MedicalRecordRow.title.ilike(f'%{title[:80]}%'))
-        if not duplicate_conditions:
+        normalized_title = _normalize_record_title(title)
+        if event_date is None or not normalized_title:
             return ()
 
         rows = self._session.execute(
             select(MedicalRecordRow, UserRecordLinkRow.patient_passport_id)
             .join(UserRecordLinkRow, UserRecordLinkRow.record_id == MedicalRecordRow.id)
             .where(
+                UserRecordLinkRow.user_id == actor_user_id,
                 UserRecordLinkRow.patient_passport_id == patient_passport_id,
                 self._active_access_condition(),
                 MedicalRecordRow.record_type == MedicalRecordType(record_type),
-                or_(*duplicate_conditions),
+                MedicalRecordRow.event_date == event_date,
             )
             .order_by(MedicalRecordRow.event_date.desc(), MedicalRecordRow.created_at.desc())
-            .limit(limit),
         ).all()
         candidates: list[DuplicateMedicalRecordCandidateDTO] = []
         for row, linked_patient_id in rows:
+            if _normalize_record_title(row.title) != normalized_title:
+                continue
             candidates.append(
                 DuplicateMedicalRecordCandidateDTO(
                     record_id=row.id,
@@ -247,11 +246,11 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
                     record_type=row.record_type.value,
                     event_date=row.event_date,
                     status=row.status.value,
-                    match_reason=(
-                        'same_date' if event_date is not None and row.event_date == event_date else 'similar_title'
-                    ),
+                    match_reason='same_date_and_title',
                 ),
             )
+            if len(candidates) >= limit:
+                break
         return tuple(candidates)
 
     def get_accessible_record(
@@ -614,3 +613,9 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
             size_bytes=row.size_bytes,
             uploaded_at=row.uploaded_at,
         )
+
+
+def _normalize_record_title(value: str | None) -> str:
+    if value is None:
+        return ''
+    return ' '.join(value.casefold().split())

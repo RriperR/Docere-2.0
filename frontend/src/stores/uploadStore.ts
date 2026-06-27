@@ -85,7 +85,7 @@ export interface ImportRecordGroupDecision {
   record_type?: string
   event_date?: string | null
   title?: string
-  duplicate_confirmed?: boolean
+  allow_possible_duplicate?: boolean
 }
 
 export interface ImportPatientDecision {

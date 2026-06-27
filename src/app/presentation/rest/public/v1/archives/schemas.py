@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.presentation.rest.serialization import MoscowDatetime
 
@@ -80,6 +80,7 @@ class ImportReportSchema(BaseModel):
     records_created: int | None = None
     attachments_created: int | None = None
     errors: list[str] = Field(default_factory=list)
+    duplicate_overrides: list[dict[str, object]] = Field(default_factory=list)
     resolved_at: date | None = None
 
 
@@ -91,7 +92,21 @@ class ImportRecordGroupResolveSchema(BaseModel):
     record_type: str | None = Field(default=None, pattern='^(consultation_result|exam_result|lab_result|other)$')
     event_date: date | None = None
     title: str | None = Field(default=None, max_length=255)
-    duplicate_confirmed: bool = False
+    allow_possible_duplicate: bool = False
+
+    @model_validator(mode='before')
+    @classmethod
+    def accept_legacy_duplicate_confirmation(cls, value: object) -> object:
+        """Принять прежнее имя override-флага без возврата его в API.
+
+        Returns:
+            Нормализованный вход с новым именем поля.
+        """
+        if not isinstance(value, dict):
+            return value
+        if 'allow_possible_duplicate' in value or 'duplicate_confirmed' not in value:
+            return value
+        return {**value, 'allow_possible_duplicate': value['duplicate_confirmed']}
 
 
 class ImportPatientResolveSchema(BaseModel):

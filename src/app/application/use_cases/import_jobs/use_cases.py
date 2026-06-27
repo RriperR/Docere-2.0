@@ -111,17 +111,25 @@ class GetImportJobUseCase:
         )
         if job is None:
             raise ImportJobNotFoundError
-        return _to_dto(job, report_json=self._enrich_report_for_review(job))
+        return _to_dto(
+            job,
+            report_json=self._enrich_report_for_review(job, actor_user_id=requested_by_user_id),
+        )
 
-    def _enrich_report_for_review(self, job: ImportJob) -> dict[str, object]:
+    def _enrich_report_for_review(self, job: ImportJob, *, actor_user_id: UUID) -> dict[str, object]:
         if self._medical_records is None or job.status.value != 'needs_review':
             return job.report_json
         patients = []
         for patient in _as_dict_list(job.report_json.get('patients')):
-            patients.append(self._enrich_patient_duplicates(patient))
+            patients.append(self._enrich_patient_duplicates(patient, actor_user_id=actor_user_id))
         return {**job.report_json, 'patients': patients}
 
-    def _enrich_patient_duplicates(self, patient: dict[str, object]) -> dict[str, object]:
+    def _enrich_patient_duplicates(
+        self,
+        patient: dict[str, object],
+        *,
+        actor_user_id: UUID,
+    ) -> dict[str, object]:
         if self._medical_records is None:
             return patient
         medical_records = self._medical_records
@@ -141,6 +149,7 @@ class GetImportJobUseCase:
             duplicate_candidates: list[dict[str, object]] = []
             for patient_id in matched_patient_ids:
                 for candidate in medical_records.find_duplicate_candidates(
+                    actor_user_id=actor_user_id,
                     patient_passport_id=patient_id,
                     record_type=str(group.get('record_type') or 'other'),
                     event_date=_parse_date(str(group.get('event_date') or '')),
@@ -303,6 +312,7 @@ class ResolveImportJobUseCase:
         created_patients = 0
         created_records = 0
         created_attachments = 0
+        duplicate_overrides: list[dict[str, object]] = []
         warnings = list(_as_str_list(report.get('warnings')))
 
         for candidate_id, patient in patients.items():
@@ -337,13 +347,21 @@ class ResolveImportJobUseCase:
                     group_decision.get('title') or group.get('title') or 'Импортированная запись',
                 )[:255]
                 duplicate_candidates = self._medical_records.find_duplicate_candidates(
+                    actor_user_id=actor_user_id,
                     patient_passport_id=patient_id,
                     record_type=record_type,
                     event_date=event_date,
                     title=title,
                 )
-                if duplicate_candidates and group_decision.get('duplicate_confirmed') is not True:
-                    raise ImportJobDuplicateConfirmationRequiredError(group_id=group_id)
+                if duplicate_candidates:
+                    if group_decision.get('allow_possible_duplicate') is not True:
+                        raise ImportJobDuplicateConfirmationRequiredError(group_id=group_id)
+                    duplicate_overrides.append(
+                        {
+                            'group_id': group_id,
+                            'matched_record_ids': [str(candidate.record_id) for candidate in duplicate_candidates],
+                        },
+                    )
 
                 record = self._medical_records.create_record(
                     creator_user_id=actor_user_id,
@@ -394,6 +412,7 @@ class ResolveImportJobUseCase:
             'patients_created': created_patients,
             'records_created': created_records,
             'attachments_created': created_attachments,
+            'duplicate_overrides': duplicate_overrides,
             'warnings': warnings,
             'resolved_at': date.today().isoformat(),
         }

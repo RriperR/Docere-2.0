@@ -289,8 +289,18 @@ def resolve_import_job(
                 'patients_created': job.report_json.get('patients_created', 0),
                 'records_created': job.report_json.get('records_created', 0),
                 'attachments_created': job.report_json.get('attachments_created', 0),
+                'duplicate_overrides': job.report_json.get('duplicate_overrides', []),
             },
         )
+        duplicate_overrides = job.report_json.get('duplicate_overrides')
+        if isinstance(duplicate_overrides, list) and duplicate_overrides:
+            AuditEventRepositoryAdapter(session).record(
+                actor_user_id=current_user.id,
+                event_type='import_duplicate_override',
+                entity_type='import_job',
+                entity_id=job.id,
+                metadata_json={'overrides': duplicate_overrides},
+            )
         session.commit()
         return job
     except ImportJobNotFoundError:

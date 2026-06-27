@@ -20,6 +20,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.application.ports.storage.file_storage import FileStoragePort
 from app.domain.entities.file_attachment import FileAttachmentCategory
 from app.domain.entities.import_job import ImportJobStatus
+from app.domain.entities.medical_record import MedicalRecordType
 from app.domain.entities.practitioner_passport import PractitionerPassportStatus
 from app.infrastructure.adapters.queue.recover_import_jobs import enqueue_recoverable_import_jobs
 from app.infrastructure.adapters.queue.tasks import process_import_job
@@ -946,10 +947,50 @@ def test_import_job_suggests_exact_accessible_patient_match(
         record_client,
         token,
         UUID(create_patient_response.json()['id']),
-        title='Импортированный анализ',
+        title='lab 2026 04 05',
         record_type='lab_result',
         event_date='2026-04-05',
     )
+    _create_record(
+        record_client,
+        token,
+        UUID(create_patient_response.json()['id']),
+        title='Другой анализ',
+        record_type='lab_result',
+        event_date='2026-04-05',
+    )
+    _create_record(
+        record_client,
+        token,
+        UUID(create_patient_response.json()['id']),
+        title='lab 2026 04 05',
+        record_type='lab_result',
+        event_date='2026-04-06',
+    )
+    _create_doctor(email='import-hidden-record@example.com')
+    hidden_record_owner = _get_user_by_email('import-hidden-record@example.com')
+    with get_session_factory()() as session:
+        hidden_record = MedicalRecordRow(
+            creator_user_id=hidden_record_owner.id,
+            record_type=MedicalRecordType.LAB_RESULT,
+            event_date=date(2026, 4, 5),
+            title='lab 2026 04 05',
+            appointment_location=None,
+            clinical_summary=None,
+            payload_json={},
+        )
+        session.add(hidden_record)
+        session.flush()
+        session.add(
+            UserRecordLinkRow(
+                user_id=hidden_record_owner.id,
+                record_id=hidden_record.id,
+                patient_passport_id=UUID(create_patient_response.json()['id']),
+                source=UserRecordLinkSourceRow.CREATOR,
+            ),
+        )
+        session.commit()
+        hidden_record_id = hidden_record.id
 
     upload_response = record_client.post(
         '/api/archives/imports',
@@ -968,8 +1009,9 @@ def test_import_job_suggests_exact_accessible_patient_match(
     exact_matches = [match for match in patient['existing_matches'] if match['match_type'] == 'exact']
     assert exact_matches[0]['id'] == create_patient_response.json()['id']
     duplicate_candidates = patient['record_groups'][0]['duplicate_candidates']
-    assert duplicate_candidates[0]['record_id'] == existing_record['id']
-    assert duplicate_candidates[0]['match_reason'] == 'same_date'
+    assert [candidate['record_id'] for candidate in duplicate_candidates] == [existing_record['id']]
+    assert str(hidden_record_id) not in {candidate['record_id'] for candidate in duplicate_candidates}
+    assert duplicate_candidates[0]['match_reason'] == 'same_date_and_title'
 
     decision = {
         'candidate_id': patient['candidate_id'],
@@ -981,7 +1023,7 @@ def test_import_job_suggests_exact_accessible_patient_match(
                 'action': 'create',
                 'record_type': 'lab_result',
                 'event_date': '2026-04-05',
-                'title': 'Импортированный анализ',
+                'title': 'lab 2026 04 05',
             },
         ],
     }
@@ -996,16 +1038,19 @@ def test_import_job_suggests_exact_accessible_patient_match(
         'code': 'duplicate_confirmation_required',
         'group_id': patient['record_groups'][0]['group_id'],
     }
+    import_owner = _get_user_by_email('import-match@example.com')
     with get_session_factory()() as session:
         records_before_confirmation = session.scalars(
             select(MedicalRecordRow).where(
                 MedicalRecordRow.id != UUID(existing_record['id']),
+                MedicalRecordRow.creator_user_id == import_owner.id,
                 MedicalRecordRow.event_date == date(2026, 4, 5),
+                MedicalRecordRow.title == 'lab 2026 04 05',
             ),
         ).all()
     assert records_before_confirmation == []
 
-    decision['record_groups'][0]['duplicate_confirmed'] = True
+    decision['record_groups'][0]['allow_possible_duplicate'] = True
     confirmed_resolve = record_client.post(
         f'/api/archives/imports/{upload_response.json()["id"]}/resolve',
         headers={'Authorization': f'Bearer {token}'},
@@ -1014,6 +1059,21 @@ def test_import_job_suggests_exact_accessible_patient_match(
 
     assert confirmed_resolve.status_code == 200
     assert confirmed_resolve.json()['report_json']['records_created'] == 1
+    assert confirmed_resolve.json()['report_json']['duplicate_overrides'] == [
+        {
+            'group_id': patient['record_groups'][0]['group_id'],
+            'matched_record_ids': [existing_record['id']],
+        },
+    ]
+    with get_session_factory()() as session:
+        override_event = session.scalar(
+            select(AuditEventRow).where(
+                AuditEventRow.event_type == 'import_duplicate_override',
+                AuditEventRow.entity_id == UUID(upload_response.json()['id']),
+            ),
+        )
+    assert override_event is not None
+    assert override_event.metadata_json['overrides'] == confirmed_resolve.json()['report_json']['duplicate_overrides']
 
 
 @pytest.mark.critical
