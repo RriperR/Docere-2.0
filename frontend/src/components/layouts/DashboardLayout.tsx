@@ -55,7 +55,7 @@ function getAvatarColor(str: string): string {
 export const DashboardLayout = () => {
   const { user, logout, refreshUser } = useAuthStore()
   const { patients, fetchPatients } = usePatientsStore()
-  const { inbox } = useShareRequestsStore()
+  const { inbox, fetchInbox: fetchShareInbox } = useShareRequestsStore()
   const roleApplicationInbox = useDoctorRoleApplicationsStore((state) => state.inbox)
   const fetchRoleApplicationInbox = useDoctorRoleApplicationsStore((state) => state.fetchInbox)
   const location = useLocation()
@@ -66,7 +66,10 @@ export const DashboardLayout = () => {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [isProfileOpen, setIsProfileOpen] = useState(false)
 
-  const pendingShareCount = inbox.filter((r) => r.status === 'pending').length
+  const pendingShareRequests = inbox.filter(
+    (request) => request.status === 'pending' && !isExpired(request.expires_at),
+  )
+  const pendingShareCount = pendingShareRequests.length
   const pendingRoleApplicationCount = roleApplicationInbox.length
 
   useEffect(() => {
@@ -78,6 +81,12 @@ export const DashboardLayout = () => {
       void fetchPatients()
     }
   }, [user?.role, fetchPatients])
+
+  useEffect(() => {
+    if (user?.id) {
+      void fetchShareInbox()
+    }
+  }, [fetchShareInbox, user?.id])
 
   useEffect(() => {
     if (user?.role === 'doctor' || user?.role === 'admin') {
@@ -139,14 +148,23 @@ export const DashboardLayout = () => {
   const avatarColor = getAvatarColor(user?.first_name ?? user?.email ?? 'A')
 
   const notifications = [
-    {
-      id: 1,
-      title: 'Новый sharing-запрос',
-      message: 'Вам отправили доступ к медицинским записям.',
-      time: 'только что',
-      unread: true,
-    },
-  ]
+    ...pendingShareRequests.map((request) => ({
+      id: `share-${request.id}`,
+      title: 'Новый доступ к записям',
+      message: `${request.from_user.fio} · записей: ${request.shares.length}`,
+      time: formatNotificationTime(request.created_at),
+      createdAt: request.created_at,
+      path: '/share-requests',
+    })),
+    ...roleApplicationInbox.map((application) => ({
+      id: `role-${application.id}`,
+      title: 'Заявка на роль врача',
+      message: `${application.applicant_fio} · ${application.specialty}`,
+      time: formatNotificationTime(application.created_at),
+      createdAt: application.created_at,
+      path: '/doctor-role-reviews',
+    })),
+  ].sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
 
   const SidebarContent = ({ collapsed }: { collapsed: boolean }) => (
     <div className="flex h-full flex-col">
@@ -327,6 +345,8 @@ export const DashboardLayout = () => {
             {/* Notifications */}
             <div className="relative">
               <button
+                type="button"
+                aria-label={notifications.length > 0 ? `Уведомления: ${notifications.length}` : 'Уведомления'}
                 onClick={() => {
                   setIsNotificationsOpen((o) => !o)
                   setIsProfileOpen(false)
@@ -334,7 +354,7 @@ export const DashboardLayout = () => {
                 className="relative rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
               >
                 <Bell className="h-5 w-5" />
-                {notifications.some((n) => n.unread) && (
+                {notifications.length > 0 && (
                   <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-error-500 ring-2 ring-white" />
                 )}
               </button>
@@ -345,23 +365,31 @@ export const DashboardLayout = () => {
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 6, scale: 0.97 }}
                     transition={{ duration: 0.15 }}
-                    className="absolute right-0 mt-1 w-80 overflow-hidden rounded-xl border border-gray-100 bg-white shadow-lg"
+                    className="absolute right-0 mt-1 w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-lg border border-gray-100 bg-white shadow-lg"
                   >
                     <div className="border-b border-gray-100 px-4 py-3">
                       <h3 className="text-sm font-semibold text-gray-900">Уведомления</h3>
                     </div>
                     <div className="max-h-64 overflow-y-auto scrollbar-thin">
-                      {notifications.map((n) => (
-                        <div key={n.id} className={`px-4 py-3 ${n.unread ? 'bg-primary-50/50' : 'hover:bg-gray-50'}`}>
+                      {notifications.length === 0 && (
+                        <p className="px-4 py-6 text-center text-sm text-gray-500">Новых уведомлений нет</p>
+                      )}
+                      {notifications.map((notification) => (
+                        <Link
+                          key={notification.id}
+                          to={notification.path}
+                          onClick={() => setIsNotificationsOpen(false)}
+                          className="block border-b border-gray-50 bg-primary-50/40 px-4 py-3 transition-colors last:border-b-0 hover:bg-primary-50"
+                        >
                           <div className="flex items-start gap-2">
-                            {n.unread && <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary-500" />}
-                            <div>
-                              <p className="text-sm font-medium text-gray-900">{n.title}</p>
-                              <p className="mt-0.5 text-xs text-gray-500">{n.message}</p>
-                              <p className="mt-1 text-xs text-gray-400">{n.time}</p>
+                            <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary-500" />
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-gray-900">{notification.title}</p>
+                              <p className="mt-0.5 truncate text-xs text-gray-500">{notification.message}</p>
+                              <p className="mt-1 text-xs text-gray-400">{notification.time}</p>
                             </div>
                           </div>
-                        </div>
+                        </Link>
                       ))}
                     </div>
                   </motion.div>
@@ -465,4 +493,17 @@ function getBreadcrumbs(pathname: string): Array<{ label: string; path: string }
 
   if (crumbs.length === 1) return crumbs
   return crumbs
+}
+
+function isExpired(expiresAt: string | null): boolean {
+  return Boolean(expiresAt && new Date(expiresAt).getTime() <= Date.now())
+}
+
+function formatNotificationTime(value: string): string {
+  return new Intl.DateTimeFormat('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value))
 }
