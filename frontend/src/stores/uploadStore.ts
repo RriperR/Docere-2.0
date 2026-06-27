@@ -133,6 +133,9 @@ const normalizeError = (error: unknown, fallback: string): string => {
     if (payload.code === 'duplicate_confirmation_required') {
       return 'Появилась похожая запись. Проверьте дубликаты и подтвердите импорт повторно.'
     }
+    if (payload.code === 'event_date_required') {
+      return 'Укажите дату события для каждой импортируемой медицинской записи.'
+    }
   }
   return apiError.message || fallback
 }

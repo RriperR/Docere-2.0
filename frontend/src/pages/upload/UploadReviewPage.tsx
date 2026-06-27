@@ -369,7 +369,7 @@ const UploadReviewPage: React.FC = () => {
                 </div>
                 {decision.record_groups.map((group, groupIndex) => {
                   const sourceGroup = patientCandidate.record_groups.find((item) => item.group_id === group.group_id)
-                  const needsDate = Boolean(sourceGroup && sourceGroup.event_date_candidates.length > 1 && group.action === 'create' && !group.event_date)
+                  const needsDate = group.action === 'create' && !group.event_date
                   const duplicateCandidates = getRelevantDuplicateCandidates(sourceGroup, decision)
                   const hasDuplicates = duplicateCandidates.length > 0
                   const needsDuplicateConfirmation = hasDuplicates && group.action === 'create' && !group.duplicate_confirmed
@@ -473,7 +473,9 @@ const UploadReviewPage: React.FC = () => {
                         <label className="space-y-1">
                           <span className="text-xs font-medium text-gray-500">Дата события</span>
                           <DateInput
-                            className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm"
+                            className={`w-full rounded-md border px-3 py-2 text-sm ${
+                              needsDate ? 'border-warning-300 bg-warning-50' : 'border-gray-200'
+                            }`}
                             value={group.event_date ?? ''}
                             disabled={decision.action === 'skip' || group.action === 'skip'}
                             onChange={(value) => updateGroup(patientIndex, groupIndex, { event_date: value })}
@@ -781,8 +783,8 @@ function validateDecisions(decisions: PatientDecisionState[], patients: ImportPa
     for (const group of decision.record_groups) {
       const patient = patients.find((item) => item.candidate_id === decision.candidate_id)
       const sourceGroup = patient?.record_groups.find((item) => item.group_id === group.group_id)
-      if (group.action === 'create' && sourceGroup && sourceGroup.event_date_candidates.length > 1 && !group.event_date) {
-        return 'Выберите дату события для записей с несколькими найденными датами.'
+      if (group.action === 'create' && !group.event_date) {
+        return 'Укажите дату события для каждой импортируемой медицинской записи.'
       }
       if (
         group.action === 'create' &&
@@ -829,7 +831,7 @@ function reviewSummary(patient: ImportPatientDraft, decision: PatientDecisionSta
   return decision.record_groups.reduce((summary, group) => {
     const sourceGroup = patient.record_groups.find((item) => item.group_id === group.group_id)
     if (group.action === 'skip') return { ...summary, skipped: summary.skipped + 1 }
-    if (sourceGroup && sourceGroup.event_date_candidates.length > 1 && !group.event_date) {
+    if (!group.event_date) {
       return { ...summary, needsDate: summary.needsDate + 1 }
     }
     if (getRelevantDuplicateCandidates(sourceGroup, decision).length > 0 && !group.duplicate_confirmed) {

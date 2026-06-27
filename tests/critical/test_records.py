@@ -481,6 +481,13 @@ def _build_patient_archive_bytes() -> bytes:
     return buffer.getvalue()
 
 
+def _build_patient_archive_without_event_date_bytes() -> bytes:
+    buffer = BytesIO()
+    with ZipFile(buffer, mode='w') as archive:
+        archive.writestr('Иванов Иван Иванович/dob 1980-01-02/lab/result.pdf', b'%PDF-1.4')
+    return buffer.getvalue()
+
+
 def _build_dicom_bytes() -> bytes:
     buffer = BytesIO()
     file_meta = FileMetaDataset()
@@ -722,6 +729,73 @@ def test_import_review_draft_survives_reload_and_clears_after_resolve(
     assert resolve_response.status_code == 200
     assert resolve_response.json()['review_decisions'] == []
     assert resolve_response.json()['review_updated_at'] is None
+
+
+@pytest.mark.critical
+def test_import_resolve_requires_event_date_when_archive_has_none(
+    record_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage = _InMemoryStorage()
+    monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.get_file_storage', lambda: storage)
+    monkeypatch.setattr('app.infrastructure.adapters.queue.tasks.get_file_storage', lambda: storage)
+    monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.process_import_job.delay', lambda _: None)
+    _create_doctor(email='import-no-event-date@example.com')
+    token = _login(record_client, 'import-no-event-date@example.com', TEST_DOCTOR_PASSWORD)
+    upload_response = record_client.post(
+        '/api/archives/imports',
+        headers={'Authorization': f'Bearer {token}'},
+        files={'file': ('without-date.zip', _build_patient_archive_without_event_date_bytes(), 'application/zip')},
+    )
+    assert upload_response.status_code == 201
+    job_id = upload_response.json()['id']
+    process_import_job(job_id)
+    review_response = record_client.get(
+        f'/api/archives/imports/{job_id}',
+        headers={'Authorization': f'Bearer {token}'},
+    )
+    patient = review_response.json()['report_json']['patients'][0]
+    group = patient['record_groups'][0]
+    assert group['event_date'] is None
+    assert group['event_date_candidates'] == []
+
+    resolve_response = record_client.post(
+        f'/api/archives/imports/{job_id}/resolve',
+        headers={'Authorization': f'Bearer {token}'},
+        json={
+            'decisions': [
+                {
+                    'candidate_id': patient['candidate_id'],
+                    'action': 'create',
+                    'fio': patient['fio'],
+                    'date_of_birth': patient['date_of_birth'],
+                    'record_groups': [
+                        {
+                            'group_id': group['group_id'],
+                            'action': 'create',
+                            'record_type': group['record_type'],
+                            'event_date': None,
+                            'title': group['title'],
+                        },
+                    ],
+                },
+            ],
+        },
+    )
+    assert resolve_response.status_code == 422
+    assert resolve_response.json()['detail'] == {
+        'code': 'event_date_required',
+        'group_id': group['group_id'],
+    }
+    doctor = _get_user_by_email('import-no-event-date@example.com')
+    with get_session_factory()() as session:
+        created_patient = session.scalar(
+            select(PatientPassportRow).where(
+                PatientPassportRow.fio == patient['fio'],
+                PatientPassportRow.created_by_user_id == doctor.id,
+            ),
+        )
+    assert created_patient is None
 
 
 @pytest.mark.critical

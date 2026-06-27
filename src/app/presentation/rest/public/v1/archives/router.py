@@ -13,6 +13,7 @@ from app.application.use_cases.auth.common.dtos import AuthenticatedUserDTO
 from app.application.use_cases.import_jobs.dtos import ImportJobDTO, ImportReviewDraftDTO
 from app.application.use_cases.import_jobs.errors import (
     ImportJobDuplicateConfirmationRequiredError,
+    ImportJobEventDateRequiredError,
     ImportJobNotFoundError,
     ImportJobValidationError,
 )
@@ -301,6 +302,15 @@ def resolve_import_job(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={
                 'code': 'duplicate_confirmation_required',
+                'group_id': exc.group_id,
+            },
+        ) from exc
+    except ImportJobEventDateRequiredError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                'code': 'event_date_required',
                 'group_id': exc.group_id,
             },
         ) from exc

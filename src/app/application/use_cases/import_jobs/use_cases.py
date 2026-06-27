@@ -14,6 +14,7 @@ from app.application.use_cases.import_jobs.dtos import ImportJobDTO, ImportRevie
 from app.application.use_cases.import_jobs.errors import (
     ArchiveExtractionError,
     ImportJobDuplicateConfirmationRequiredError,
+    ImportJobEventDateRequiredError,
     ImportJobNotFoundError,
     ImportJobValidationError,
 )
@@ -274,6 +275,7 @@ class ResolveImportJobUseCase:
             ImportJobNotFoundError: Если job не найден или недоступен.
             ImportJobValidationError: Если job не готов к resolve или решение некорректно.
             ImportJobDuplicateConfirmationRequiredError: Если найдена похожая запись без подтверждения.
+            ImportJobEventDateRequiredError: Если для создаваемой записи не определена дата события.
         """
         job = self._import_jobs.get_job(
             job_id=job_id,
@@ -328,10 +330,9 @@ class ResolveImportJobUseCase:
                     continue
 
                 record_type = str(group_decision.get('record_type') or group.get('record_type') or 'other')
-                event_date = (
-                    _parse_date(str(group_decision.get('event_date') or group.get('event_date') or ''))
-                    or date.today()
-                )
+                event_date = _parse_date(str(group_decision.get('event_date') or group.get('event_date') or ''))
+                if event_date is None:
+                    raise ImportJobEventDateRequiredError(group_id=group_id)
                 title = str(
                     group_decision.get('title') or group.get('title') or 'Импортированная запись',
                 )[:255]
