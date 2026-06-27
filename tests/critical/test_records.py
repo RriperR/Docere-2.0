@@ -20,6 +20,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.application.ports.storage.file_storage import FileStoragePort
 from app.domain.entities.file_attachment import FileAttachmentCategory
 from app.domain.entities.import_job import ImportJobStatus
+from app.domain.entities.practitioner_passport import PractitionerPassportStatus
 from app.infrastructure.adapters.queue.recover_import_jobs import enqueue_recoverable_import_jobs
 from app.infrastructure.adapters.queue.tasks import process_import_job
 from app.infrastructure.adapters.security.pbkdf2_password_hasher import Pbkdf2PasswordHasherAdapter
@@ -150,6 +151,25 @@ def _create_doctor(email: str = 'doctor@example.com', password: str = TEST_DOCTO
         role=UserRole.DOCTOR,
         fio='Dr. House',
     )
+
+
+def _create_doctor_with_specialty(email: str, specialty: str) -> None:
+    _create_doctor(email=email)
+    user = _get_user_by_email(email)
+    with get_session_factory()() as session:
+        session.add(
+            PractitionerPassportRow(
+                created_by_user_id=user.id,
+                user_id=user.id,
+                full_name=user.fio,
+                specialty=specialty,
+                email=user.email,
+                phone=user.phone,
+                status=PractitionerPassportStatus.CONFIRMED,
+                confirmed_at=datetime.now(UTC),
+            ),
+        )
+        session.commit()
 
 
 def _create_admin(email: str = 'admin@example.com', password: str = TEST_DOCTOR_PASSWORD) -> None:
@@ -1619,6 +1639,204 @@ def test_admin_can_list_audit_events_and_doctor_cannot(record_client: TestClient
     assert admin_login_event['entity_type'] == 'user'
     assert admin_login_event['actor_fio'] == 'System Admin'
     assert admin_login_event['actor_email'] == 'audit-admin@example.com'
+
+
+@pytest.mark.critical
+def test_patient_becomes_doctor_after_two_same_specialty_approvals(record_client: TestClient) -> None:
+    specialty = 'Кардиология'
+    patient_email = 'role-patient@example.com'
+    first_doctor_email = 'role-cardio-first@example.com'
+    second_doctor_email = 'role-cardio-second@example.com'
+    other_doctor_email = 'role-neuro@example.com'
+    _register_patient(record_client, patient_email)
+    _create_doctor_with_specialty(first_doctor_email, specialty)
+    _create_doctor_with_specialty(second_doctor_email, specialty)
+    _create_doctor_with_specialty(other_doctor_email, 'Неврология')
+    patient_token = _login(record_client, patient_email, TEST_PATIENT_PASSWORD)
+    first_doctor_token = _login(record_client, first_doctor_email, TEST_DOCTOR_PASSWORD)
+    second_doctor_token = _login(record_client, second_doctor_email, TEST_DOCTOR_PASSWORD)
+    other_doctor_token = _login(record_client, other_doctor_email, TEST_DOCTOR_PASSWORD)
+
+    specialties_response = record_client.get(
+        '/api/doctor-role-applications/specialties',
+        headers={'Authorization': f'Bearer {patient_token}'},
+    )
+    reviewers_response = record_client.get(
+        '/api/doctor-role-applications/reviewers',
+        params={'specialty': specialty},
+        headers={'Authorization': f'Bearer {patient_token}'},
+    )
+    assert specialties_response.status_code == 200
+    assert specialties_response.json() == [specialty, 'Неврология']
+    assert reviewers_response.status_code == 200
+    reviewers = reviewers_response.json()
+    reviewer_ids = {reviewer['email']: reviewer['id'] for reviewer in reviewers}
+    assert set(reviewer_ids) == {first_doctor_email, second_doctor_email}
+
+    one_reviewer_response = record_client.post(
+        '/api/doctor-role-applications',
+        headers={'Authorization': f'Bearer {patient_token}'},
+        json={'specialty': specialty, 'reviewer_user_ids': [reviewer_ids[first_doctor_email]]},
+    )
+    wrong_specialty_response = record_client.post(
+        '/api/doctor-role-applications',
+        headers={'Authorization': f'Bearer {patient_token}'},
+        json={
+            'specialty': specialty,
+            'reviewer_user_ids': [
+                reviewer_ids[first_doctor_email],
+                str(_get_user_by_email(other_doctor_email).id),
+            ],
+        },
+    )
+    assert one_reviewer_response.status_code == 422
+    assert wrong_specialty_response.status_code == 422
+
+    create_response = record_client.post(
+        '/api/doctor-role-applications',
+        headers={'Authorization': f'Bearer {patient_token}'},
+        json={
+            'specialty': specialty,
+            'reviewer_user_ids': [reviewer_ids[first_doctor_email], reviewer_ids[second_doctor_email]],
+        },
+    )
+    assert create_response.status_code == 201
+    application = create_response.json()
+    assert application['status'] == 'pending'
+    assert len(application['reviews']) == 2
+    duplicate_response = record_client.post(
+        '/api/doctor-role-applications',
+        headers={'Authorization': f'Bearer {patient_token}'},
+        json={
+            'specialty': specialty,
+            'reviewer_user_ids': [reviewer_ids[first_doctor_email], reviewer_ids[second_doctor_email]],
+        },
+    )
+    assert duplicate_response.status_code == 409
+
+    other_inbox = record_client.get(
+        '/api/doctor-role-applications/inbox',
+        headers={'Authorization': f'Bearer {other_doctor_token}'},
+    )
+    unauthorized_review = record_client.post(
+        f'/api/doctor-role-applications/{application["id"]}/review',
+        headers={'Authorization': f'Bearer {other_doctor_token}'},
+        json={'decision': 'approved'},
+    )
+    assert other_inbox.status_code == 200
+    assert other_inbox.json() == []
+    assert unauthorized_review.status_code == 404
+
+    first_review = record_client.post(
+        f'/api/doctor-role-applications/{application["id"]}/review',
+        headers={'Authorization': f'Bearer {first_doctor_token}'},
+        json={'decision': 'approved', 'note': 'Документы подтверждаю'},
+    )
+    assert first_review.status_code == 200
+    assert first_review.json()['status'] == 'pending'
+    assert record_client.get(
+        '/api/auth/me',
+        headers={'Authorization': f'Bearer {patient_token}'},
+    ).json()['role'] == 'patient'
+
+    second_review = record_client.post(
+        f'/api/doctor-role-applications/{application["id"]}/review',
+        headers={'Authorization': f'Bearer {second_doctor_token}'},
+        json={'decision': 'approved'},
+    )
+    assert second_review.status_code == 200
+    assert second_review.json()['status'] == 'approved'
+    assert record_client.get(
+        '/api/auth/me',
+        headers={'Authorization': f'Bearer {patient_token}'},
+    ).json()['role'] == 'doctor'
+    with get_session_factory()() as session:
+        patient = session.scalar(select(UserRow).where(UserRow.email == patient_email))
+        assert patient is not None
+        passport = session.scalar(
+            select(PractitionerPassportRow).where(PractitionerPassportRow.user_id == patient.id),
+        )
+        assert passport is not None
+        assert passport.specialty == specialty
+        assert passport.status == PractitionerPassportStatus.CONFIRMED
+
+
+@pytest.mark.critical
+def test_selected_admin_can_approve_doctor_role_application_alone(record_client: TestClient) -> None:
+    patient_email = 'role-admin-patient@example.com'
+    admin_email = 'role-approver@example.com'
+    _register_patient(record_client, patient_email)
+    _create_admin(email=admin_email)
+    patient_token = _login(record_client, patient_email, TEST_PATIENT_PASSWORD)
+    admin_token = _login(record_client, admin_email, TEST_DOCTOR_PASSWORD)
+    admin_user = _get_user_by_email(admin_email)
+
+    create_response = record_client.post(
+        '/api/doctor-role-applications',
+        headers={'Authorization': f'Bearer {patient_token}'},
+        json={'specialty': 'Офтальмология', 'reviewer_user_ids': [str(admin_user.id)]},
+    )
+    assert create_response.status_code == 201
+    application_id = create_response.json()['id']
+    inbox_response = record_client.get(
+        '/api/doctor-role-applications/inbox',
+        headers={'Authorization': f'Bearer {admin_token}'},
+    )
+    assert inbox_response.status_code == 200
+    assert [item['id'] for item in inbox_response.json()] == [application_id]
+
+    review_response = record_client.post(
+        f'/api/doctor-role-applications/{application_id}/review',
+        headers={'Authorization': f'Bearer {admin_token}'},
+        json={'decision': 'approved'},
+    )
+    assert review_response.status_code == 200
+    assert review_response.json()['status'] == 'approved'
+    assert _get_user_by_email(patient_email).role == UserRole.DOCTOR
+
+
+@pytest.mark.critical
+def test_doctor_role_application_rejects_only_when_quorum_is_impossible(record_client: TestClient) -> None:
+    specialty = 'Терапия'
+    patient_email = 'role-reject-patient@example.com'
+    doctor_emails = [f'role-reject-{index}@example.com' for index in range(3)]
+    _register_patient(record_client, patient_email)
+    patient_token = _login(record_client, patient_email, TEST_PATIENT_PASSWORD)
+    doctor_tokens: list[str] = []
+    reviewer_ids: list[str] = []
+    for email in doctor_emails:
+        _create_doctor_with_specialty(email, specialty)
+        doctor_tokens.append(_login(record_client, email, TEST_DOCTOR_PASSWORD))
+        reviewer_ids.append(str(_get_user_by_email(email).id))
+
+    create_response = record_client.post(
+        '/api/doctor-role-applications',
+        headers={'Authorization': f'Bearer {patient_token}'},
+        json={'specialty': specialty, 'reviewer_user_ids': reviewer_ids},
+    )
+    application_id = create_response.json()['id']
+    first_rejection = record_client.post(
+        f'/api/doctor-role-applications/{application_id}/review',
+        headers={'Authorization': f'Bearer {doctor_tokens[0]}'},
+        json={'decision': 'rejected', 'note': 'Недостаточно данных'},
+    )
+    second_rejection = record_client.post(
+        f'/api/doctor-role-applications/{application_id}/review',
+        headers={'Authorization': f'Bearer {doctor_tokens[1]}'},
+        json={'decision': 'rejected'},
+    )
+
+    assert first_rejection.status_code == 200
+    assert first_rejection.json()['status'] == 'pending'
+    assert second_rejection.status_code == 200
+    assert second_rejection.json()['status'] == 'rejected'
+    assert _get_user_by_email(patient_email).role == UserRole.PATIENT
+    final_review = record_client.post(
+        f'/api/doctor-role-applications/{application_id}/review',
+        headers={'Authorization': f'Bearer {doctor_tokens[2]}'},
+        json={'decision': 'approved'},
+    )
+    assert final_review.status_code == 409
 
 
 @pytest.mark.critical

@@ -1,6 +1,7 @@
 """ORM-модели инфраструктурного слоя."""
 
 from app.infrastructure.db.models.audit_event import AuditEventRow
+from app.infrastructure.db.models.auth.doctor_role_application import DoctorRoleApplicationRow, DoctorRoleReviewRow
 from app.infrastructure.db.models.auth.user import UserRole, UserRow, UserStatus
 from app.infrastructure.db.models.medical_records.file_attachment import FileAttachmentRow
 from app.infrastructure.db.models.medical_records.import_job import ImportJobRow
@@ -13,6 +14,8 @@ from app.infrastructure.db.models.medical_records.user_record_link import UserRe
 __all__ = [
     'FileAttachmentRow',
     'AuditEventRow',
+    'DoctorRoleApplicationRow',
+    'DoctorRoleReviewRow',
     'ImportJobRow',
     'MedicalRecordRow',
     'PatientPassportRow',
