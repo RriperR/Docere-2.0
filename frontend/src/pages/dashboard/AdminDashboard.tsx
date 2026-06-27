@@ -70,6 +70,8 @@ const eventLabels: Record<string, string> = {
   medical_record_created: 'Создана медицинская запись',
   medical_record_confirmed: 'Медицинская запись подтверждена',
   import_job_resolved: 'Импорт архива подтверждён',
+  doctor_role_application_created: 'Создана заявка на роль врача',
+  doctor_role_application_reviewed: 'Рассмотрена заявка на роль врача',
 }
 
 const emptySummary: AdminSummary = {

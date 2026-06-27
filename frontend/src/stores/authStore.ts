@@ -51,6 +51,7 @@ interface AuthState {
     password: string
   ) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
+  refreshUser: () => Promise<void>;
   logout: () => void;
   restoreSession: () => void;
   updateProfile: (updates: {
@@ -230,6 +231,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isLoading: false,
       });
       throw err;
+    }
+  },
+
+  refreshUser: async () => {
+    if (!get().tokens?.access_token) {
+      return;
+    }
+    try {
+      const { data: backendUser } = await api.get<BackendAuthUser>('/auth/me');
+      const user = toUserData(backendUser);
+      localStorage.setItem('authUserData', JSON.stringify(user));
+      set({ user, isAuthenticated: true });
+    } catch {
+      // The API interceptor handles an expired session; keep transient network failures non-destructive.
     }
   },
 

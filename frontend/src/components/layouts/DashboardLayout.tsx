@@ -14,11 +14,13 @@ import {
   Share2,
   Shield,
   UploadCloud,
+  UserCheck,
   Users,
   X,
 } from 'lucide-react'
 
 import { useAuthStore } from '../../stores/authStore'
+import { useDoctorRoleApplicationsStore } from '../../stores/doctorRoleApplicationsStore'
 import { usePatientsStore } from '../../stores/patientsStore'
 import { useShareRequestsStore } from '../../stores/shareRequestsStore'
 
@@ -51,9 +53,11 @@ function getAvatarColor(str: string): string {
 }
 
 export const DashboardLayout = () => {
-  const { user, logout } = useAuthStore()
+  const { user, logout, refreshUser } = useAuthStore()
   const { patients, fetchPatients } = usePatientsStore()
   const { inbox } = useShareRequestsStore()
+  const roleApplicationInbox = useDoctorRoleApplicationsStore((state) => state.inbox)
+  const fetchRoleApplicationInbox = useDoctorRoleApplicationsStore((state) => state.fetchInbox)
   const location = useLocation()
   const navigate = useNavigate()
 
@@ -63,12 +67,23 @@ export const DashboardLayout = () => {
   const [isProfileOpen, setIsProfileOpen] = useState(false)
 
   const pendingShareCount = inbox.filter((r) => r.status === 'pending').length
+  const pendingRoleApplicationCount = roleApplicationInbox.length
+
+  useEffect(() => {
+    void refreshUser()
+  }, [refreshUser])
 
   useEffect(() => {
     if (user?.role === 'patient') {
       void fetchPatients()
     }
   }, [user?.role, fetchPatients])
+
+  useEffect(() => {
+    if (user?.role === 'doctor' || user?.role === 'admin') {
+      void fetchRoleApplicationInbox()
+    }
+  }, [fetchRoleApplicationInbox, user?.role])
 
   const handleLogout = () => {
     logout()
@@ -100,16 +115,19 @@ export const DashboardLayout = () => {
 
     const roleLinks: Record<string, Array<{ path: string; label: string; icon: ReactNode; badge: number }>> = {
       doctor: [
+        { path: '/doctor-role-reviews', label: 'Заявки врачей', icon: <UserCheck className="h-5 w-5" />, badge: pendingRoleApplicationCount },
         { path: '/upload', label: 'Импорт архива', icon: <UploadCloud className="h-5 w-5" />, badge: 0 },
         { path: '/patients', label: 'Пациенты', icon: <Users className="h-5 w-5" />, badge: 0 },
       ],
       admin: [
+        { path: '/doctor-role-reviews', label: 'Заявки врачей', icon: <UserCheck className="h-5 w-5" />, badge: pendingRoleApplicationCount },
         { path: '/upload', label: 'Импорт архива', icon: <UploadCloud className="h-5 w-5" />, badge: 0 },
         { path: '/patients', label: 'Пациенты', icon: <Users className="h-5 w-5" />, badge: 0 },
         { path: '/admin', label: 'Панель админа', icon: <Shield className="h-5 w-5" />, badge: 0 },
       ],
       patient: [
         { path: patientPath, label: 'Мои записи', icon: <Users className="h-5 w-5" />, badge: 0 },
+        { path: '/doctor-role-request', label: 'Стать врачом', icon: <UserCheck className="h-5 w-5" />, badge: 0 },
       ],
     }
 
@@ -422,6 +440,8 @@ function getBreadcrumbs(pathname: string): Array<{ label: string; path: string }
     '/dashboard/admin': 'Панель администратора',
     '/patients': 'Пациенты',
     '/share-requests': 'Sharing записей',
+    '/doctor-role-request': 'Заявка на роль врача',
+    '/doctor-role-reviews': 'Проверка заявок врачей',
     '/upload': 'Импорт архива',
     '/admin': 'Управление системой',
     '/settings': 'Настройки аккаунта',

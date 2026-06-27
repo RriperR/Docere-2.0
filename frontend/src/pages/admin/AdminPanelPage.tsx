@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   Users,
-  Shield,
   FileText,
   AlertCircle,
   Search,
@@ -29,19 +28,6 @@ interface User {
   status: string;
   created_at: string;
   updated_at: string;
-}
-
-interface RoleRequest {
-  id: string;
-  user: {
-    name: string;
-    email: string;
-    currentRole: string;
-  };
-  requestedRole: string;
-  status: 'pending' | 'approved' | 'rejected';
-  date: string;
-  verifiers: string[];
 }
 
 interface AuditLog {
@@ -74,26 +60,9 @@ const AdminPanelPage = () => {
 
   const pageSize = 10;
 
-  const roleRequests: RoleRequest[] = [
-    {
-      id: '1',
-      user: {
-        name: 'Dr. Maria Johnson',
-        email: 'maria.johnson@example.com',
-        currentRole: 'patient'
-      },
-      requestedRole: 'doctor',
-      status: 'pending',
-      date: '2023-03-15T09:00:00',
-      verifiers: ['Dr. Alex Smith', 'Dr. James Wilson']
-    },
-    // Add more mock requests...
-  ];
-
   const tabs = [
-    { id: 'users', label: 'Users', icon: <Users className="h-4 w-4" /> },
-    { id: 'roles', label: 'Role Requests', icon: <Shield className="h-4 w-4" /> },
-    { id: 'audit', label: 'Audit Log', icon: <FileText className="h-4 w-4" /> },
+    { id: 'users', label: 'Пользователи', icon: <Users className="h-4 w-4" /> },
+    { id: 'audit', label: 'Журнал аудита', icon: <FileText className="h-4 w-4" /> },
   ];
 
   const handleSearch = (query: string) => {
@@ -463,52 +432,6 @@ const AdminPanelPage = () => {
     );
   };
 
-  const renderRoleRequests = () => {
-    return (
-      <div className="space-y-6">
-        {roleRequests.map((request) => (
-          <Card key={request.id}>
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-medium text-gray-900">
-                  {request.user.name}
-                </h3>
-                <p className="text-sm text-gray-500">
-                  Requesting change from {request.user.currentRole} to {request.requestedRole}
-                </p>
-                <p className="text-sm text-gray-500 mt-1">
-                  Submitted on {new Date(request.date).toLocaleDateString()}
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm">
-                  Reject
-                </Button>
-                <Button variant="primary" size="sm">
-                  Approve
-                </Button>
-              </div>
-            </div>
-
-            <div className="mt-4">
-              <p className="text-sm font-medium text-gray-500">Verifying Doctors:</p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {request.verifiers.map((verifier, index) => (
-                  <span
-                    key={index}
-                    className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary-100 text-primary-800"
-                  >
-                    {verifier}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </Card>
-        ))}
-      </div>
-    );
-  };
-
   const renderAuditLog = () => {
     return (
       <div className="space-y-4">
@@ -579,9 +502,9 @@ const AdminPanelPage = () => {
         transition={{ duration: 0.5 }}
         className="mb-8"
       >
-        <h1 className="text-2xl font-bold text-gray-900">Admin Panel</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Панель администратора</h1>
         <p className="mt-1 text-gray-500">
-          Manage users, role requests, and system activity
+          Пользователи и системные события
         </p>
       </motion.div>
 
@@ -599,7 +522,6 @@ const AdminPanelPage = () => {
           />
 
           {activeTab === 'users' && renderUsersList()}
-          {activeTab === 'roles' && renderRoleRequests()}
           {activeTab === 'audit' && renderAuditLog()}
         </Card>
       </motion.div>

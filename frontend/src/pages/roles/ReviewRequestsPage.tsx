@@ -1,254 +1,288 @@
-import React, { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Shield, CheckCircle, X, User, Calendar } from 'lucide-react';
-import { Card } from '../../components/common/Card';
-import { Button } from '../../components/common/Button';
-import { Input } from '../../components/common/Input';
+import React, { useEffect, useMemo, useState } from 'react'
+import { motion } from 'framer-motion'
+import {
+  AlertTriangle,
+  Calendar,
+  CheckCircle,
+  Clock3,
+  Mail,
+  Search,
+  ShieldCheck,
+  Stethoscope,
+  User,
+  XCircle,
+} from 'lucide-react'
 
-interface DoctorRequest {
-  id: string;
-  user: {
-    name: string;
-    email: string;
-    dateOfBirth: string;
-    currentRole: string;
-    experience: string;
-    specialization: string;
-  };
-  status: 'pending' | 'approved' | 'rejected';
-  submittedAt: string;
-  documents: {
-    id: string;
-    name: string;
-    type: string;
-  }[];
-  notes?: string;
-}
+import { Button } from '../../components/common/Button'
+import { Input } from '../../components/common/Input'
+import { useAuthStore } from '../../stores/authStore'
+import {
+  DoctorRoleApplication,
+  useDoctorRoleApplicationsStore,
+} from '../../stores/doctorRoleApplicationsStore'
+import { formatDateForDisplay } from '../../utils/dates'
 
-const ReviewRequestsPage = () => {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedRequest, setSelectedRequest] = useState<DoctorRequest | null>(null);
-  const [reviewNote, setReviewNote] = useState('');
+const ReviewRequestsPage: React.FC = () => {
+  const currentUserId = useAuthStore((state) => state.user?.id ?? null)
+  const {
+    inbox,
+    isLoading,
+    isSubmitting,
+    error,
+    fetchInbox,
+    reviewApplication,
+    clearError,
+  } = useDoctorRoleApplicationsStore()
+  const [selectedApplicationId, setSelectedApplicationId] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [note, setNote] = useState('')
+  const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
-  // Mock data
-  const requests: DoctorRequest[] = [
-    {
-      id: '1',
-      user: {
-        name: 'Dr. Maria Johnson',
-        email: 'maria.johnson@example.com',
-        dateOfBirth: '1985-06-15',
-        currentRole: 'patient',
-        experience: '10 years',
-        specialization: 'Cardiology',
-      },
-      status: 'pending',
-      submittedAt: '2023-03-15T09:00:00Z',
-      documents: [
-        { id: 'd1', name: 'Medical License', type: 'PDF' },
-        { id: 'd2', name: 'Board Certification', type: 'PDF' },
-      ],
-    },
-    {
-      id: '2',
-      user: {
-        name: 'Dr. James Wilson',
-        email: 'james.wilson@example.com',
-        dateOfBirth: '1982-03-22',
-        currentRole: 'patient',
-        experience: '15 years',
-        specialization: 'Neurology',
-      },
-      status: 'pending',
-      submittedAt: '2023-03-14T14:30:00Z',
-      documents: [
-        { id: 'd3', name: 'Medical License', type: 'PDF' },
-        { id: 'd4', name: 'Residency Certificate', type: 'PDF' },
-      ],
-    },
-  ];
+  useEffect(() => {
+    void fetchInbox()
+  }, [fetchInbox])
 
-  const handleApprove = (request: DoctorRequest) => {
-    // Handle approval logic
-    alert(`Approved request for ${request.user.name}`);
-  };
+  const filteredInbox = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase()
+    if (!query) return inbox
+    return inbox.filter((application) =>
+      [application.applicant_fio, application.applicant_email, application.specialty]
+        .join(' ')
+        .toLowerCase()
+        .includes(query),
+    )
+  }, [inbox, searchQuery])
 
-  const handleReject = (request: DoctorRequest) => {
-    // Handle rejection logic
-    alert(`Rejected request for ${request.user.name}`);
-  };
+  const selectedApplication = inbox.find((application) => application.id === selectedApplicationId) ?? null
+  const ownReview = selectedApplication?.reviews.find((review) => review.reviewer_user_id === currentUserId)
+
+  const submitDecision = async (decision: 'approved' | 'rejected') => {
+    if (!selectedApplication) return
+    if (
+      decision === 'rejected' &&
+      !window.confirm(`Отклонить заявку ${selectedApplication.applicant_fio}? Решение нельзя будет изменить.`)
+    ) {
+      return
+    }
+    clearError()
+    const result = await reviewApplication(selectedApplication.id, decision, note.trim() || null)
+    setSuccessMessage(
+      result.status === 'approved'
+        ? 'Заявка одобрена, пользователю выдана роль врача'
+        : result.status === 'rejected'
+          ? 'Заявка отклонена: необходимый кворум больше недостижим'
+          : 'Решение сохранено, заявка ожидает остальных проверяющих',
+    )
+    setSelectedApplicationId(null)
+    setNote('')
+  }
 
   return (
-    <div>
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className="mb-8"
-      >
-        <h1 className="text-2xl font-bold text-gray-900">Review Doctor Requests</h1>
-        <p className="mt-1 text-gray-500">
-          Review and verify doctor role requests from medical professionals
-        </p>
+    <div className="space-y-6">
+      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="h-6 w-6 text-primary-600" />
+          <h1 className="text-2xl font-bold text-gray-900">Проверка заявок врачей</h1>
+        </div>
+        <p className="mt-1 text-sm text-gray-500">Заявки, в которых пациент выбрал вас проверяющим</p>
       </motion.div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <motion.div
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.2, duration: 0.5 }}
-          className="lg:col-span-2"
-        >
-          <Card>
-            <div className="mb-6">
-              <Input
-                placeholder="Search requests..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
+      {error && (
+        <div className="flex items-start rounded-lg border border-error-200 bg-error-50 p-4">
+          <AlertTriangle className="mr-2 mt-0.5 h-5 w-5 shrink-0 text-error-500" />
+          <p className="text-sm text-error-700">{error}</p>
+        </div>
+      )}
+      {successMessage && (
+        <div className="flex items-start rounded-lg border border-success-200 bg-success-50 p-4">
+          <CheckCircle className="mr-2 mt-0.5 h-5 w-5 shrink-0 text-success-600" />
+          <p className="text-sm text-success-700">{successMessage}</p>
+        </div>
+      )}
 
-            <div className="space-y-4">
-              {requests.map((request) => (
-                <div
-                  key={request.id}
-                  className={`p-4 border rounded-lg transition-colors duration-200 ${
-                    selectedRequest?.id === request.id
-                      ? 'border-primary-500 bg-primary-50'
-                      : 'border-gray-200 hover:border-primary-200 hover:bg-gray-50'
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
+        <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <div className="border-b border-gray-100 p-4">
+            <Input
+              placeholder="Поиск по ФИО, email или специализации"
+              icon={<Search className="h-4 w-4" />}
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+            />
+          </div>
+
+          {isLoading && inbox.length === 0 && (
+            <p className="p-6 text-center text-sm text-gray-500">Загрузка заявок...</p>
+          )}
+          {!isLoading && filteredInbox.length === 0 && (
+            <div className="p-8 text-center">
+              <CheckCircle className="mx-auto h-9 w-9 text-success-500" />
+              <p className="mt-3 text-sm font-medium text-gray-900">Нет заявок, ожидающих вашего решения</p>
+            </div>
+          )}
+
+          <div className="divide-y divide-gray-100">
+            {filteredInbox.map((application) => {
+              const selected = application.id === selectedApplicationId
+              const pendingReviews = application.reviews.filter((review) => review.status === 'pending').length
+              return (
+                <button
+                  key={application.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedApplicationId(application.id)
+                    setSuccessMessage(null)
+                    setNote('')
+                  }}
+                  className={`w-full p-4 text-left transition-colors ${
+                    selected ? 'bg-primary-50' : 'hover:bg-gray-50'
                   }`}
-                  onClick={() => setSelectedRequest(request)}
                 >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center">
-                      <div className="h-10 w-10 rounded-full bg-primary-100 flex items-center justify-center text-primary-700 font-medium">
-                        {request.user.name.split(' ').map(n => n[0]).join('')}
-                      </div>
-                      <div className="ml-3">
-                        <h3 className="text-sm font-medium text-gray-900">
-                          {request.user.name}
-                        </h3>
-                        <p className="text-sm text-gray-500">
-                          {request.user.specialization}
-                        </p>
-                      </div>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-gray-900">{application.applicant_fio}</p>
+                      <p className="truncate text-xs text-gray-500">{application.applicant_email}</p>
                     </div>
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-warning-100 text-warning-800">
-                      Pending Review
+                    <span className="shrink-0 rounded-full bg-warning-50 px-2 py-1 text-xs font-medium text-warning-700">
+                      {pendingReviews} ожидают
                     </span>
                   </div>
-
-                  <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <p className="text-gray-500">Experience</p>
-                      <p className="font-medium">{request.user.experience}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-500">Submitted</p>
-                      <p className="font-medium">
-                        {new Date(request.submittedAt).toLocaleDateString()}
-                      </p>
-                    </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-gray-500">
+                    <span className="inline-flex items-center gap-1">
+                      <Stethoscope className="h-3.5 w-3.5" />
+                      {application.specialty}
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <Calendar className="h-3.5 w-3.5" />
+                      {formatDateTime(application.created_at)}
+                    </span>
                   </div>
+                </button>
+              )
+            })}
+          </div>
+        </section>
 
-                  <div className="mt-4">
-                    <p className="text-sm text-gray-500 mb-2">Documents:</p>
-                    <div className="flex flex-wrap gap-2">
-                      {request.documents.map((doc) => (
-                        <span
-                          key={doc.id}
-                          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800"
-                        >
-                          {doc.name}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.4, duration: 0.5 }}
-        >
-          {selectedRequest ? (
-            <Card>
-              <div className="mb-6">
-                <h3 className="text-lg font-medium text-gray-900">Request Details</h3>
-                <p className="text-sm text-gray-500">
-                  Review the details and make your decision
-                </p>
+        <section className="rounded-lg border border-gray-200 bg-white">
+          {selectedApplication && ownReview ? (
+            <div>
+              <div className="border-b border-gray-100 p-5">
+                <p className="text-xs font-medium uppercase text-primary-600">Заявка на роль врача</p>
+                <h2 className="mt-1 text-lg font-semibold text-gray-900">{selectedApplication.applicant_fio}</h2>
               </div>
+              <div className="space-y-5 p-5">
+                <ApplicantDetails application={selectedApplication} />
+                <ReviewProgress application={selectedApplication} currentUserId={currentUserId} />
 
-              <div className="space-y-6">
-                <div>
-                  <h4 className="text-sm font-medium text-gray-700 mb-2">Personal Information</h4>
-                  <div className="space-y-2">
-                    <div className="flex items-center">
-                      <User className="h-4 w-4 text-gray-400 mr-2" />
-                      <span className="text-sm">{selectedRequest.user.name}</span>
-                    </div>
-                    <div className="flex items-center">
-                      <Mail className="h-4 w-4 text-gray-400 mr-2" />
-                      <span className="text-sm">{selectedRequest.user.email}</span>
-                    </div>
-                    <div className="flex items-center">
-                      <Calendar className="h-4 w-4 text-gray-400 mr-2" />
-                      <span className="text-sm">
-                        {new Date(selectedRequest.user.dateOfBirth).toLocaleDateString()}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="text-sm font-medium text-gray-700 mb-2">Review Notes</h4>
+                <label className="block space-y-1.5">
+                  <span className="text-sm font-medium text-gray-700">Комментарий к решению</span>
                   <textarea
-                    value={reviewNote}
-                    onChange={(e) => setReviewNote(e.target.value)}
-                    className="w-full h-24 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                    placeholder="Add your review notes..."
+                    value={note}
+                    onChange={(event) => setNote(event.target.value)}
+                    maxLength={2000}
+                    rows={4}
+                    placeholder="Основание решения (необязательно)"
+                    className="w-full resize-none rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
                   />
-                </div>
+                </label>
 
-                <div className="flex gap-2">
+                <div className="grid grid-cols-2 gap-3 border-t border-gray-100 pt-4">
                   <Button
-                    variant="outline"
-                    onClick={() => handleReject(selectedRequest)}
-                    icon={<X className="h-4 w-4" />}
-                    className="flex-1"
+                    variant="danger"
+                    onClick={() => void submitDecision('rejected')}
+                    disabled={ownReview.status !== 'pending'}
+                    isLoading={isSubmitting}
+                    icon={<XCircle className="h-4 w-4" />}
                   >
-                    Reject
+                    Отклонить
                   </Button>
                   <Button
-                    variant="primary"
-                    onClick={() => handleApprove(selectedRequest)}
+                    onClick={() => void submitDecision('approved')}
+                    disabled={ownReview.status !== 'pending'}
+                    isLoading={isSubmitting}
                     icon={<CheckCircle className="h-4 w-4" />}
-                    className="flex-1"
                   >
-                    Approve
+                    Одобрить
                   </Button>
                 </div>
               </div>
-            </Card>
+            </div>
           ) : (
-            <div className="h-full flex items-center justify-center text-center p-6 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+            <div className="flex min-h-80 items-center justify-center p-8 text-center">
               <div>
-                <Shield className="h-12 w-12 text-gray-400 mx-auto mb-3" />
-                <p className="text-gray-500">
-                  Select a request to review its details
-                </p>
+                <User className="mx-auto h-10 w-10 text-gray-300" />
+                <p className="mt-3 text-sm text-gray-500">Выберите заявку для проверки</p>
               </div>
             </div>
           )}
-        </motion.div>
+        </section>
       </div>
     </div>
-  );
-};
+  )
+}
 
-export default ReviewRequestsPage;
+function ApplicantDetails({ application }: { application: DoctorRoleApplication }) {
+  return (
+    <div className="space-y-2 text-sm">
+      <div className="flex items-center gap-2 text-gray-700">
+        <Mail className="h-4 w-4 text-gray-400" />
+        <span className="break-all">{application.applicant_email}</span>
+      </div>
+      <div className="flex items-center gap-2 text-gray-700">
+        <Stethoscope className="h-4 w-4 text-gray-400" />
+        <span>{application.specialty}</span>
+      </div>
+      {application.applicant_date_of_birth && (
+        <div className="flex items-center gap-2 text-gray-700">
+          <Calendar className="h-4 w-4 text-gray-400" />
+          <span>{formatDateForDisplay(application.applicant_date_of_birth)}</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ReviewProgress({ application, currentUserId }: { application: DoctorRoleApplication; currentUserId: string | null }) {
+  return (
+    <div>
+      <p className="mb-2 text-sm font-medium text-gray-700">Выбранные проверяющие</p>
+      <div className="space-y-2">
+        {application.reviews.map((review) => (
+          <div
+            key={review.id}
+            className={`flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm ${
+              review.reviewer_user_id === currentUserId ? 'border-primary-200 bg-primary-50' : 'border-gray-200'
+            }`}
+          >
+            <div className="min-w-0">
+              <p className="truncate font-medium text-gray-900">
+                {review.reviewer_fio}{review.reviewer_user_id === currentUserId ? ' · вы' : ''}
+              </p>
+              <p className="text-xs text-gray-500">
+                {review.reviewer_role === 'admin' ? 'Администратор' : review.reviewer_specialty || 'Врач'}
+              </p>
+            </div>
+            {review.status === 'approved' ? (
+              <CheckCircle className="h-4 w-4 shrink-0 text-success-600" />
+            ) : review.status === 'rejected' ? (
+              <XCircle className="h-4 w-4 shrink-0 text-error-600" />
+            ) : (
+              <Clock3 className="h-4 w-4 shrink-0 text-warning-600" />
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+const formatDateTime = (value: string) =>
+  new Intl.DateTimeFormat('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value))
+
+export default ReviewRequestsPage
