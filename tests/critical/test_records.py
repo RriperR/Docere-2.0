@@ -1438,6 +1438,74 @@ def test_admin_can_list_users_without_password_hash_and_doctor_cannot(record_cli
 
 
 @pytest.mark.critical
+def test_admin_can_block_and_unblock_user_with_immediate_access_revocation(record_client: TestClient) -> None:
+    admin_email = 'status-admin@example.com'
+    doctor_email = 'status-doctor@example.com'
+    _create_admin(email=admin_email)
+    _create_doctor(email=doctor_email)
+    admin_token = _login(record_client, admin_email, TEST_DOCTOR_PASSWORD)
+    doctor_token = _login(record_client, doctor_email, TEST_DOCTOR_PASSWORD)
+    admin_user = _get_user_by_email(admin_email)
+    doctor_user = _get_user_by_email(doctor_email)
+
+    forbidden_response = record_client.patch(
+        f'/api/admin/users/{admin_user.id}/status',
+        headers={'Authorization': f'Bearer {doctor_token}'},
+        json={'status': 'blocked'},
+    )
+    self_block_response = record_client.patch(
+        f'/api/admin/users/{admin_user.id}/status',
+        headers={'Authorization': f'Bearer {admin_token}'},
+        json={'status': 'blocked'},
+    )
+    block_response = record_client.patch(
+        f'/api/admin/users/{doctor_user.id}/status',
+        headers={'Authorization': f'Bearer {admin_token}'},
+        json={'status': 'blocked'},
+    )
+    repeated_block_response = record_client.patch(
+        f'/api/admin/users/{doctor_user.id}/status',
+        headers={'Authorization': f'Bearer {admin_token}'},
+        json={'status': 'blocked'},
+    )
+
+    assert forbidden_response.status_code == 403
+    assert self_block_response.status_code == 409
+    assert block_response.status_code == 200
+    assert block_response.json()['status'] == 'blocked'
+    assert repeated_block_response.status_code == 200
+    assert record_client.get(
+        '/api/auth/me',
+        headers={'Authorization': f'Bearer {doctor_token}'},
+    ).status_code == 401
+    assert record_client.post(
+        '/api/auth/login',
+        json={'email': doctor_email, 'password': TEST_DOCTOR_PASSWORD},
+    ).status_code == 401
+
+    unblock_response = record_client.patch(
+        f'/api/admin/users/{doctor_user.id}/status',
+        headers={'Authorization': f'Bearer {admin_token}'},
+        json={'status': 'active'},
+    )
+
+    assert unblock_response.status_code == 200
+    assert unblock_response.json()['status'] == 'active'
+    assert record_client.post(
+        '/api/auth/login',
+        json={'email': doctor_email, 'password': TEST_DOCTOR_PASSWORD},
+    ).status_code == 200
+    with get_session_factory()() as session:
+        status_events = session.scalars(
+            select(AuditEventRow).where(
+                AuditEventRow.event_type == 'user_status_changed',
+                AuditEventRow.entity_id == doctor_user.id,
+            ),
+        ).all()
+    assert [event.metadata_json['status'] for event in status_events] == ['blocked', 'active']
+
+
+@pytest.mark.critical
 def test_admin_can_list_audit_events_and_doctor_cannot(record_client: TestClient) -> None:
     _create_doctor(email='audit-doctor@example.com')
     _create_admin(email='audit-admin@example.com')

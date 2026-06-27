@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -9,6 +11,13 @@ from sqlalchemy.orm import Session
 from app.application.use_cases.audit_events.list_audit_events import (
     AuditEventAccessDeniedError,
     ListAuditEventsUseCase,
+)
+from app.application.use_cases.auth.change_user_status.use_case import (
+    ChangeUserStatusAccessDeniedError,
+    ChangeUserStatusNotFoundError,
+    ChangeUserStatusSelfBlockError,
+    ChangeUserStatusUseCase,
+    ChangeUserStatusValidationError,
 )
 from app.application.use_cases.auth.common.dtos import AuthenticatedUserDTO
 from app.application.use_cases.auth.create_staff_user.use_case import (
@@ -24,12 +33,13 @@ from app.infrastructure.adapters.security.pbkdf2_password_hasher import Pbkdf2Pa
 from app.presentation.rest.public.v1.admin.schemas import (
     AdminUserResponseSchema,
     AuditEventResponseSchema,
+    ChangeUserStatusRequestSchema,
     CreateStaffUserRequestSchema,
 )
 from app.presentation.rest.public.v1.auth.dependencies import db_session_dependency
 from app.presentation.rest.public.v1.auth.schemas import AuthUserResponseSchema
 from app.presentation.rest.public.v1.records.dependencies import current_authenticated_user_dependency
-from app.presentation.webserver.http_errors import raise_email_already_exists, raise_forbidden
+from app.presentation.webserver.http_errors import raise_email_already_exists, raise_forbidden, raise_not_found
 
 router = APIRouter(prefix='/admin', tags=['admin'])
 
@@ -65,6 +75,18 @@ def get_list_users_use_case(session: Session = db_session_dependency) -> ListUse
 
 
 list_users_use_case_dependency = Depends(get_list_users_use_case)
+
+
+def get_change_user_status_use_case(session: Session = db_session_dependency) -> ChangeUserStatusUseCase:
+    """Создать use case изменения статуса пользователя.
+
+    Returns:
+        Настроенный use case изменения статуса пользователя.
+    """
+    return ChangeUserStatusUseCase(repository=SqlAlchemyAuthRepositoryAdapter(session=session))
+
+
+change_user_status_use_case_dependency = Depends(get_change_user_status_use_case)
 
 
 def get_list_audit_events_use_case(session: Session = db_session_dependency) -> ListAuditEventsUseCase:
@@ -153,6 +175,62 @@ def create_staff_user(
         if 'users.email' in error_text or 'unique constraint failed: users.email' in error_text:
             raise_email_already_exists()
         raise
+    except Exception:
+        session.rollback()
+        raise
+
+
+@router.patch('/users/{user_id}/status', response_model=AdminUserResponseSchema)
+def change_user_status(
+    user_id: UUID,
+    payload: ChangeUserStatusRequestSchema,
+    current_user: AuthenticatedUserDTO = current_authenticated_user_dependency,
+    use_case: ChangeUserStatusUseCase = change_user_status_use_case_dependency,
+    session: Session = db_session_dependency,
+) -> AdminUserResponseSchema:
+    """Заблокировать или разблокировать учетную запись пользователя.
+
+    Returns:
+        Пользователь с актуальным статусом.
+
+    Raises:
+        HTTPException: Если действие запрещено или пользователь не найден.
+    """
+    try:
+        result = use_case.execute(
+            actor_user_id=current_user.id,
+            actor_role=current_user.role,
+            target_user_id=user_id,
+            target_status=payload.status,
+        )
+        if result.changed:
+            AuditEventRepositoryAdapter(session).record(
+                actor_user_id=current_user.id,
+                event_type='user_status_changed',
+                entity_type='user',
+                entity_id=user_id,
+                metadata_json={
+                    'previous_status': result.previous_status,
+                    'status': result.user.status,
+                },
+            )
+        session.commit()
+        return AdminUserResponseSchema.model_validate(result.user, from_attributes=True)
+    except ChangeUserStatusAccessDeniedError:
+        session.rollback()
+        raise_forbidden('Only admin can change user status')
+    except ChangeUserStatusSelfBlockError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail='Admin cannot block own account',
+        ) from exc
+    except ChangeUserStatusNotFoundError:
+        session.rollback()
+        raise_not_found('User not found')
+    except ChangeUserStatusValidationError as exc:
+        session.rollback()
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail='Invalid user status') from exc
     except Exception:
         session.rollback()
         raise

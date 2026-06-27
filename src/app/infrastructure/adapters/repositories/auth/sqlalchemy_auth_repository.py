@@ -172,6 +172,23 @@ class SqlAlchemyAuthRepositoryAdapter(AuthRepositoryPort):
         ).all()
         return tuple(self._to_domain(row) for row in rows)
 
+    def set_status(self, *, user_id: UUID, status: str) -> AuthUserDTO | None:
+        """Изменить статус пользователя.
+
+        Args:
+            user_id: Идентификатор пользователя.
+            status: Новый статус учетной записи.
+
+        Returns:
+            Обновленный пользователь или `None`, если пользователь не найден.
+        """
+        user_row = self._session.get(UserRow, user_id)
+        if user_row is None:
+            return None
+        user_row.status = UserStatus(status)
+        self._session.flush()
+        return self._to_domain(user_row)
+
     @staticmethod
     def _to_domain(user_row: UserRow) -> AuthUserDTO:
         """Преобразовать ORM-модель пользователя в application-снимок.

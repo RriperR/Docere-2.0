@@ -1,11 +1,23 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Users, Shield, FileText, AlertCircle, Search, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
+import {
+  Users,
+  Shield,
+  FileText,
+  AlertCircle,
+  Search,
+  Filter,
+  ChevronLeft,
+  ChevronRight,
+  LockKeyhole,
+  UnlockKeyhole,
+} from 'lucide-react';
 import { Card } from '../../components/common/Card';
 import { Input } from '../../components/common/Input';
 import { Button } from '../../components/common/Button';
 import { Tabs } from '../../components/common/Tabs';
 import api from '../../api/api';
+import { useAuthStore } from '../../stores/authStore';
 
 interface User {
   id: string;
@@ -53,9 +65,12 @@ const AdminPanelPage = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [isUsersLoading, setIsUsersLoading] = useState(false);
   const [usersError, setUsersError] = useState<string | null>(null);
+  const [statusActionError, setStatusActionError] = useState<string | null>(null);
+  const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [isAuditLoading, setIsAuditLoading] = useState(false);
   const [auditError, setAuditError] = useState<string | null>(null);
+  const currentUserId = useAuthStore((state) => state.user?.id ?? null);
 
   const pageSize = 10;
 
@@ -214,6 +229,33 @@ const AdminPanelPage = () => {
       .join('')
       .toUpperCase();
 
+  const changeUserStatus = async (user: User) => {
+    const nextStatus = user.status === 'active' ? 'blocked' : 'active';
+    if (
+      nextStatus === 'blocked' &&
+      !window.confirm(`Заблокировать пользователя ${user.fio}? Он сразу потеряет доступ к системе.`)
+    ) {
+      return;
+    }
+
+    setUpdatingUserId(user.id);
+    setStatusActionError(null);
+    try {
+      const { data } = await api.patch<User>(`/admin/users/${user.id}/status`, { status: nextStatus });
+      setUsers((currentUsers) =>
+        currentUsers.map((currentUser) => (currentUser.id === data.id ? data : currentUser)),
+      );
+    } catch {
+      setStatusActionError(
+        nextStatus === 'blocked'
+          ? 'Не удалось заблокировать пользователя'
+          : 'Не удалось восстановить доступ пользователя',
+      );
+    } finally {
+      setUpdatingUserId(null);
+    }
+  };
+
   const renderUsersList = () => {
     return (
       <div>
@@ -267,6 +309,12 @@ const AdminPanelPage = () => {
           </div>
         )}
 
+        {statusActionError && (
+          <div className="mb-4 rounded-md border border-error-200 bg-error-50 p-4 text-sm text-error-700">
+            {statusActionError}
+          </div>
+        )}
+
         {!isUsersLoading && !usersError && filteredUsers.length === 0 && (
           <div className="rounded-md border border-gray-200 p-4 text-sm text-gray-500">
             Пользователей не найдено
@@ -288,6 +336,9 @@ const AdminPanelPage = () => {
                 </th>
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Created
+                </th>
+                <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Действия
                 </th>
               </tr>
             </thead>
@@ -322,6 +373,25 @@ const AdminPanelPage = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {formatDateTime(user.created_at)}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-right">
+                    <Button
+                      variant={user.status === 'active' ? 'danger' : 'outline'}
+                      size="sm"
+                      icon={
+                        user.status === 'active' ? (
+                          <LockKeyhole className="h-4 w-4" />
+                        ) : (
+                          <UnlockKeyhole className="h-4 w-4" />
+                        )
+                      }
+                      isLoading={updatingUserId === user.id}
+                      disabled={updatingUserId !== null || user.id === currentUserId}
+                      title={user.id === currentUserId ? 'Нельзя заблокировать собственную учетную запись' : undefined}
+                      onClick={() => void changeUserStatus(user)}
+                    >
+                      {user.status === 'active' ? 'Заблокировать' : 'Разблокировать'}
+                    </Button>
                   </td>
                 </tr>
               ))}

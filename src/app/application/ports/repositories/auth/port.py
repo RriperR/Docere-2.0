@@ -107,3 +107,15 @@ class AuthRepositoryPort:
             Пользователи, отсортированные по дате создания.
         """
         raise NotImplementedError
+
+    def set_status(self, *, user_id: UUID, status: str) -> AuthUserDTO | None:
+        """Изменить статус пользователя.
+
+        Args:
+            user_id: Идентификатор пользователя.
+            status: Новый статус учетной записи.
+
+        Returns:
+            Обновленный пользователь или `None`, если пользователь не найден.
+        """
+        raise NotImplementedError

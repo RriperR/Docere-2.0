@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from enum import StrEnum
 from uuid import UUID
 
@@ -34,3 +34,18 @@ class AuthenticatedUserDTO:
     date_of_birth: date | None
     role: str
     status: str
+
+
+@dataclass(frozen=True, slots=True)
+class AdminUserDTO:
+    """Публичная административная проекция пользователя."""
+
+    id: UUID
+    fio: str
+    email: str
+    phone: str
+    date_of_birth: date | None
+    role: str
+    status: str
+    created_at: datetime
+    updated_at: datetime

@@ -38,6 +38,12 @@ class CreateStaffUserRequestSchema(BaseModel):
         return normalized
 
 
+class ChangeUserStatusRequestSchema(BaseModel):
+    """Тело запроса блокировки или разблокировки пользователя."""
+
+    status: Literal['active', 'blocked']
+
+
 class AuditEventResponseSchema(BaseModel):
     """Событие audit log для административного UI."""
 

@@ -2,30 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import date, datetime
-from uuid import UUID
-
 from app.application.ports.repositories.auth.port import AuthRepositoryPort
+from app.application.use_cases.auth.common.dtos import AdminUserDTO
 
 
 class ListUsersAccessDeniedError(Exception):
     """Текущий пользователь не может просматривать список пользователей."""
-
-
-@dataclass(frozen=True, slots=True)
-class AdminUserDTO:
-    """Публичная административная проекция пользователя."""
-
-    id: UUID
-    fio: str
-    email: str
-    phone: str
-    date_of_birth: date | None
-    role: str
-    status: str
-    created_at: datetime
-    updated_at: datetime
 
 
 class ListUsersUseCase:
