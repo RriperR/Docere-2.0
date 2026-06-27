@@ -3,6 +3,8 @@
 	test-with-coverage project-check migrate-up migrate-down docker-migrate-up \
 	dev-backend dev-frontend dev
 
+PYTEST_TMPDIR ?= /tmp
+
 install:
 	uv sync
 
@@ -34,13 +36,13 @@ type-check:
 	uv run mypy --config-file=./mypy.ini src
 
 test:
-	uv run pytest -p no:cacheprovider $(ARGS)
+	TMPDIR=$(PYTEST_TMPDIR) uv run pytest -p no:cacheprovider $(ARGS)
 
 test-critical:
-	uv run pytest -m critical -q -p no:cacheprovider $(ARGS)
+	TMPDIR=$(PYTEST_TMPDIR) uv run pytest -m critical -q -p no:cacheprovider $(ARGS)
 
 test-with-coverage:
-	uv run pytest --cov=src --cov-report=term-missing $(ARGS)
+	TMPDIR=$(PYTEST_TMPDIR) uv run pytest --cov=src --cov-report=term-missing $(ARGS)
 
 project-check:
 	uv run pre-commit run --all-files
