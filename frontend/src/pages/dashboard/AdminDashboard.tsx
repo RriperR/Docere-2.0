@@ -63,6 +63,8 @@ const categoryLabel: Record<AuditCategory, string> = {
 const eventLabels: Record<string, string> = {
   login: 'Вход в систему',
   user_status_changed: 'Статус пользователя изменён',
+  profile_updated: 'Профиль пользователя изменён',
+  import_duplicate_override: 'Разрешён импорт возможного дубля',
   share_request_created: 'Создан запрос доступа',
   share_request_accepted: 'Доступ принят',
   share_request_declined: 'Запрос доступа отклонён',

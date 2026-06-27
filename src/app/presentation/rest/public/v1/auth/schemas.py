@@ -76,6 +76,15 @@ class ChangePasswordRequestSchema(BaseModel):
     new_password: str = Field(min_length=8, max_length=128)
 
 
+class UpdateProfileRequestSchema(BaseModel):
+    """Новые редактируемые поля профиля текущего пользователя."""
+
+    fio: str = Field(min_length=1, max_length=255)
+    phone: str = Field(max_length=32)
+    date_of_birth: date | None = None
+    specialty: str | None = Field(default=None, max_length=255)
+
+
 class AuthTokenResponseSchema(BaseModel):
     """Схема ответа с парой access/refresh токенов."""
 
@@ -96,3 +105,4 @@ class AuthUserResponseSchema(BaseModel):
     date_of_birth: date | None
     role: str
     status: str
+    specialty: str | None = None

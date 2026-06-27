@@ -16,6 +16,7 @@ interface BackendAuthUser {
   date_of_birth: string | null;
   role: UserRole;
   status: string;
+  specialty: string | null;
 }
 
 interface UserData {
@@ -32,6 +33,7 @@ interface UserData {
   birthday: string | null;
   photo: string | null;
   username: string;
+  specialty: string | null;
 }
 
 interface AuthState {
@@ -61,6 +63,7 @@ interface AuthState {
     middle_name?: string | null;
     phone?: string | null;
     birthday?: string | null;
+    specialty?: string | null;
     photo?: string | null;
   }) => Promise<void>;
 }
@@ -107,6 +110,7 @@ const toUserData = (payload: BackendAuthUser): UserData => {
     birthday: payload.date_of_birth,
     photo: null,
     username: payload.email,
+    specialty: payload.specialty,
   };
 };
 
@@ -285,9 +289,30 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     });
   },
 
-  updateProfile: async () => {
-    const message = 'Profile update endpoint is not implemented on backend yet';
-    set({ error: message, isLoading: false });
-    throw new Error(message);
+  updateProfile: async (updates) => {
+    const current = get().user;
+    if (!current) {
+      throw new Error('Пользователь не найден.');
+    }
+    set({ isLoading: true, error: null });
+    try {
+      const { data } = await api.patch<BackendAuthUser>('/auth/me', {
+        fio: toFio(
+          updates.first_name ?? current.first_name,
+          updates.last_name ?? current.last_name,
+          updates.middle_name === undefined ? current.middle_name : updates.middle_name,
+        ),
+        phone: updates.phone === undefined ? current.phone : updates.phone ?? '',
+        date_of_birth: updates.birthday === undefined ? current.birthday : updates.birthday,
+        specialty: updates.specialty === undefined ? current.specialty : updates.specialty,
+      });
+      const user = toUserData(data);
+      localStorage.setItem('authUserData', JSON.stringify(user));
+      set({ user, isLoading: false });
+    } catch (err: unknown) {
+      const message = normalizeApiErrorMessage(err, 'Не удалось обновить профиль.');
+      set({ error: message, isLoading: false });
+      throw new Error(message);
+    }
   },
 }));

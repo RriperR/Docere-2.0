@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -340,3 +341,43 @@ def test_authenticated_user_can_change_password(auth_client: TestClient) -> None
         )
     assert audit_event is not None
     assert audit_event.metadata_json == {}
+
+
+@pytest.mark.critical
+def test_patient_profile_update_keeps_confirmed_passport_in_sync(auth_client: TestClient) -> None:
+    payload = _build_registration_payload()
+    assert auth_client.post('/api/auth/register', json=payload).status_code == 201
+    login_response = auth_client.post(
+        '/api/auth/login',
+        json={'email': payload['email'], 'password': payload['password']},
+    )
+    token = login_response.json()['access_token']
+
+    response = auth_client.patch(
+        '/api/auth/me',
+        headers={'Authorization': f'Bearer {token}'},
+        json={
+            'fio': 'Петров Пётр Петрович',
+            'phone': '+79998887766',
+            'date_of_birth': '1991-02-03',
+            'specialty': 'Не должна сохраниться',
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()['specialty'] is None
+    with get_session_factory()() as session:
+        user = session.scalar(select(UserRow).where(UserRow.email == 'patient@example.com'))
+        assert user is not None
+        passport = session.scalar(
+            select(PatientPassportRow).where(PatientPassportRow.patient_user_id == user.id),
+        )
+        audit_event = session.scalar(
+            select(AuditEventRow).where(AuditEventRow.event_type == 'profile_updated'),
+        )
+    assert passport is not None
+    assert passport.fio == 'Петров Пётр Петрович'
+    assert passport.phone == '+79998887766'
+    assert passport.date_of_birth == date(1991, 2, 3)
+    assert audit_event is not None
+    assert 'specialty' not in audit_event.metadata_json['changes']

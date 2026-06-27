@@ -11,10 +11,12 @@ from app.application.use_cases.auth.get_authenticated_user.use_case import GetAu
 from app.application.use_cases.auth.login_user.use_case import LoginUserUseCase
 from app.application.use_cases.auth.refresh_access_token.use_case import RefreshAccessTokenUseCase
 from app.application.use_cases.auth.register_user.use_case import RegisterUserUseCase
+from app.application.use_cases.auth.update_profile.use_case import UpdateProfileUseCase
 from app.infrastructure.adapters.repositories.auth.sqlalchemy_auth_repository import SqlAlchemyAuthRepositoryAdapter
 from app.infrastructure.adapters.repositories.patient_passports.sqlalchemy_patient_passport_repository import (
     SqlAlchemyPatientPassportRepositoryAdapter,
 )
+from app.infrastructure.adapters.repositories.user_profiles import SqlAlchemyUserProfileRepositoryAdapter
 from app.infrastructure.adapters.security.jwt_token_service import JwtTokenServiceAdapter
 from app.infrastructure.adapters.security.pbkdf2_password_hasher import Pbkdf2PasswordHasherAdapter
 from app.infrastructure.config.settings import get_settings
@@ -108,6 +110,7 @@ def get_authenticated_user_use_case(
     """
     return GetAuthenticatedUserUseCase(
         repository=SqlAlchemyAuthRepositoryAdapter(session=session),
+        profile_repository=SqlAlchemyUserProfileRepositoryAdapter(session=session),
         token_service=_build_token_service(),
     )
 
@@ -146,9 +149,26 @@ def get_change_password_use_case(
     )
 
 
+def get_update_profile_use_case(
+    session: Session = db_session_dependency,
+) -> UpdateProfileUseCase:
+    """Создать use case обновления текущего профиля.
+
+    Args:
+        session: Активная сессия БД.
+
+    Returns:
+        Настроенный use case профиля.
+    """
+    return UpdateProfileUseCase(
+        repository=SqlAlchemyUserProfileRepositoryAdapter(session=session),
+    )
+
+
 register_user_dependency = Depends(get_register_user)
 login_user_dependency = Depends(get_login_user)
 refresh_access_token_dependency = Depends(get_refresh_access_token_use_case)
 authenticated_user_use_case_dependency = Depends(get_authenticated_user_use_case)
 change_password_use_case_dependency = Depends(get_change_password_use_case)
+update_profile_use_case_dependency = Depends(get_update_profile_use_case)
 bearer_token_extraction_dependency = Depends(extract_bearer_token)

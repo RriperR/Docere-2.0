@@ -34,6 +34,7 @@ class AuthenticatedUserDTO:
     date_of_birth: date | None
     role: str
     status: str
+    specialty: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

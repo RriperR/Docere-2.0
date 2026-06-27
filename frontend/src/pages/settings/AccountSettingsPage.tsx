@@ -8,6 +8,7 @@ import {
   Phone,
   Save,
   Shield,
+  Stethoscope,
   User,
 } from 'lucide-react'
 import { DateInput } from '../../components/common/DateInput'
@@ -18,9 +19,11 @@ import { useAuthStore } from '../../stores/authStore'
 interface FormData {
   firstName: string
   lastName: string
+  middleName: string
   email: string
   phone: string
   dateOfBirth: string
+  specialty: string
   currentPassword: string
   newPassword: string
   confirmPassword: string
@@ -47,9 +50,11 @@ const AccountSettingsPage: React.FC = () => {
   const [formData, setFormData] = useState<FormData>({
     firstName: '',
     lastName: '',
+    middleName: '',
     email: '',
     phone: '',
     dateOfBirth: '',
+    specialty: '',
     currentPassword: '',
     newPassword: '',
     confirmPassword: '',
@@ -60,9 +65,11 @@ const AccountSettingsPage: React.FC = () => {
       setFormData({
         firstName: user.first_name,
         lastName: user.last_name,
+        middleName: user.middle_name || '',
         email: user.email,
         phone: user.phone || '',
         dateOfBirth: user.birthday || '',
+        specialty: user.specialty || '',
         currentPassword: '',
         newPassword: '',
         confirmPassword: '',
@@ -80,8 +87,10 @@ const AccountSettingsPage: React.FC = () => {
       await updateProfile({
         first_name: formData.firstName,
         last_name: formData.lastName,
+        middle_name: formData.middleName || null,
         phone: formData.phone || null,
         birthday: formData.dateOfBirth || null,
+        specialty: user.role === 'doctor' ? formData.specialty : null,
       })
       setIsEditing(false)
       setSaved(true)
@@ -189,6 +198,7 @@ const AccountSettingsPage: React.FC = () => {
             {[
               { label: 'Телефон', value: user.phone || 'Не указан' },
               { label: 'Дата рождения', value: user.birthday || 'Не указана' },
+              ...(user.role === 'doctor' ? [{ label: 'Специализация', value: user.specialty || 'Не указана' }] : []),
             ].map((item) => (
               <div key={item.label} className="flex justify-between text-sm">
                 <span className="text-gray-400">{item.label}</span>
@@ -244,6 +254,14 @@ const AccountSettingsPage: React.FC = () => {
                 icon={<User size={15} />}
               />
               <Input
+                label="Отчество"
+                name="middleName"
+                value={formData.middleName}
+                onChange={handleInputChange}
+                disabled={!isEditing}
+                icon={<User size={15} />}
+              />
+              <Input
                 label="Email"
                 name="email"
                 type="email"
@@ -268,11 +286,21 @@ const AccountSettingsPage: React.FC = () => {
                 icon={<Calendar size={15} />}
               />
               {user.role === 'doctor' && (
+                <Input
+                  label="Специализация"
+                  name="specialty"
+                  value={formData.specialty}
+                  onChange={handleInputChange}
+                  disabled={!isEditing}
+                  icon={<Stethoscope size={15} />}
+                />
+              )}
+              {user.role === 'doctor' && (
                 <div className="flex items-center gap-2 rounded-xl bg-accent-50 px-4 py-3">
                   <Shield className="h-5 w-5 text-accent-600" />
                   <div>
                     <p className="text-sm font-semibold text-accent-800">Верифицированный врач</p>
-                    <p className="text-xs text-accent-600">Роль подтверждена администратором</p>
+                    <p className="text-xs text-accent-600">Изменения профиля сохраняются в аудите</p>
                   </div>
                 </div>
               )}

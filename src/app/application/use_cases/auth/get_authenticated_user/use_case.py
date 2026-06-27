@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.application.ports.repositories.auth.port import AuthRepositoryPort
+from app.application.ports.repositories.user_profiles.port import UserProfileRepositoryPort
 from app.application.ports.security.token_service import TokenServicePort
 from app.application.use_cases.auth.common.dtos import AuthenticatedUserDTO
 from app.application.use_cases.auth.errors import InvalidTokenError, UserNotFoundError
@@ -14,15 +15,18 @@ class GetAuthenticatedUserUseCase:
     def __init__(
         self,
         repository: AuthRepositoryPort,
+        profile_repository: UserProfileRepositoryPort,
         token_service: TokenServicePort,
     ) -> None:
         """Инициализировать use case.
 
         Args:
             repository: Репозиторий пользователей.
+            profile_repository: Репозиторий полного профиля.
             token_service: Сервис проверки токенов.
         """
         self._repository = repository
+        self._profile_repository = profile_repository
         self._token_service = token_service
 
     def execute(self, *, token: str) -> AuthenticatedUserDTO:
@@ -49,12 +53,16 @@ class GetAuthenticatedUserUseCase:
         if user.status != 'active':
             raise InvalidTokenError
 
+        profile = self._profile_repository.get_profile(user_id=user.id)
+        if profile is None:
+            raise UserNotFoundError
         return AuthenticatedUserDTO(
-            id=user.id,
-            fio=user.fio,
-            email=user.email,
-            phone=user.phone,
-            date_of_birth=user.date_of_birth,
-            role=user.role,
-            status=user.status,
+            id=profile.id,
+            fio=profile.fio,
+            email=profile.email,
+            phone=profile.phone,
+            date_of_birth=profile.date_of_birth,
+            role=profile.role,
+            status=profile.status,
+            specialty=profile.specialty,
         )

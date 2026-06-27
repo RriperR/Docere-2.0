@@ -2020,6 +2020,63 @@ def test_patient_becomes_doctor_after_two_same_specialty_approvals(record_client
 
 
 @pytest.mark.critical
+def test_doctor_can_update_verified_identity_with_admin_audit(record_client: TestClient) -> None:
+    doctor_email = 'doctor-profile@example.com'
+    admin_email = 'doctor-profile-admin@example.com'
+    _create_doctor_with_specialty(doctor_email, 'Кардиология')
+    _create_admin(email=admin_email)
+    doctor_token = _login(record_client, doctor_email, TEST_DOCTOR_PASSWORD)
+    admin_token = _login(record_client, admin_email, TEST_DOCTOR_PASSWORD)
+
+    response = record_client.patch(
+        '/api/auth/me',
+        headers={'Authorization': f'Bearer {doctor_token}'},
+        json={
+            'fio': 'Петров Пётр Петрович',
+            'phone': '+79995554433',
+            'date_of_birth': '1985-06-07',
+            'specialty': 'Неврология',
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()['fio'] == 'Петров Пётр Петрович'
+    assert response.json()['specialty'] == 'Неврология'
+    me_response = record_client.get(
+        '/api/auth/me',
+        headers={'Authorization': f'Bearer {doctor_token}'},
+    )
+    assert me_response.json()['specialty'] == 'Неврология'
+
+    audit_response = record_client.get(
+        '/api/admin/audit-events',
+        headers={'Authorization': f'Bearer {admin_token}'},
+    )
+    assert audit_response.status_code == 200
+    profile_event = next(event for event in audit_response.json() if event['event_type'] == 'profile_updated')
+    assert profile_event['actor_email'] == doctor_email
+    assert profile_event['metadata_json']['changes']['fio'] == {
+        'before': 'Dr. House',
+        'after': 'Петров Пётр Петрович',
+    }
+    assert profile_event['metadata_json']['changes']['specialty'] == {
+        'before': 'Кардиология',
+        'after': 'Неврология',
+    }
+
+    doctor = _get_user_by_email(doctor_email)
+    with get_session_factory()() as session:
+        practitioner = session.scalar(
+            select(PractitionerPassportRow).where(PractitionerPassportRow.user_id == doctor.id),
+        )
+    assert doctor.fio == 'Петров Пётр Петрович'
+    assert doctor.phone == '+79995554433'
+    assert practitioner is not None
+    assert practitioner.full_name == 'Петров Пётр Петрович'
+    assert practitioner.specialty == 'Неврология'
+
+
+@pytest.mark.critical
 def test_selected_admin_can_approve_doctor_role_application_alone(record_client: TestClient) -> None:
     patient_email = 'role-admin-patient@example.com'
     admin_email = 'role-approver@example.com'

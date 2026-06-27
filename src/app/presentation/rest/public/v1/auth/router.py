@@ -23,6 +23,7 @@ from app.application.use_cases.auth.get_authenticated_user.use_case import GetAu
 from app.application.use_cases.auth.login_user.use_case import LoginUserUseCase
 from app.application.use_cases.auth.refresh_access_token.use_case import RefreshAccessTokenUseCase
 from app.application.use_cases.auth.register_user.use_case import RegisterUserUseCase
+from app.application.use_cases.auth.update_profile.use_case import ProfileValidationError, UpdateProfileUseCase
 from app.infrastructure.adapters.repositories.audit_events import AuditEventRepositoryAdapter
 from app.infrastructure.adapters.repositories.auth.sqlalchemy_auth_repository import SqlAlchemyAuthRepositoryAdapter
 from app.presentation.rest.public.v1.auth.dependencies import (
@@ -33,6 +34,7 @@ from app.presentation.rest.public.v1.auth.dependencies import (
     login_user_dependency,
     refresh_access_token_dependency,
     register_user_dependency,
+    update_profile_use_case_dependency,
 )
 from app.presentation.rest.public.v1.auth.schemas import (
     AuthTokenResponseSchema,
@@ -41,6 +43,7 @@ from app.presentation.rest.public.v1.auth.schemas import (
     LoginRequestSchema,
     RefreshTokenRequestSchema,
     RegisterUserRequestSchema,
+    UpdateProfileRequestSchema,
 )
 from app.presentation.rest.public.v1.records.dependencies import current_authenticated_user_dependency
 from app.presentation.webserver.http_errors import (
@@ -183,6 +186,50 @@ def get_authenticated_user(
     try:
         return use_case.execute(token=token)
     except (InvalidTokenError, UserNotFoundError):
+        raise_unauthorized('Invalid or expired token')
+
+
+@router.patch('/me', response_model=AuthUserResponseSchema)
+def update_profile(
+    payload: UpdateProfileRequestSchema,
+    current_user: AuthenticatedUserDTO = current_authenticated_user_dependency,
+    use_case: UpdateProfileUseCase = update_profile_use_case_dependency,
+    session: Session = db_session_dependency,
+) -> AuthenticatedUserDTO:
+    """Обновить личные данные и записать каждое фактическое изменение в аудит.
+
+    Returns:
+        Обновлённый профиль текущего пользователя.
+
+    Raises:
+        HTTPException: Если профиль не найден или новые данные невалидны.
+    """
+    try:
+        result = use_case.execute(
+            user_id=current_user.id,
+            fio=payload.fio,
+            phone=payload.phone,
+            date_of_birth=payload.date_of_birth,
+            specialty=payload.specialty,
+        )
+        if result.changes:
+            AuditEventRepositoryAdapter(session).record(
+                actor_user_id=current_user.id,
+                event_type='profile_updated',
+                entity_type='user',
+                entity_id=current_user.id,
+                metadata_json={'changes': result.changes},
+            )
+        session.commit()
+        return result.user
+    except ProfileValidationError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail='Invalid profile data',
+        ) from exc
+    except UserNotFoundError:
+        session.rollback()
         raise_unauthorized('Invalid or expired token')
 
 
