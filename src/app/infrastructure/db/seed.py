@@ -17,7 +17,11 @@ from app.domain.entities.medical_record import MedicalRecordStatus, MedicalRecor
 from app.domain.entities.patient_passport import PatientPassportStatus
 from app.domain.entities.practitioner_passport import PractitionerPassportStatus
 from app.infrastructure.db.models import (
+    AuditEventRow,
+    DoctorRoleApplicationRow,
+    DoctorRoleReviewRow,
     FileAttachmentRow,
+    ImportJobRow,
     MedicalRecordRow,
     PatientPassportRow,
     PractitionerPassportRow,
@@ -39,6 +43,10 @@ DEFAULT_DEMO_PASSWORD = 'DemoPass123'  # noqa: S105 — общий пароль 
 
 # Таблицы очищаются в порядке, обратном зависимостям внешних ключей.
 _TABLES_IN_DELETE_ORDER = (
+    AuditEventRow,
+    DoctorRoleReviewRow,
+    DoctorRoleApplicationRow,
+    ImportJobRow,
     UserRecordLinkRow,
     RecordShareRow,
     RecordShareRequestRow,
