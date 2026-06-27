@@ -7,6 +7,7 @@ import {
   Calendar,
   ChevronDown,
   ChevronUp,
+  Clock,
   Download,
   FileText,
   MessageSquare,
@@ -25,7 +26,12 @@ import { Button } from '../../components/common/Button'
 import { DateInput } from '../../components/common/DateInput'
 import { useAuthStore } from '../../stores/authStore'
 import { PatientRecordSummary, usePatientsStore } from '../../stores/patientsStore'
-import { CreateShareResult, ShareRecipient, useShareRequestsStore } from '../../stores/shareRequestsStore'
+import {
+  CreateShareResult,
+  ShareRecipient,
+  ShareRequest,
+  useShareRequestsStore,
+} from '../../stores/shareRequestsStore'
 import { attachmentSizeError } from '../../utils/files'
 
 type ApiError = {
@@ -80,6 +86,10 @@ const commentRoleLabel: Record<string, string> = {
   patient: 'Пациент',
 }
 
+function isShareRequestExpired(expiresAt: string | null): boolean {
+  return Boolean(expiresAt && new Date(expiresAt).getTime() <= Date.now())
+}
+
 const PatientDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>()
   const { user } = useAuthStore()
@@ -99,6 +109,10 @@ const PatientDetailsPage: React.FC = () => {
     clearActiveRecord,
   } = usePatientsStore()
   const createShareRequest = useShareRequestsStore((s) => s.createShareRequest)
+  const shareOutbox = useShareRequestsStore((s) => s.outbox)
+  const fetchShareOutbox = useShareRequestsStore((s) => s.fetchOutbox)
+  const cancelShareRequest = useShareRequestsStore((s) => s.cancelRequest)
+  const revokeShareRequest = useShareRequestsStore((s) => s.revokeRequest)
   const recipients = useShareRequestsStore((s) => s.recipients)
   const searchRecipients = useShareRequestsStore((s) => s.searchRecipients)
   const clearRecipients = useShareRequestsStore((s) => s.clearRecipients)
@@ -113,6 +127,8 @@ const PatientDetailsPage: React.FC = () => {
   const [shareResult, setShareResult] = useState<CreateShareResult | null>(null)
   const [shareError, setShareError] = useState<string | null>(null)
   const [shareSubmitting, setShareSubmitting] = useState(false)
+  const [shareAccessActionId, setShareAccessActionId] = useState<string | null>(null)
+  const [shareAccessError, setShareAccessError] = useState<string | null>(null)
   const [commentBody, setCommentBody] = useState('')
   const [commentError, setCommentError] = useState<string | null>(null)
   const [commentSubmitting, setCommentSubmitting] = useState(false)
@@ -129,11 +145,12 @@ const PatientDetailsPage: React.FC = () => {
     if (id) {
       void fetchPatientById(id)
       void fetchPatientRecords(id)
+      void fetchShareOutbox()
       clearActiveRecord()
       setSelectedRecordId(null)
       setSelectedShareRecordIds([])
     }
-  }, [id, fetchPatientById, fetchPatientRecords, clearActiveRecord])
+  }, [id, fetchPatientById, fetchPatientRecords, fetchShareOutbox, clearActiveRecord])
 
   useEffect(() => {
     if (selectedRecordId) void fetchRecordDetail(selectedRecordId)
@@ -192,6 +209,35 @@ const PatientDetailsPage: React.FC = () => {
 
   const unconfirmedRecordsCount = patientRecords.filter((record) => record.status === 'unconfirmed').length
   const recordsWithAttachmentsCount = patientRecords.filter((record) => record.attachmentsCount > 0).length
+  const currentPatientShareRequests = useMemo(() => shareOutbox.filter((request) => (
+    request.shares.some((share) => share.patient_passport_id === id) && (
+      request.status === 'pending' ||
+      (request.status === 'accepted' && !isShareRequestExpired(request.expires_at))
+    )
+  )), [id, shareOutbox])
+
+  const handleShareAccessAction = async (request: ShareRequest) => {
+    const patientSharesCount = request.shares.filter((share) => share.patient_passport_id === id).length
+    const otherSharesCount = request.shares.length - patientSharesCount
+    const isPending = request.status === 'pending'
+    const action = isPending ? 'Отменить запрос' : 'Отозвать доступ'
+    const scope = otherSharesCount > 0
+      ? ` Действие также затронет ещё ${otherSharesCount} запис${otherSharesCount === 1 ? 'ь' : 'ей'} других пациентов.`
+      : ''
+
+    if (!window.confirm(`${action} для ${request.to_user.fio || request.to_user.email}?${scope}`)) return
+
+    setShareAccessActionId(request.id)
+    setShareAccessError(null)
+    try {
+      if (isPending) await cancelShareRequest(request.id)
+      else await revokeShareRequest(request.id)
+    } catch (e: unknown) {
+      setShareAccessError(getErrorMessage(e, 'Не удалось изменить доступ'))
+    } finally {
+      setShareAccessActionId(null)
+    }
+  }
 
   const handleOpenRecord = (record: PatientRecordSummary) => {
     setSelectedRecordId((c) => (c === record.id ? null : record.id))
@@ -424,6 +470,89 @@ const PatientDetailsPage: React.FC = () => {
           </p>
         </div>
       </div>
+
+      <section aria-labelledby="patient-sharing-title">
+        <div className="mb-3 flex flex-col gap-2 px-1 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 id="patient-sharing-title" className="font-semibold text-gray-900">Выданные доступы</h2>
+            <p className="mt-0.5 text-xs text-gray-500">
+              Активные доступы и запросы, по которым получатель ещё не ответил.
+            </p>
+          </div>
+          <Link to="/share-requests" className="text-xs font-medium text-primary-700 hover:text-primary-800">
+            Вся история sharing
+          </Link>
+        </div>
+
+        {shareAccessError && (
+          <div className="mb-3 rounded-lg border border-error-200 bg-error-50 px-4 py-3 text-sm text-error-700">
+            {shareAccessError}
+          </div>
+        )}
+
+        {currentPatientShareRequests.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-gray-200 bg-white px-5 py-7 text-center">
+            <p className="text-sm font-medium text-gray-800">Активных доступов нет</p>
+            <p className="mt-1 text-xs text-gray-500">Выберите записи ниже, чтобы отправить их другому пользователю.</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100 overflow-hidden rounded-lg border border-gray-200 bg-white">
+            {currentPatientShareRequests.map((request) => {
+              const patientShares = request.shares.filter((share) => share.patient_passport_id === id)
+              const otherSharesCount = request.shares.length - patientShares.length
+              const pending = request.status === 'pending'
+
+              return (
+                <div key={request.id} className="flex flex-col gap-4 p-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-medium text-gray-900">{request.to_user.fio || request.to_user.email}</p>
+                      <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
+                        {request.to_user.role}
+                      </span>
+                      <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${
+                        pending
+                          ? 'border-warning-200 bg-warning-50 text-warning-700'
+                          : 'border-success-200 bg-success-50 text-success-700'
+                      }`}>
+                        {pending ? 'Ожидает ответа' : 'Доступ активен'}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-sm text-gray-500">{request.to_user.email}</p>
+                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+                      <span>{patientShares.length} запис{patientShares.length === 1 ? 'ь' : 'ей'} этого пациента</span>
+                      <span className="flex items-center gap-1">
+                        <Clock className="h-3.5 w-3.5" />
+                        {request.expires_at
+                          ? `до ${format(new Date(request.expires_at), 'dd.MM.yyyy HH:mm')}`
+                          : 'без ограничения срока'}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-sm text-gray-700">
+                      {patientShares.map((share) => share.title || 'Медицинская запись').join(', ')}
+                    </p>
+                    {otherSharesCount > 0 && (
+                      <p className="mt-2 text-xs text-warning-700">
+                        В этом же запросе ещё {otherSharesCount} запис{otherSharesCount === 1 ? 'ь' : 'ей'} других пациентов.
+                      </p>
+                    )}
+                  </div>
+                  <Button
+                    size="sm"
+                    variant={pending ? 'outline' : 'danger'}
+                    disabled={shareAccessActionId === request.id}
+                    onClick={() => void handleShareAccessAction(request)}
+                  >
+                    {shareAccessActionId === request.id
+                      ? 'Обработка…'
+                      : pending ? 'Отменить запрос' : 'Отозвать доступ'}
+                  </Button>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </section>
 
       {/* Records */}
       <div>
