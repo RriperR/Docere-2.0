@@ -34,5 +34,7 @@ class ImportJobRow(Base):
     archive_storage_key: Mapped[str | None] = mapped_column(String(length=512), nullable=True)
     size_bytes: Mapped[int | None] = mapped_column(nullable=True)
     report_json: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    review_decisions_json: Mapped[list[dict[str, object]] | None] = mapped_column(JSON, nullable=True)
+    review_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

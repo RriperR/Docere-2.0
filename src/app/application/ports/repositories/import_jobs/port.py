@@ -48,3 +48,7 @@ class ImportJobRepositoryPort:
     def mark_failed(self, *, job_id: UUID, report_json: dict[str, object]) -> ImportJob | None:
         """Перевести ImportJob в failed."""
         raise NotImplementedError
+
+    def save_review_draft(self, *, job_id: UUID, decisions: list[dict[str, object]]) -> ImportJob | None:
+        """Сохранить промежуточные решения review для ImportJob."""
+        raise NotImplementedError

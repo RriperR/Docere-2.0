@@ -30,5 +30,7 @@ class ImportJob:
     archive_storage_key: str | None
     size_bytes: int | None
     report_json: dict[str, object]
+    review_decisions: tuple[dict[str, object], ...]
+    review_updated_at: datetime | None
     created_at: datetime
     finished_at: datetime | None

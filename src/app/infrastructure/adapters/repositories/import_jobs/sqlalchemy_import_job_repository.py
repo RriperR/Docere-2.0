@@ -113,6 +113,8 @@ class SqlAlchemyImportJobRepositoryAdapter(ImportJobRepositoryPort):
             return None
         row.status = ImportJobStatus.COMPLETED
         row.report_json = report_json
+        row.review_decisions_json = None
+        row.review_updated_at = None
         row.finished_at = utc_now()
         self._session.flush()
         return self._to_domain(row)
@@ -128,6 +130,8 @@ class SqlAlchemyImportJobRepositoryAdapter(ImportJobRepositoryPort):
             return None
         row.status = ImportJobStatus.COMPLETED_WITH_WARNINGS
         row.report_json = report_json
+        row.review_decisions_json = None
+        row.review_updated_at = None
         row.finished_at = utc_now()
         self._session.flush()
         return self._to_domain(row)
@@ -147,6 +151,20 @@ class SqlAlchemyImportJobRepositoryAdapter(ImportJobRepositoryPort):
         self._session.flush()
         return self._to_domain(row)
 
+    def save_review_draft(self, *, job_id: UUID, decisions: list[dict[str, object]]) -> ImportJob | None:
+        """Сохранить промежуточные решения review для ImportJob.
+
+        Returns:
+            Обновленное задание или ``None``.
+        """
+        row = self._session.get(ImportJobRow, job_id)
+        if row is None:
+            return None
+        row.review_decisions_json = decisions or None
+        row.review_updated_at = utc_now() if decisions else None
+        self._session.flush()
+        return self._to_domain(row)
+
     @staticmethod
     def _to_domain(row: ImportJobRow) -> ImportJob:
         return ImportJob(
@@ -157,6 +175,8 @@ class SqlAlchemyImportJobRepositoryAdapter(ImportJobRepositoryPort):
             archive_storage_key=row.archive_storage_key,
             size_bytes=row.size_bytes,
             report_json=row.report_json,
+            review_decisions=tuple(row.review_decisions_json or ()),
+            review_updated_at=row.review_updated_at,
             created_at=row.created_at,
             finished_at=row.finished_at,
         )

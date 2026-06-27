@@ -1,7 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { AlertTriangle, ArrowLeft, Check, FileText, UserCheck } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Check, FileText, RotateCcw, UserCheck } from 'lucide-react'
 
 import { Button } from '../../components/common/Button'
 import { Card } from '../../components/common/Card'
@@ -52,7 +52,16 @@ const recordTypeLabels: Record<string, string> = {
 const UploadReviewPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>()
   const navigate = useNavigate()
-  const { currentJob, error, getJobById, resolveJob, isResolving } = useUploadStore()
+  const {
+    currentJob,
+    error,
+    getJobById,
+    resolveJob,
+    saveReviewDraft,
+    isResolving,
+    isSavingReviewDraft,
+    reviewDraftError,
+  } = useUploadStore()
   const {
     patients: accessiblePatients,
     fetchPatients,
@@ -63,6 +72,10 @@ const UploadReviewPage: React.FC = () => {
   const [formError, setFormError] = useState('')
   const [selectedGroupsByPatient, setSelectedGroupsByPatient] = useState<Record<string, string[]>>({})
   const [bulkPatchByPatient, setBulkPatchByPatient] = useState<Record<string, BulkPatchState>>({})
+  const [initializedJobId, setInitializedJobId] = useState<string | null>(null)
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null)
+  const lastSavedSnapshot = useRef('')
+  const lastAttemptedSnapshot = useRef('')
 
   useEffect(() => {
     if (jobId) void getJobById(jobId)
@@ -77,9 +90,46 @@ const UploadReviewPage: React.FC = () => {
   const warningViews = groupedWarnings(warnings)
 
   useEffect(() => {
-    if (decisions.length > 0 || patientCandidates.length === 0) return
-    setDecisions(patientCandidates.map(toInitialDecision))
-  }, [patientCandidates, decisions.length])
+    if (!jobId || currentJob?.id !== jobId || initializedJobId === jobId) return
+    const restored = restoreDecisions(patientCandidates, currentJob.review_decisions ?? [])
+    setDecisions(restored)
+    setLastSavedAt(currentJob.review_updated_at)
+    lastSavedSnapshot.current = JSON.stringify(restored.map(toPayload))
+    lastAttemptedSnapshot.current = lastSavedSnapshot.current
+    setInitializedJobId(jobId)
+  }, [currentJob, initializedJobId, jobId, patientCandidates])
+
+  useEffect(() => {
+    if (
+      !jobId ||
+      initializedJobId !== jobId ||
+      currentJob?.status !== 'needs_review' ||
+      isResolving ||
+      isSavingReviewDraft
+    ) return
+    const payload = decisions.map(toPayload)
+    const snapshot = JSON.stringify(payload)
+    if (snapshot === lastSavedSnapshot.current || snapshot === lastAttemptedSnapshot.current) return
+
+    const timer = window.setTimeout(() => {
+      lastAttemptedSnapshot.current = snapshot
+      void saveReviewDraft(jobId, payload)
+        .then((updatedAt) => {
+          lastSavedSnapshot.current = snapshot
+          setLastSavedAt(updatedAt)
+        })
+        .catch(() => undefined)
+    }, 700)
+    return () => window.clearTimeout(timer)
+  }, [
+    currentJob?.status,
+    decisions,
+    initializedJobId,
+    isResolving,
+    isSavingReviewDraft,
+    jobId,
+    saveReviewDraft,
+  ])
 
   if (!currentJob) {
     return (
@@ -124,12 +174,30 @@ const UploadReviewPage: React.FC = () => {
         </Link>
         <h1 className="text-2xl font-bold">Проверка импорта</h1>
         <p className="text-gray-500">Подтвердите, к каким карточкам пациентов добавить найденные записи.</p>
+        <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-gray-500">
+          <span>
+            {isSavingReviewDraft
+              ? 'Сохранение черновика…'
+              : lastSavedAt
+                ? `Черновик сохранён ${new Date(lastSavedAt).toLocaleString('ru-RU')}`
+                : 'Черновик без изменений'}
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            icon={<RotateCcw className="h-3.5 w-3.5" />}
+            onClick={resetReviewDraft}
+          >
+            Сбросить решения
+          </Button>
+        </div>
       </motion.div>
 
-      {(formError || error || patientsError) && (
+      {(formError || error || patientsError || reviewDraftError) && (
         <div className="flex items-start rounded-md border border-error-200 bg-error-50 p-3">
           <AlertTriangle className="mr-2 mt-0.5 h-5 w-5 flex-shrink-0 text-error-500" />
-          <p className="text-sm text-error-700">{formError || error || patientsError}</p>
+          <p className="text-sm text-error-700">{formError || error || patientsError || reviewDraftError}</p>
         </div>
       )}
 
@@ -622,6 +690,14 @@ const UploadReviewPage: React.FC = () => {
       }),
     )
   }
+
+  function resetReviewDraft() {
+    if (!window.confirm('Сбросить все решения по этому архиву?')) return
+    setDecisions(patientCandidates.map(toInitialDecision))
+    setSelectedGroupsByPatient({})
+    setBulkPatchByPatient({})
+    setFormError('')
+  }
 }
 
 function buildPatientOptions(accessiblePatients: Patient[], patientCandidate: ImportPatientDraft): PatientOption[] {
@@ -660,6 +736,37 @@ function toInitialDecision(patient: ImportPatientDraft): PatientDecisionState {
       duplicate_confirmed: false,
     })),
   }
+}
+
+function restoreDecisions(
+  patients: ImportPatientDraft[],
+  savedDecisions: ImportPatientDecision[],
+): PatientDecisionState[] {
+  const savedByCandidate = new Map(savedDecisions.map((decision) => [decision.candidate_id, decision]))
+  return patients.map((patient) => {
+    const initial = toInitialDecision(patient)
+    const saved = savedByCandidate.get(patient.candidate_id)
+    if (!saved) return initial
+    const savedGroups = new Map(saved.record_groups.map((group) => [group.group_id, group]))
+    return {
+      ...initial,
+      action: saved.action,
+      patient_passport_id: saved.patient_passport_id ?? '',
+      fio: saved.fio ?? initial.fio,
+      date_of_birth: saved.date_of_birth ?? '',
+      record_groups: initial.record_groups.map((group) => {
+        const savedGroup = savedGroups.get(group.group_id)
+        return savedGroup
+          ? {
+              ...group,
+              ...savedGroup,
+              event_date: savedGroup.event_date ?? null,
+              duplicate_confirmed: savedGroup.duplicate_confirmed ?? false,
+            }
+          : group
+      }),
+    }
+  })
 }
 
 function validateDecisions(decisions: PatientDecisionState[], patients: ImportPatientDraft[]): string {

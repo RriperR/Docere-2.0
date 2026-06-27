@@ -10,7 +10,7 @@ from app.application.ports.repositories.import_jobs.port import ImportJobReposit
 from app.application.ports.repositories.medical_records.port import MedicalRecordRepositoryPort
 from app.application.ports.repositories.patient_cards.port import PatientCardRepositoryPort
 from app.application.ports.storage.file_storage import FileStoragePort
-from app.application.use_cases.import_jobs.dtos import ImportJobDTO
+from app.application.use_cases.import_jobs.dtos import ImportJobDTO, ImportReviewDraftDTO
 from app.application.use_cases.import_jobs.errors import (
     ArchiveExtractionError,
     ImportJobDuplicateConfirmationRequiredError,
@@ -187,6 +187,54 @@ class ListImportJobsUseCase:
             limit=limit,
         )
         return tuple(_to_dto(job) for job in jobs)
+
+
+class SaveImportReviewDraftUseCase:
+    """Сохранить промежуточные решения пользователя по импорту."""
+
+    def __init__(self, repository: ImportJobRepositoryPort) -> None:
+        """Инициализировать use case.
+
+        Args:
+            repository: Репозиторий заданий импорта.
+        """
+        self._repository = repository
+
+    def execute(
+        self,
+        *,
+        job_id: UUID,
+        actor_user_id: UUID,
+        actor_role: str,
+        decisions: list[dict[str, object]],
+    ) -> ImportReviewDraftDTO:
+        """Проверить и сохранить черновик review.
+
+        Returns:
+            Сохраненные решения и время обновления.
+
+        Raises:
+            ImportJobNotFoundError: Если job не найден или недоступен.
+            ImportJobValidationError: Если job не ожидает review или решения не относятся к отчету.
+        """
+        job = self._repository.get_job(
+            job_id=job_id,
+            requested_by_user_id=actor_user_id,
+            requested_by_role=actor_role,
+        )
+        if job is None:
+            raise ImportJobNotFoundError
+        if job.status.value != 'needs_review':
+            raise ImportJobValidationError
+        _validate_review_draft(job.report_json, decisions)
+
+        updated = self._repository.save_review_draft(job_id=job_id, decisions=decisions)
+        if updated is None:
+            raise ImportJobNotFoundError
+        return ImportReviewDraftDTO(
+            decisions=updated.review_decisions,
+            updated_at=updated.review_updated_at,
+        )
 
 
 class ResolveImportJobUseCase:
@@ -403,6 +451,8 @@ def _to_dto(job: ImportJob, report_json: dict[str, object] | None = None) -> Imp
         archive_storage_key=job.archive_storage_key,
         size_bytes=job.size_bytes,
         report_json=report_json if report_json is not None else job.report_json,
+        review_decisions=job.review_decisions,
+        review_updated_at=job.review_updated_at,
         created_at=job.created_at,
         finished_at=job.finished_at,
     )
@@ -427,6 +477,41 @@ def _parse_date(value: str) -> date | None:
         return date.fromisoformat(value)
     except ValueError:
         return None
+
+
+def _validate_review_draft(report: dict[str, object], decisions: list[dict[str, object]]) -> None:
+    if len(decisions) > 500:
+        raise ImportJobValidationError
+    report_patients = {
+        str(patient.get('candidate_id')): patient
+        for patient in _as_dict_list(report.get('patients'))
+        if patient.get('candidate_id')
+    }
+    seen_candidates: set[str] = set()
+    for decision in decisions:
+        candidate_id = str(decision.get('candidate_id') or '')
+        if not candidate_id or candidate_id in seen_candidates or candidate_id not in report_patients:
+            raise ImportJobValidationError
+        seen_candidates.add(candidate_id)
+        if decision.get('action') not in {'existing', 'create', 'skip'}:
+            raise ImportJobValidationError
+
+        report_groups = {
+            str(group.get('group_id'))
+            for group in _as_dict_list(report_patients[candidate_id].get('record_groups'))
+            if group.get('group_id')
+        }
+        draft_groups = _as_dict_list(decision.get('record_groups'))
+        if len(draft_groups) > 2_000:
+            raise ImportJobValidationError
+        seen_groups: set[str] = set()
+        for group in draft_groups:
+            group_id = str(group.get('group_id') or '')
+            if not group_id or group_id in seen_groups or group_id not in report_groups:
+                raise ImportJobValidationError
+            seen_groups.add(group_id)
+            if group.get('action') not in {'create', 'skip'}:
+                raise ImportJobValidationError
 
 
 def _payload_json(

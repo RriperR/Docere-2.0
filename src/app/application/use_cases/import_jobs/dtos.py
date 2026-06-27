@@ -19,8 +19,18 @@ class ImportJobDTO:
     archive_storage_key: str | None
     size_bytes: int | None
     report_json: dict[str, object]
+    review_decisions: tuple[dict[str, object], ...]
+    review_updated_at: datetime | None
     created_at: datetime
     finished_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class ImportReviewDraftDTO:
+    """Сохранённые решения review для задания импорта."""
+
+    decisions: tuple[dict[str, object], ...]
+    updated_at: datetime | None
 
 
 class RecordType(StrEnum):

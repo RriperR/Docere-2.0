@@ -645,6 +645,86 @@ def test_import_job_upload_status_and_worker_completion(
 
 
 @pytest.mark.critical
+def test_import_review_draft_survives_reload_and_clears_after_resolve(
+    record_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage = _InMemoryStorage()
+    monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.get_file_storage', lambda: storage)
+    monkeypatch.setattr('app.infrastructure.adapters.queue.tasks.get_file_storage', lambda: storage)
+    monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.process_import_job.delay', lambda _: None)
+    _create_doctor(email='import-draft-owner@example.com')
+    owner_token = _login(record_client, 'import-draft-owner@example.com', TEST_DOCTOR_PASSWORD)
+    upload_response = record_client.post(
+        '/api/archives/imports',
+        headers={'Authorization': f'Bearer {owner_token}'},
+        files={'file': ('draft.zip', _build_patient_archive_bytes(), 'application/zip')},
+    )
+    assert upload_response.status_code == 201
+    job_id = upload_response.json()['id']
+    process_import_job(job_id)
+    review_response = record_client.get(
+        f'/api/archives/imports/{job_id}',
+        headers={'Authorization': f'Bearer {owner_token}'},
+    )
+    assert review_response.status_code == 200
+    patient = review_response.json()['report_json']['patients'][0]
+    decisions = [
+        {
+            'candidate_id': patient['candidate_id'],
+            'action': 'skip',
+            'fio': 'Исправленное имя',
+            'record_groups': [
+                {
+                    'group_id': patient['record_groups'][0]['group_id'],
+                    'action': 'skip',
+                    'record_type': 'other',
+                    'title': 'Черновик решения',
+                },
+            ],
+        },
+    ]
+
+    save_response = record_client.put(
+        f'/api/archives/imports/{job_id}/review-draft',
+        headers={'Authorization': f'Bearer {owner_token}'},
+        json={'decisions': decisions},
+    )
+    assert save_response.status_code == 200
+    saved_decisions = save_response.json()['decisions']
+    assert saved_decisions[0]['candidate_id'] == patient['candidate_id']
+    assert saved_decisions[0]['action'] == 'skip'
+    assert saved_decisions[0]['fio'] == 'Исправленное имя'
+    assert saved_decisions[0]['record_groups'][0]['title'] == 'Черновик решения'
+    assert save_response.json()['updated_at'] is not None
+
+    reloaded_response = record_client.get(
+        f'/api/archives/imports/{job_id}',
+        headers={'Authorization': f'Bearer {owner_token}'},
+    )
+    assert reloaded_response.status_code == 200
+    assert reloaded_response.json()['review_decisions'] == saved_decisions
+
+    _create_doctor(email='import-draft-other@example.com')
+    other_token = _login(record_client, 'import-draft-other@example.com', TEST_DOCTOR_PASSWORD)
+    forbidden_response = record_client.put(
+        f'/api/archives/imports/{job_id}/review-draft',
+        headers={'Authorization': f'Bearer {other_token}'},
+        json={'decisions': decisions},
+    )
+    assert forbidden_response.status_code == 404
+
+    resolve_response = record_client.post(
+        f'/api/archives/imports/{job_id}/resolve',
+        headers={'Authorization': f'Bearer {owner_token}'},
+        json={'decisions': decisions},
+    )
+    assert resolve_response.status_code == 200
+    assert resolve_response.json()['review_decisions'] == []
+    assert resolve_response.json()['review_updated_at'] is None
+
+
+@pytest.mark.critical
 def test_import_job_resolve_warns_when_report_file_disappeared(
     record_client: TestClient,
     monkeypatch: pytest.MonkeyPatch,

@@ -68,6 +68,8 @@ export interface UploadJob {
   archive_storage_key: string | null
   size_bytes: number | null
   report_json: ImportReport
+  review_decisions: ImportPatientDecision[]
+  review_updated_at: string | null
   created_at: string
   finished_at: string | null
   file?: {
@@ -102,6 +104,8 @@ interface UploadState {
   isUploading: boolean
   isLoadingJobs: boolean
   isResolving: boolean
+  isSavingReviewDraft: boolean
+  reviewDraftError: string | null
   progress: number
   error: string | null
 
@@ -110,6 +114,7 @@ interface UploadState {
   listJobs: () => Promise<void>
   getJobById: (id: string) => Promise<void>
   resolveJob: (id: string, patients: ImportPatientDecision[]) => Promise<void>
+  saveReviewDraft: (id: string, patients: ImportPatientDecision[]) => Promise<string | null>
   clearUpload: () => void
 }
 
@@ -139,6 +144,8 @@ export const useUploadStore = create<UploadState>((set, get) => ({
   isUploading: false,
   isLoadingJobs: false,
   isResolving: false,
+  isSavingReviewDraft: false,
+  reviewDraftError: null,
   progress: 0,
   error: null,
 
@@ -210,6 +217,31 @@ export const useUploadStore = create<UploadState>((set, get) => ({
     }
   },
 
+  saveReviewDraft: async (id, patients) => {
+    set({ isSavingReviewDraft: true, reviewDraftError: null })
+    try {
+      const { data } = await api.put<{
+        decisions: ImportPatientDecision[]
+        updated_at: string | null
+      }>(`/archives/imports/${id}/review-draft`, { decisions: patients })
+      set((state) => ({
+        currentJob: state.currentJob?.id === id
+          ? {
+              ...state.currentJob,
+              review_decisions: data.decisions,
+              review_updated_at: data.updated_at,
+            }
+          : state.currentJob,
+        isSavingReviewDraft: false,
+      }))
+      return data.updated_at
+    } catch (error: unknown) {
+      const message = normalizeError(error, 'Не удалось сохранить черновик проверки')
+      set({ reviewDraftError: message, isSavingReviewDraft: false })
+      throw error
+    }
+  },
+
   clearUpload: () =>
     set({
       currentUpload: null,
@@ -218,6 +250,8 @@ export const useUploadStore = create<UploadState>((set, get) => ({
       isUploading: false,
       isLoadingJobs: false,
       isResolving: false,
+      isSavingReviewDraft: false,
+      reviewDraftError: null,
       progress: 0,
       error: null,
     }),

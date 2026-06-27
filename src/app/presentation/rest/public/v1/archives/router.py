@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, status, UploadFile
 from sqlalchemy.orm import Session
 
 from app.application.use_cases.auth.common.dtos import AuthenticatedUserDTO
-from app.application.use_cases.import_jobs.dtos import ImportJobDTO
+from app.application.use_cases.import_jobs.dtos import ImportJobDTO, ImportReviewDraftDTO
 from app.application.use_cases.import_jobs.errors import (
     ImportJobDuplicateConfirmationRequiredError,
     ImportJobNotFoundError,
@@ -21,6 +21,7 @@ from app.application.use_cases.import_jobs.use_cases import (
     GetImportJobUseCase,
     ListImportJobsUseCase,
     ResolveImportJobUseCase,
+    SaveImportReviewDraftUseCase,
 )
 from app.infrastructure.adapters.import_jobs.factory import build_zip_archive_reader
 from app.infrastructure.adapters.queue.tasks import process_import_job
@@ -35,7 +36,12 @@ from app.infrastructure.adapters.repositories.patient_cards.sqlalchemy_patient_c
     SqlAlchemyPatientCardRepositoryAdapter,
 )
 from app.infrastructure.adapters.storage.factory import get_file_storage
-from app.presentation.rest.public.v1.archives.schemas import ImportJobResponseSchema, ResolveImportJobRequestSchema
+from app.presentation.rest.public.v1.archives.schemas import (
+    ImportJobResponseSchema,
+    ImportReviewDraftResponseSchema,
+    ResolveImportJobRequestSchema,
+    SaveImportReviewDraftRequestSchema,
+)
 from app.presentation.rest.public.v1.records.dependencies import (
     current_authenticated_user_dependency,
     db_session_dependency,
@@ -103,10 +109,22 @@ def get_resolve_import_job_use_case(session: Session = db_session_dependency) ->
     )
 
 
+def get_save_import_review_draft_use_case(
+    session: Session = db_session_dependency,
+) -> SaveImportReviewDraftUseCase:
+    """Создать use case сохранения черновика review.
+
+    Returns:
+        Настроенный use case сохранения черновика.
+    """
+    return SaveImportReviewDraftUseCase(repository=_build_repository(session))
+
+
 create_import_job_use_case_dependency = Depends(get_create_import_job_use_case)
 get_import_job_use_case_dependency = Depends(get_import_job_use_case)
 list_import_jobs_use_case_dependency = Depends(get_list_import_jobs_use_case)
 resolve_import_job_use_case_dependency = Depends(get_resolve_import_job_use_case)
+save_import_review_draft_use_case_dependency = Depends(get_save_import_review_draft_use_case)
 
 
 @router.post('/imports', response_model=ImportJobResponseSchema, status_code=status.HTTP_201_CREATED)
@@ -195,6 +213,44 @@ def get_import_job(
         )
     except ImportJobNotFoundError:
         raise_not_found('Import job not found')
+
+
+@router.put('/imports/{job_id}/review-draft', response_model=ImportReviewDraftResponseSchema)
+def save_import_review_draft(
+    job_id: UUID,
+    payload: SaveImportReviewDraftRequestSchema,
+    current_user: AuthenticatedUserDTO = current_authenticated_user_dependency,
+    use_case: SaveImportReviewDraftUseCase = save_import_review_draft_use_case_dependency,
+    session: Session = db_session_dependency,
+) -> ImportReviewDraftDTO:
+    """Сохранить промежуточные решения review задания импорта.
+
+    Returns:
+        Сохраненный черновик и время его обновления.
+
+    Raises:
+        HTTPException: Если задание недоступно или больше не ожидает review.
+    """
+    if current_user.role not in {'doctor', 'admin'}:
+        raise_forbidden('Only doctors and admins can review imports')
+    try:
+        draft = use_case.execute(
+            job_id=job_id,
+            actor_user_id=current_user.id,
+            actor_role=current_user.role,
+            decisions=[decision.model_dump(mode='json') for decision in payload.decisions],
+        )
+        session.commit()
+        return draft
+    except ImportJobNotFoundError:
+        session.rollback()
+        raise_not_found('Import job not found')
+    except ImportJobValidationError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail='Invalid import review draft',
+        ) from exc
 
 
 @router.post('/imports/{job_id}/resolve', response_model=ImportJobResponseSchema)

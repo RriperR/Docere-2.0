@@ -83,22 +83,6 @@ class ImportReportSchema(BaseModel):
     resolved_at: date | None = None
 
 
-class ImportJobResponseSchema(BaseModel):
-    """Схема ответа ImportJob."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    uploaded_by_user_id: UUID
-    status: str
-    original_filename: str | None
-    archive_storage_key: str | None
-    size_bytes: int | None
-    report_json: ImportReportSchema
-    created_at: MoscowDatetime
-    finished_at: MoscowDatetime | None
-
-
 class ImportRecordGroupResolveSchema(BaseModel):
     """Решение пользователя по группе файлов импортируемой записи."""
 
@@ -121,7 +105,38 @@ class ImportPatientResolveSchema(BaseModel):
     record_groups: list[ImportRecordGroupResolveSchema] = Field(default_factory=list)
 
 
+class ImportJobResponseSchema(BaseModel):
+    """Схема ответа ImportJob."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    uploaded_by_user_id: UUID
+    status: str
+    original_filename: str | None
+    archive_storage_key: str | None
+    size_bytes: int | None
+    report_json: ImportReportSchema
+    review_decisions: list[ImportPatientResolveSchema] = Field(default_factory=list)
+    review_updated_at: MoscowDatetime | None = None
+    created_at: MoscowDatetime
+    finished_at: MoscowDatetime | None
+
+
 class ResolveImportJobRequestSchema(BaseModel):
     """Тело запроса финализации ImportJob после review."""
 
     decisions: list[ImportPatientResolveSchema] = Field(min_length=1)
+
+
+class SaveImportReviewDraftRequestSchema(BaseModel):
+    """Тело запроса сохранения промежуточных решений review."""
+
+    decisions: list[ImportPatientResolveSchema] = Field(max_length=500)
+
+
+class ImportReviewDraftResponseSchema(BaseModel):
+    """Сохраненный серверный черновик review."""
+
+    decisions: list[ImportPatientResolveSchema] = Field(default_factory=list)
+    updated_at: MoscowDatetime | None = None
