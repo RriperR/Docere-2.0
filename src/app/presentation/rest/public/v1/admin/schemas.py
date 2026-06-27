@@ -70,3 +70,40 @@ class AdminUserResponseSchema(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
+
+
+class AdminUserMetricsSchema(BaseModel):
+    """Счетчики учетных записей."""
+
+    total: int
+    active: int
+    blocked: int
+    doctors: int
+    patients: int
+    admins: int
+
+
+class AdminArchiveMetricsSchema(BaseModel):
+    """Счетчики импорта архивов."""
+
+    total: int
+    processing: int
+    needs_review: int
+    failed: int
+    completed: int
+
+
+class AdminSharingMetricsSchema(BaseModel):
+    """Счетчики sharing-запросов."""
+
+    pending_requests: int
+    active_requests: int
+
+
+class AdminDashboardSummaryResponseSchema(BaseModel):
+    """Агрегированная сводка административной панели."""
+
+    users: AdminUserMetricsSchema
+    patient_cards_total: int
+    archives: AdminArchiveMetricsSchema
+    sharing: AdminSharingMetricsSchema

@@ -1,22 +1,57 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
   Activity,
   AlertTriangle,
+  Archive,
   CheckCircle,
-  Database,
-  HardDrive,
+  Clock3,
+  FileText,
+  LockKeyhole,
+  Share2,
   ShieldCheck,
-  TrendingUp,
   Users,
-  XCircle,
 } from 'lucide-react'
 
+import api from '../../api/api'
 import { Button } from '../../components/common/Button'
-import { usePatientsStore } from '../../stores/patientsStore'
 
 type AuditCategory = 'all' | 'access' | 'changes' | 'auth'
+
+interface AdminSummary {
+  users: {
+    total: number
+    active: number
+    blocked: number
+    doctors: number
+    patients: number
+    admins: number
+  }
+  patient_cards_total: number
+  archives: {
+    total: number
+    processing: number
+    needs_review: number
+    failed: number
+    completed: number
+  }
+  sharing: {
+    pending_requests: number
+    active_requests: number
+  }
+}
+
+interface AuditEvent {
+  id: string
+  actor_fio: string | null
+  actor_email: string | null
+  event_type: string
+  entity_type: string
+  entity_id: string
+  metadata_json: Record<string, unknown>
+  created_at: string
+}
 
 const categoryLabel: Record<AuditCategory, string> = {
   all: 'Все события',
@@ -25,44 +60,125 @@ const categoryLabel: Record<AuditCategory, string> = {
   auth: 'Авторизация',
 }
 
-const auditLogs = [
-  { id: 'log1', action: 'Изменение роли пользователя', user: 'Мария Иванова', targetUser: 'Иван Смирнов', timestamp: '2024-03-15 14:30:22', details: 'patient → doctor', category: 'changes', severity: 'warning' },
-  { id: 'log2', action: 'Просмотр медицинской карты', user: 'Д-р Алексей Козлов', targetUser: 'Елена Вильямс', timestamp: '2024-03-15 13:45:11', details: 'Просмотр истории болезни', category: 'access', severity: 'info' },
-  { id: 'log3', action: 'Новый пациент зарегистрирован', user: 'Система', targetUser: 'Михаил Браун', timestamp: '2024-03-15 10:12:05', details: 'Самостоятельная регистрация', category: 'changes', severity: 'info' },
-  { id: 'log4', action: 'Запись изменена', user: 'Д-р Мария Иванова', targetUser: 'Иван Doe', timestamp: '2024-03-14 16:22:45', details: 'Обновление диагноза', category: 'changes', severity: 'info' },
-  { id: 'log5', action: 'Неудачный вход в систему', user: 'Неизвестно', targetUser: 'N/A', timestamp: '2024-03-14 08:17:33', details: 'Множественные неудачные попытки', category: 'auth', severity: 'error' },
-]
+const eventLabels: Record<string, string> = {
+  login: 'Вход в систему',
+  user_status_changed: 'Статус пользователя изменён',
+  share_request_created: 'Создан запрос доступа',
+  share_request_accepted: 'Доступ принят',
+  share_request_declined: 'Запрос доступа отклонён',
+  share_request_revoked: 'Доступ отозван',
+  medical_record_created: 'Создана медицинская запись',
+  medical_record_confirmed: 'Медицинская запись подтверждена',
+  import_job_resolved: 'Импорт архива подтверждён',
+}
 
-const userStats = { total: 145, doctors: 32, patients: 110, admins: 3 }
-const roleRequests = { pending: 8, approved: 24, rejected: 5 }
+const emptySummary: AdminSummary = {
+  users: { total: 0, active: 0, blocked: 0, doctors: 0, patients: 0, admins: 0 },
+  patient_cards_total: 0,
+  archives: { total: 0, processing: 0, needs_review: 0, failed: 0, completed: 0 },
+  sharing: { pending_requests: 0, active_requests: 0 },
+}
 
-function StatusBadge({ status }: { status: string }) {
-  const styles: Record<string, string> = {
-    Online: 'text-success-700 bg-success-50',
-    Operational: 'text-success-700 bg-success-50',
-    'No backlog': 'text-success-700 bg-success-50',
-    'Degraded': 'text-warning-700 bg-warning-50',
-    'Error': 'text-error-700 bg-error-50',
+const getAuditCategory = (eventType: string): Exclude<AuditCategory, 'all'> => {
+  const normalized = eventType.toLowerCase()
+  if (normalized.includes('login') || normalized.includes('auth') || normalized.includes('token')) {
+    return 'auth'
   }
-  return (
-    <span className={`flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${styles[status] ?? 'text-gray-700 bg-gray-100'}`}>
-      <span className="h-1.5 w-1.5 rounded-full bg-current" />
-      {status}
-    </span>
-  )
+  if (
+    normalized.includes('share') ||
+    normalized.includes('access') ||
+    normalized.includes('view') ||
+    normalized.includes('download')
+  ) {
+    return 'access'
+  }
+  return 'changes'
+}
+
+const formatDateTime = (value: string) =>
+  new Intl.DateTimeFormat('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value))
+
+const formatMetadata = (metadata: Record<string, unknown>) => {
+  const entries = Object.entries(metadata).filter(([, value]) => value !== null && value !== undefined)
+  if (entries.length === 0) return 'Без дополнительных данных'
+  return entries
+    .slice(0, 3)
+    .map(([key, value]) => `${key}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`)
+    .join(', ')
 }
 
 const AdminDashboard: React.FC = () => {
-  const { patients, fetchPatients } = usePatientsStore()
+  const [summary, setSummary] = useState<AdminSummary>(emptySummary)
+  const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([])
   const [activeCategory, setActiveCategory] = useState<AuditCategory>('all')
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    fetchPatients()
-  }, [fetchPatients])
+    const loadDashboard = async () => {
+      setIsLoading(true)
+      setError(null)
+      try {
+        const [summaryResponse, auditResponse] = await Promise.all([
+          api.get<AdminSummary>('/admin/summary'),
+          api.get<AuditEvent[]>('/admin/audit-events', { params: { limit: 20 } }),
+        ])
+        setSummary(summaryResponse.data)
+        setAuditEvents(auditResponse.data)
+      } catch {
+        setError('Не удалось загрузить административную сводку')
+      } finally {
+        setIsLoading(false)
+      }
+    }
 
-  const filteredLogs = activeCategory === 'all'
-    ? auditLogs
-    : auditLogs.filter((l) => l.category === activeCategory)
+    void loadDashboard()
+  }, [])
+
+  const filteredEvents = useMemo(
+    () =>
+      activeCategory === 'all'
+        ? auditEvents
+        : auditEvents.filter((event) => getAuditCategory(event.event_type) === activeCategory),
+    [activeCategory, auditEvents],
+  )
+
+  const stats = [
+    {
+      label: 'Всего пользователей',
+      value: summary.users.total,
+      detail: `${summary.users.active} активных`,
+      icon: <Users className="h-5 w-5 text-primary-600" />,
+      color: 'bg-primary-50',
+    },
+    {
+      label: 'Врачи',
+      value: summary.users.doctors,
+      detail: `${summary.users.patients} пациентов`,
+      icon: <ShieldCheck className="h-5 w-5 text-accent-600" />,
+      color: 'bg-accent-50',
+    },
+    {
+      label: 'Карточки пациентов',
+      value: summary.patient_cards_total,
+      detail: `${summary.users.blocked} заблокировано`,
+      icon: <Activity className="h-5 w-5 text-secondary-600" />,
+      color: 'bg-secondary-50',
+    },
+    {
+      label: 'Активные доступы',
+      value: summary.sharing.active_requests,
+      detail: `${summary.sharing.pending_requests} ожидают ответа`,
+      icon: <Share2 className="h-5 w-5 text-success-600" />,
+      color: 'bg-success-50',
+    },
+  ]
 
   return (
     <div className="space-y-6">
@@ -70,189 +186,176 @@ const AdminDashboard: React.FC = () => {
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between"
+        className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
       >
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
-            Панель администратора
-          </h1>
-          <p className="mt-0.5 text-sm text-gray-500">
-            Управление пользователями, мониторинг и аудит системы.
-          </p>
+          <h1 className="text-2xl font-bold text-gray-900">Панель администратора</h1>
+          <p className="mt-0.5 text-sm text-gray-500">Оперативная сводка системы</p>
         </div>
-        <div className="flex gap-2">
-          <Link to="/admin">
-            <Button variant="outline" size="sm">Управление системой</Button>
-          </Link>
-        </div>
+        <Link to="/admin">
+          <Button variant="outline" size="sm" icon={<Users className="h-4 w-4" />}>
+            Управление пользователями
+          </Button>
+        </Link>
       </motion.div>
 
-      {/* Stats grid */}
+      {error && (
+        <div className="rounded-lg border border-error-200 bg-error-50 p-4 text-sm text-error-700">
+          {error}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {[
-          { label: 'Всего пользователей', value: userStats.total, icon: <Users className="h-5 w-5 text-primary-600" />, color: 'bg-primary-50', trend: '+3 за неделю' },
-          { label: 'Врачей', value: userStats.doctors, icon: <ShieldCheck className="h-5 w-5 text-accent-600" />, color: 'bg-accent-50', trend: undefined },
-          { label: 'Пациентов', value: userStats.patients, icon: <Activity className="h-5 w-5 text-secondary-600" />, color: 'bg-secondary-50', trend: '+12 за неделю' },
-          { label: 'Карточек пациентов', value: patients.length, icon: <TrendingUp className="h-5 w-5 text-success-600" />, color: 'bg-success-50', trend: undefined },
-        ].map((card, i) => (
+        {stats.map((stat, index) => (
           <motion.div
-            key={card.label}
-            initial={{ opacity: 0, y: 16 }}
+            key={stat.label}
+            initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.06, duration: 0.4 }}
-            className="rounded-xl border border-gray-100 bg-white p-5 shadow-card"
+            transition={{ delay: index * 0.05, duration: 0.35 }}
+            className="rounded-lg border border-gray-200 bg-white p-5"
           >
-            <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${card.color}`}>
-              {card.icon}
-            </div>
-            <p className="mt-3 text-3xl font-bold text-gray-900">{card.value}</p>
-            <p className="text-sm text-gray-600">{card.label}</p>
-            {card.trend && (
-              <p className="mt-1 flex items-center gap-1 text-xs text-success-600">
-                <TrendingUp className="h-3 w-3" />
-                {card.trend}
-              </p>
-            )}
+            <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${stat.color}`}>{stat.icon}</div>
+            <p className="mt-3 text-3xl font-bold text-gray-900">{isLoading ? '—' : stat.value}</p>
+            <p className="text-sm font-medium text-gray-700">{stat.label}</p>
+            <p className="mt-1 text-xs text-gray-500">{isLoading ? 'Загрузка...' : stat.detail}</p>
           </motion.div>
         ))}
       </div>
 
-      {/* Role requests + System status */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.25, duration: 0.4 }}
-          className="rounded-xl border border-gray-100 bg-white shadow-card"
-        >
-          <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
             <div className="flex items-center gap-2">
-              <ShieldCheck className="h-5 w-5 text-primary-500" />
-              <h2 className="font-semibold text-gray-900">Заявки на роль врача</h2>
+              <Archive className="h-5 w-5 text-primary-600" />
+              <h2 className="font-semibold text-gray-900">Архивы</h2>
             </div>
-            {roleRequests.pending > 0 && (
-              <span className="rounded-full bg-warning-100 px-2.5 py-0.5 text-xs font-bold text-warning-700">
-                {roleRequests.pending} ожидают
-              </span>
-            )}
-          </div>
-          <div className="p-6">
-            <div className="grid grid-cols-3 gap-4 text-center">
-              <div className="rounded-xl bg-warning-50 p-4">
-                <p className="text-2xl font-bold text-warning-600">{roleRequests.pending}</p>
-                <p className="mt-1 text-xs text-gray-500">Ожидают</p>
-              </div>
-              <div className="rounded-xl bg-success-50 p-4">
-                <p className="text-2xl font-bold text-success-600">{roleRequests.approved}</p>
-                <p className="mt-1 text-xs text-gray-500">Одобрено</p>
-              </div>
-              <div className="rounded-xl bg-error-50 p-4">
-                <p className="text-2xl font-bold text-error-600">{roleRequests.rejected}</p>
-                <p className="mt-1 text-xs text-gray-500">Отклонено</p>
-              </div>
-            </div>
-            <Link to="/admin" className="mt-4 block">
-              <Button fullWidth variant="outline" size="sm">
-                Рассмотреть заявки
-              </Button>
+            <Link to="/upload" className="text-sm font-medium text-primary-600 hover:text-primary-700">
+              Открыть
             </Link>
           </div>
-        </motion.div>
+          <div className="divide-y divide-gray-100 px-5">
+            <MetricRow icon={<Clock3 className="h-4 w-4 text-primary-500" />} label="В обработке" value={summary.archives.processing} loading={isLoading} />
+            <MetricRow icon={<AlertTriangle className="h-4 w-4 text-warning-500" />} label="Требуют review" value={summary.archives.needs_review} loading={isLoading} />
+            <MetricRow icon={<AlertTriangle className="h-4 w-4 text-error-500" />} label="Завершились с ошибкой" value={summary.archives.failed} loading={isLoading} />
+            <MetricRow icon={<CheckCircle className="h-4 w-4 text-success-500" />} label="Успешно завершены" value={summary.archives.completed} loading={isLoading} />
+          </div>
+        </section>
 
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3, duration: 0.4 }}
-          className="rounded-xl border border-gray-100 bg-white shadow-card"
-        >
-          <div className="flex items-center gap-2 border-b border-gray-100 px-6 py-4">
-            <Database className="h-5 w-5 text-primary-500" />
-            <h2 className="font-semibold text-gray-900">Статус системы</h2>
+        <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+            <div className="flex items-center gap-2">
+              <Share2 className="h-5 w-5 text-primary-600" />
+              <h2 className="font-semibold text-gray-900">Доступы к записям</h2>
+            </div>
+            <Link to="/share-requests" className="text-sm font-medium text-primary-600 hover:text-primary-700">
+              Открыть
+            </Link>
           </div>
-          <div className="divide-y divide-gray-50 px-6">
-            {[
-              { label: 'База данных', value: 'Online', icon: <Database className="h-4 w-4 text-gray-400" /> },
-              { label: 'Хранилище файлов', value: 'Online', icon: <HardDrive className="h-4 w-4 text-gray-400" /> },
-              { label: 'Очередь задач', value: 'No backlog', icon: <Activity className="h-4 w-4 text-gray-400" /> },
-              { label: 'API сервисы', value: 'Operational', icon: <CheckCircle className="h-4 w-4 text-gray-400" /> },
-            ].map((item) => (
-              <div key={item.label} className="flex items-center justify-between py-3">
-                <div className="flex items-center gap-2">
-                  {item.icon}
-                  <span className="text-sm text-gray-700">{item.label}</span>
-                </div>
-                <StatusBadge status={item.value} />
-              </div>
-            ))}
+          <div className="divide-y divide-gray-100 px-5">
+            <MetricRow icon={<Clock3 className="h-4 w-4 text-warning-500" />} label="Ожидают ответа" value={summary.sharing.pending_requests} loading={isLoading} />
+            <MetricRow icon={<Share2 className="h-4 w-4 text-success-500" />} label="Активные запросы" value={summary.sharing.active_requests} loading={isLoading} />
+            <MetricRow icon={<LockKeyhole className="h-4 w-4 text-gray-500" />} label="Заблокированные аккаунты" value={summary.users.blocked} loading={isLoading} />
+            <MetricRow icon={<ShieldCheck className="h-4 w-4 text-primary-500" />} label="Администраторы" value={summary.users.admins} loading={isLoading} />
           </div>
-        </motion.div>
+        </section>
       </div>
 
-      {/* Audit log */}
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.35, duration: 0.4 }}
-        className="rounded-xl border border-gray-100 bg-white shadow-card"
-      >
-        <div className="flex flex-col gap-3 border-b border-gray-100 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+      <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+        <div className="flex flex-col gap-3 border-b border-gray-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-primary-500" />
-            <h2 className="font-semibold text-gray-900">Журнал аудита</h2>
+            <FileText className="h-5 w-5 text-primary-600" />
+            <h2 className="font-semibold text-gray-900">Последние события</h2>
           </div>
-          <div className="flex gap-1 overflow-x-auto">
-            {(Object.keys(categoryLabel) as AuditCategory[]).map((cat) => (
+          <div className="flex gap-1 overflow-x-auto" role="group" aria-label="Фильтр событий">
+            {(Object.keys(categoryLabel) as AuditCategory[]).map((category) => (
               <button
-                key={cat}
-                onClick={() => setActiveCategory(cat)}
-                className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                  activeCategory === cat
+                key={category}
+                type="button"
+                onClick={() => setActiveCategory(category)}
+                className={`whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                  activeCategory === category
                     ? 'bg-primary-600 text-white'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
               >
-                {categoryLabel[cat]}
+                {categoryLabel[category]}
               </button>
             ))}
           </div>
         </div>
 
+        {!isLoading && filteredEvents.length === 0 && (
+          <div className="p-6 text-center text-sm text-gray-500">Событий в этой категории пока нет</div>
+        )}
+
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
+          <table className="min-w-full text-sm">
+            <thead className="bg-gray-50">
               <tr className="border-b border-gray-100 text-left">
-                {['Событие', 'Пользователь', 'Целевой объект', 'Время', 'Детали'].map((h) => (
-                  <th key={h} className="px-6 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
-                    {h}
+                {['Событие', 'Инициатор', 'Объект', 'Время', 'Детали'].map((heading) => (
+                  <th key={heading} className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    {heading}
                   </th>
                 ))}
               </tr>
             </thead>
-            <tbody>
-              {filteredLogs.map((log) => (
-                <tr key={log.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
-                  <td className="px-6 py-3">
-                    <div className="flex items-center gap-2">
-                      {log.severity === 'error' ? (
-                        <XCircle className="h-4 w-4 shrink-0 text-error-500" />
-                      ) : log.severity === 'warning' ? (
-                        <AlertTriangle className="h-4 w-4 shrink-0 text-warning-500" />
-                      ) : (
-                        <CheckCircle className="h-4 w-4 shrink-0 text-success-500" />
-                      )}
-                      <span className="font-medium text-gray-900">{log.action}</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-3 text-gray-600">{log.user}</td>
-                  <td className="px-6 py-3 text-gray-600">{log.targetUser}</td>
-                  <td className="px-6 py-3 text-gray-400">{log.timestamp}</td>
-                  <td className="px-6 py-3 text-gray-500">{log.details}</td>
-                </tr>
-              ))}
+            <tbody className="divide-y divide-gray-100">
+              {filteredEvents.map((event) => {
+                const category = getAuditCategory(event.event_type)
+                return (
+                  <tr key={event.id} className="hover:bg-gray-50">
+                    <td className="px-5 py-3 font-medium text-gray-900">
+                      <span className="flex items-center gap-2">
+                        {category === 'auth' ? (
+                          <LockKeyhole className="h-4 w-4 shrink-0 text-primary-500" />
+                        ) : category === 'access' ? (
+                          <Share2 className="h-4 w-4 shrink-0 text-success-500" />
+                        ) : (
+                          <Activity className="h-4 w-4 shrink-0 text-warning-500" />
+                        )}
+                        {eventLabels[event.event_type] ?? event.event_type}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 text-gray-600">
+                      <span className="block">{event.actor_fio ?? 'Система'}</span>
+                      {event.actor_email && <span className="block text-xs text-gray-400">{event.actor_email}</span>}
+                    </td>
+                    <td className="px-5 py-3 text-gray-600">
+                      {event.entity_type} · {event.entity_id.slice(0, 8)}
+                    </td>
+                    <td className="whitespace-nowrap px-5 py-3 text-gray-500">{formatDateTime(event.created_at)}</td>
+                    <td className="max-w-xs truncate px-5 py-3 text-gray-500" title={formatMetadata(event.metadata_json)}>
+                      {formatMetadata(event.metadata_json)}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
-      </motion.div>
+      </section>
+    </div>
+  )
+}
+
+function MetricRow({
+  icon,
+  label,
+  value,
+  loading,
+}: {
+  icon: React.ReactNode
+  label: string
+  value: number
+  loading: boolean
+}) {
+  return (
+    <div className="flex items-center justify-between py-3">
+      <div className="flex items-center gap-2">
+        {icon}
+        <span className="text-sm text-gray-700">{label}</span>
+      </div>
+      <span className="min-w-8 text-right text-sm font-semibold text-gray-900">{loading ? '—' : value}</span>
     </div>
   )
 }

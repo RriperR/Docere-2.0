@@ -8,6 +8,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.application.use_cases.admin_dashboard.get_summary import (
+    AdminDashboardAccessDeniedError,
+    GetAdminDashboardSummaryUseCase,
+)
 from app.application.use_cases.audit_events.list_audit_events import (
     AuditEventAccessDeniedError,
     ListAuditEventsUseCase,
@@ -27,10 +31,12 @@ from app.application.use_cases.auth.create_staff_user.use_case import (
 )
 from app.application.use_cases.auth.errors import EmailAlreadyExistsError
 from app.application.use_cases.auth.list_users.use_case import ListUsersAccessDeniedError, ListUsersUseCase
+from app.infrastructure.adapters.repositories.admin_dashboard import SqlAlchemyAdminDashboardRepositoryAdapter
 from app.infrastructure.adapters.repositories.audit_events import AuditEventRepositoryAdapter
 from app.infrastructure.adapters.repositories.auth.sqlalchemy_auth_repository import SqlAlchemyAuthRepositoryAdapter
 from app.infrastructure.adapters.security.pbkdf2_password_hasher import Pbkdf2PasswordHasherAdapter
 from app.presentation.rest.public.v1.admin.schemas import (
+    AdminDashboardSummaryResponseSchema,
     AdminUserResponseSchema,
     AuditEventResponseSchema,
     ChangeUserStatusRequestSchema,
@@ -42,6 +48,22 @@ from app.presentation.rest.public.v1.records.dependencies import current_authent
 from app.presentation.webserver.http_errors import raise_email_already_exists, raise_forbidden, raise_not_found
 
 router = APIRouter(prefix='/admin', tags=['admin'])
+
+
+def get_admin_dashboard_summary_use_case(
+    session: Session = db_session_dependency,
+) -> GetAdminDashboardSummaryUseCase:
+    """Создать use case административной сводки.
+
+    Returns:
+        Настроенный use case административной сводки.
+    """
+    return GetAdminDashboardSummaryUseCase(
+        repository=SqlAlchemyAdminDashboardRepositoryAdapter(session=session),
+    )
+
+
+admin_dashboard_summary_use_case_dependency = Depends(get_admin_dashboard_summary_use_case)
 
 
 def get_create_staff_user_use_case(session: Session = db_session_dependency) -> CreateStaffUserUseCase:
@@ -102,6 +124,23 @@ def get_list_audit_events_use_case(session: Session = db_session_dependency) -> 
 
 
 list_audit_events_use_case_dependency = Depends(get_list_audit_events_use_case)
+
+
+@router.get('/summary', response_model=AdminDashboardSummaryResponseSchema)
+def get_admin_dashboard_summary(
+    current_user: AuthenticatedUserDTO = current_authenticated_user_dependency,
+    use_case: GetAdminDashboardSummaryUseCase = admin_dashboard_summary_use_case_dependency,
+) -> AdminDashboardSummaryResponseSchema:
+    """Вернуть административную оперативную сводку.
+
+    Returns:
+        Актуальные счетчики пользователей, архивов и sharing.
+    """
+    try:
+        summary = use_case.execute(actor_role=current_user.role)
+    except AdminDashboardAccessDeniedError:
+        raise_forbidden('Only admin can view dashboard summary')
+    return AdminDashboardSummaryResponseSchema.model_validate(summary, from_attributes=True)
 
 
 @router.get('/users', response_model=list[AdminUserResponseSchema])

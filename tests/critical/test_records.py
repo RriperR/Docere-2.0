@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import datetime, UTC
+from datetime import datetime, timedelta, UTC
 from io import BytesIO
 from pathlib import Path
 from uuid import UUID
@@ -19,6 +19,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.application.ports.storage.file_storage import FileStoragePort
 from app.domain.entities.file_attachment import FileAttachmentCategory
+from app.domain.entities.import_job import ImportJobStatus
 from app.infrastructure.adapters.queue.recover_import_jobs import enqueue_recoverable_import_jobs
 from app.infrastructure.adapters.queue.tasks import process_import_job
 from app.infrastructure.adapters.security.pbkdf2_password_hasher import Pbkdf2PasswordHasherAdapter
@@ -1435,6 +1436,91 @@ def test_admin_can_list_users_without_password_hash_and_doctor_cannot(record_cli
         {'users-doctor@example.com', 'users-admin@example.com'},
     )
     assert all('password_hash' not in user for user in users)
+
+
+@pytest.mark.critical
+def test_admin_dashboard_summary_contains_real_operational_metrics(record_client: TestClient) -> None:
+    admin_email = 'summary-admin@example.com'
+    doctor_email = 'summary-doctor@example.com'
+    patient_email = 'summary-patient@example.com'
+    _create_admin(email=admin_email)
+    _create_doctor(email=doctor_email)
+    _register_patient(record_client, patient_email)
+    admin_token = _login(record_client, admin_email, TEST_DOCTOR_PASSWORD)
+    doctor_token = _login(record_client, doctor_email, TEST_DOCTOR_PASSWORD)
+    admin_user = _get_user_by_email(admin_email)
+    doctor_user = _get_user_by_email(doctor_email)
+
+    with get_session_factory()() as session:
+        session.add_all(
+            [
+                ImportJobRow(
+                    uploaded_by_user_id=admin_user.id,
+                    status=ImportJobStatus.NEEDS_REVIEW,
+                    original_filename='review.zip',
+                    report_json={},
+                ),
+                ImportJobRow(
+                    uploaded_by_user_id=admin_user.id,
+                    status=ImportJobStatus.FAILED,
+                    original_filename='failed.zip',
+                    report_json={},
+                ),
+                ImportJobRow(
+                    uploaded_by_user_id=admin_user.id,
+                    status=ImportJobStatus.COMPLETED_WITH_WARNINGS,
+                    original_filename='completed.zip',
+                    report_json={},
+                ),
+                RecordShareRequestRow(
+                    from_user_id=admin_user.id,
+                    to_user_id=doctor_user.id,
+                    status=RecordShareStatusRow.PENDING,
+                ),
+                RecordShareRequestRow(
+                    from_user_id=doctor_user.id,
+                    to_user_id=admin_user.id,
+                    status=RecordShareStatusRow.ACCEPTED,
+                ),
+                RecordShareRequestRow(
+                    from_user_id=admin_user.id,
+                    to_user_id=doctor_user.id,
+                    status=RecordShareStatusRow.ACCEPTED,
+                    expires_at=datetime.now(UTC) - timedelta(days=1),
+                ),
+            ],
+        )
+        session.commit()
+
+    forbidden_response = record_client.get(
+        '/api/admin/summary',
+        headers={'Authorization': f'Bearer {doctor_token}'},
+    )
+    response = record_client.get(
+        '/api/admin/summary',
+        headers={'Authorization': f'Bearer {admin_token}'},
+    )
+
+    assert forbidden_response.status_code == 403
+    assert response.status_code == 200
+    summary = response.json()
+    assert summary['users'] == {
+        'total': 3,
+        'active': 3,
+        'blocked': 0,
+        'doctors': 1,
+        'patients': 1,
+        'admins': 1,
+    }
+    assert summary['patient_cards_total'] == 1
+    assert summary['archives'] == {
+        'total': 3,
+        'processing': 0,
+        'needs_review': 1,
+        'failed': 1,
+        'completed': 1,
+    }
+    assert summary['sharing'] == {'pending_requests': 1, 'active_requests': 1}
 
 
 @pytest.mark.critical
