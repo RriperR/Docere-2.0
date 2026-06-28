@@ -8,7 +8,7 @@ from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from pydicom.dataset import FileDataset, FileMetaDataset
-from pydicom.uid import ExplicitVRLittleEndian, SecondaryCaptureImageStorage
+from pydicom.uid import ExplicitVRLittleEndian, SecondaryCaptureImageStorage, UID
 
 _STUDY_UID = '1.2.826.0.1.3680043.10.543.1'
 
@@ -60,7 +60,7 @@ def _dicom_bytes(*, series_uid: str, instance_number: int) -> bytes:
     instance_uid = f'{series_uid}.{instance_number}'
     file_meta = FileMetaDataset()
     file_meta.MediaStorageSOPClassUID = SecondaryCaptureImageStorage
-    file_meta.MediaStorageSOPInstanceUID = instance_uid
+    file_meta.MediaStorageSOPInstanceUID = UID(instance_uid)
     file_meta.TransferSyntaxUID = ExplicitVRLittleEndian
     dataset = FileDataset('demo.dcm', {}, file_meta=file_meta, preamble=b'\0' * 128)
     dataset.SpecificCharacterSet = 'ISO_IR 192'
