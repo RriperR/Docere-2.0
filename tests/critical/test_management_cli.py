@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+from zipfile import ZipFile
 
 import pytest
 from sqlalchemy import func, select
@@ -114,8 +115,9 @@ def test_seed_demo_command_is_idempotent(monkeypatch: pytest.MonkeyPatch, tmp_pa
     clear_settings_cache()
     clear_db_session_cache()
     Base.metadata.create_all(bind=get_engine())
+    archive_path = tmp_path / 'seed-demo.zip'
 
-    first_exit_code = main(['seed-demo'])
+    first_exit_code = main(['seed-demo', '--archive-output', str(archive_path)])
     second_exit_code = main(['seed-demo'])
 
     with get_session_factory()() as session:
@@ -127,6 +129,7 @@ def test_seed_demo_command_is_idempotent(monkeypatch: pytest.MonkeyPatch, tmp_pa
 
     assert first_exit_code == 0
     assert second_exit_code == 0
+    assert archive_path.is_file()
     # Повторный запуск не дублирует данные.
     assert user_count == 6
     assert record_count == 4
@@ -158,3 +161,21 @@ def test_migrate_command_runs_alembic_upgrade(monkeypatch: pytest.MonkeyPatch) -
     assert exit_code == 0
     assert called['config_path'] == 'alembic.ini'
     assert called['revision'] == 'head'
+
+
+@pytest.mark.critical
+def test_build_demo_archive_command_creates_zip(tmp_path: Path) -> None:
+    """Проверить создание синтетического архива management-командой.
+
+    Args:
+        tmp_path: Временный каталог pytest.
+    """
+    output_path = tmp_path / 'demo.zip'
+
+    exit_code = main(['build-demo-archive', '--output', str(output_path)])
+
+    assert exit_code == 0
+    with ZipFile(output_path) as archive:
+        paths = archive.namelist()
+    assert any(path.endswith('.dcm') for path in paths)
+    assert '../unsafe-demo.txt' in paths

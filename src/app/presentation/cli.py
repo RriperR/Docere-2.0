@@ -12,6 +12,7 @@ from alembic.config import Config
 
 from app.application.use_cases.auth.create_admin_user.use_case import CreateAdminUserUseCase
 from app.application.use_cases.auth.errors import EmailAlreadyExistsError
+from app.infrastructure.adapters.import_jobs.demo_archive import write_demo_archive
 from app.infrastructure.adapters.repositories.auth.sqlalchemy_auth_repository import SqlAlchemyAuthRepositoryAdapter
 from app.infrastructure.adapters.security.pbkdf2_password_hasher import Pbkdf2PasswordHasherAdapter
 from app.infrastructure.db.seed import DEFAULT_DEMO_PASSWORD, seed_demo_data
@@ -42,6 +43,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     seed_demo_parser = subparsers.add_parser('seed-demo')
     seed_demo_parser.add_argument('--password', default=DEFAULT_DEMO_PASSWORD)
+    seed_demo_parser.add_argument('--archive-output', type=Path)
+
+    demo_archive_parser = subparsers.add_parser('build-demo-archive')
+    demo_archive_parser.add_argument('--output', type=Path, default=Path('docere-demo-archive.zip'))
 
     return parser
 
@@ -86,13 +91,14 @@ def create_admin_user(*, email: str, password: str, fio: str, phone: str) -> Non
             raise
 
 
-def seed_demo(*, password: str) -> None:
+def seed_demo(*, password: str, archive_output: Path | None = None) -> None:
     """Загрузить демонстрационные данные в базу.
 
     Сидинг идемпотентен: ранее созданные демо-сущности удаляются перед вставкой.
 
     Args:
         password: Пароль в открытом виде для всех демо-учёток.
+        archive_output: Путь для синтетического ZIP или ``None``.
     """
     session_factory = get_session_factory()
     with session_factory() as session:
@@ -111,6 +117,9 @@ def seed_demo(*, password: str) -> None:
     for name, value in counts.items():
         print(f'  - {name}: {value}')
     print(f'Пароль демо-учёток: {password}')
+    if archive_output is not None:
+        write_demo_archive(archive_output)
+        print(f'Демонстрационный архив создан: {archive_output}')
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -143,7 +152,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
 
         if args.command == 'seed-demo':
-            seed_demo(password=args.password)
+            seed_demo(password=args.password, archive_output=args.archive_output)
+            return 0
+
+        if args.command == 'build-demo-archive':
+            write_demo_archive(args.output)
+            print(f'Демонстрационный архив создан: {args.output}')
             return 0
     except Exception as error:
         print(f'Command failed: {error}', file=sys.stderr)

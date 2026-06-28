@@ -10,6 +10,7 @@ from pydicom.uid import ExplicitVRLittleEndian, generate_uid, SecondaryCaptureIm
 from app.application.use_cases.import_jobs.dtos import ExtractImportDraftCommand
 from app.application.use_cases.import_jobs.errors import ArchiveExtractionError
 from app.application.use_cases.import_jobs.extractor import ExtractImportDraftUseCase
+from app.infrastructure.adapters.import_jobs.demo_archive import build_demo_archive
 from app.infrastructure.adapters.import_jobs.patient_matcher import NoopPatientMatcher
 from app.infrastructure.adapters.import_jobs.pydicom_metadata_reader import PydicomMetadataReader
 from app.infrastructure.adapters.import_jobs.report_serializer import import_draft_result_to_json
@@ -66,6 +67,20 @@ def _dicom_bytes(
     dataset.SeriesInstanceUID = series_uid or generate_uid()
     dataset.save_as(buffer, enforce_file_format=True)
     return buffer.getvalue()
+
+
+@pytest.mark.critical
+def test_demo_archive_exercises_review_workflow() -> None:
+    report = _extract_report(archive_filename='docere-demo-archive.zip', archive_content=build_demo_archive())
+
+    assert report['schema_version'] == 1
+    assert len(report['patients']) == 2
+    assert any(len(group['files']) == 2 for patient in report['patients'] for group in patient['record_groups'])
+    assert any(
+        len(group['event_date_candidates']) >= 2 for patient in report['patients'] for group in patient['record_groups']
+    )
+    assert any('unsafe' in warning.lower() for warning in report['warnings'])
+    assert any('empty file' in warning.lower() for warning in report['warnings'])
 
 
 @pytest.mark.critical

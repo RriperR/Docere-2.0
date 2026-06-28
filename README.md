@@ -104,7 +104,7 @@ Docere закрывает этот разрыв:
 ```bash
 docker compose up -d --build
 docker compose run --rm api migrate
-docker compose run --rm api seed-demo
+docker compose run --rm -v "$(pwd):/demo" api seed-demo --archive-output /demo/docere-demo-archive.zip
 
 cd frontend
 npm install
@@ -117,6 +117,10 @@ npm run dev
 - API gateway: [http://localhost:8000](http://localhost:8000)
 - OpenAPI: [http://localhost:8000/docs](http://localhost:8000/docs)
 - MinIO console: [http://localhost:9001](http://localhost:9001)
+
+Для основного демонстрационного сценария войдите как `dr.sokolov@docere.demo`, загрузите созданный
+`docere-demo-archive.zip` и откройте review. Архив содержит только синтетические данные: совпадение с существующим
+пациентом, новую карточку, DICOM-группу, неоднозначную дату, потенциальный дубль и небезопасный ZIP-путь.
 
 Проверить окружение:
 
