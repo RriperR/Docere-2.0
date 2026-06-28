@@ -454,12 +454,14 @@ Health endpoints существуют на уровне Nginx и FastAPI. API co
 Локальный compose поднимает:
 
 ```text
-browser -> Vite dev server
-browser -> :8000 Nginx -> api:8000
-                         -> PostgreSQL
-                         -> MinIO
-                         -> Redis -> Celery worker
+browser -> :8000 gateway Nginx -> frontend Nginx
+                               -> api:8000 -> PostgreSQL
+                                           -> MinIO
+                                           -> Redis -> Celery worker
 ```
+
+Vite dev server на `:5173` используется только для frontend-разработки. Production frontend image раздаёт SPA с
+fallback на `index.html`; gateway маршрутизирует `/api`, OpenAPI и UI через один origin.
 
 Nginx использует `least_conn`, keepalive и DNS resolve Docker service, поэтому API можно масштабировать:
 
@@ -469,7 +471,7 @@ docker compose up -d --build --scale api=2 gateway
 
 Container image собирается multi-stage Dockerfile и запускается непривилегированным пользователем. Миграция и management commands выполняются одноразовым контейнером из того же image, который затем разворачивается.
 
-GitLab CI содержит этапы:
+GitLab CI проверяет backend и frontend отдельно, собирает и публикует оба image и содержит этапы:
 
 ```text
 project-check -> build/push image -> migrate staging -> deploy -> smoke test

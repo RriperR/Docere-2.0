@@ -4,10 +4,17 @@ services:
     depends_on:
       api:
         condition: service_started
+      frontend:
+        condition: service_started
     ports:
       - '8000:80'
     volumes:
       - ../nginx/docere.conf:/etc/nginx/nginx.conf:ro
+
+  frontend:
+    image: ${DOCERE_FRONTEND_IMAGE:?DOCERE_FRONTEND_IMAGE is required}
+    expose:
+      - '80'
 
   api:
     image: ${DOCERE_IMAGE:?DOCERE_IMAGE is required}

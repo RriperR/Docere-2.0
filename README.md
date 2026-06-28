@@ -99,28 +99,27 @@ Docere закрывает этот разрыв:
 
 ## Быстрый старт
 
-Требования: Docker Desktop с WSL integration, Node.js 20.19+ или 22.12+ и npm.
+Требование для полного запуска: Docker Desktop с WSL integration. Node.js 22 и npm нужны только для отдельной
+frontend-разработки.
 
 ```bash
 docker compose up -d --build
 docker compose run --rm api migrate
 docker compose run --rm -v "$(pwd):/demo" api seed-demo --archive-output /demo/docere-demo-archive.zip
-
-cd frontend
-npm install
-npm run dev
 ```
 
 После запуска:
 
-- frontend: [http://localhost:5173](http://localhost:5173)
-- API gateway: [http://localhost:8000](http://localhost:8000)
+- приложение: [http://localhost:8000](http://localhost:8000)
 - OpenAPI: [http://localhost:8000/docs](http://localhost:8000/docs)
 - MinIO console: [http://localhost:9001](http://localhost:9001)
 
 Для основного демонстрационного сценария войдите как `dr.sokolov@docere.demo`, загрузите созданный
 `docere-demo-archive.zip` и откройте review. Архив содержит только синтетические данные: совпадение с существующим
 пациентом, новую карточку, DICOM-группу, неоднозначную дату, потенциальный дубль и небезопасный ZIP-путь.
+
+Для frontend-разработки с hot reload запустите `cd frontend && npm install && npm run dev`; Vite откроется на
+[http://localhost:5173](http://localhost:5173) и будет проксировать API через gateway.
 
 Проверить окружение:
 

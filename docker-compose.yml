@@ -54,6 +54,7 @@ services:
       "
 
   api:
+    image: ${DOCERE_IMAGE:-docere-api:local}
     build:
       context: .
       dockerfile: Dockerfile
@@ -95,6 +96,8 @@ services:
     depends_on:
       api:
         condition: service_started
+      frontend:
+        condition: service_healthy
     ports:
       - '8000:80'
     volumes:
@@ -105,7 +108,21 @@ services:
       timeout: 5s
       retries: 12
 
+  frontend:
+    image: ${DOCERE_FRONTEND_IMAGE:-docere-frontend:local}
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    expose:
+      - '80'
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1/health']
+      interval: 10s
+      timeout: 3s
+      retries: 12
+
   celery-worker:
+    image: ${DOCERE_IMAGE:-docere-api:local}
     build:
       context: .
       dockerfile: Dockerfile
