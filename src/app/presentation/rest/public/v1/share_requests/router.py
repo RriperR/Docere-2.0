@@ -6,12 +6,12 @@ from datetime import date, datetime, time, UTC
 from uuid import UUID
 
 from fastapi import APIRouter, Query, status
-from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.application.ports.repositories.share_requests.dtos import (
     CreateShareRequestResultDTO,
     ShareRequestDTO,
+    ShareUserDTO,
 )
 from app.application.use_cases.auth.common.dtos import AuthenticatedUserDTO
 from app.application.use_cases.share_requests.errors import (
@@ -28,9 +28,8 @@ from app.application.use_cases.share_requests.use_cases import (
     ListInboxShareRequestsUseCase,
     ListOutboxShareRequestsUseCase,
     RevokeShareRequestUseCase,
+    SearchShareRecipientsUseCase,
 )
-from app.infrastructure.adapters.repositories.audit_events import AuditEventRepositoryAdapter
-from app.infrastructure.db.models.auth.user import UserRow, UserStatus
 from app.presentation.rest.public.v1.records.dependencies import (
     accept_share_request_use_case_dependency,
     cancel_share_request_use_case_dependency,
@@ -41,6 +40,7 @@ from app.presentation.rest.public.v1.records.dependencies import (
     list_inbox_share_requests_use_case_dependency,
     list_outbox_share_requests_use_case_dependency,
     revoke_share_request_use_case_dependency,
+    search_share_recipients_use_case_dependency,
 )
 from app.presentation.rest.public.v1.share_requests.schemas import (
     CreateShareRequestResponseSchema,
@@ -73,17 +73,6 @@ def create_share_request(
             message=payload.message,
             expires_at=_expires_at_end_of_day(payload.expires_at),
         )
-        if result.request is not None:
-            AuditEventRepositoryAdapter(session).record(
-                actor_user_id=current_user.id,
-                event_type='share',
-                entity_type='record_share_request',
-                entity_id=result.request.id,
-                metadata_json={
-                    'record_ids': [str(record_id) for record_id in payload.record_ids],
-                    'expires_at': payload.expires_at.isoformat() if payload.expires_at else None,
-                },
-            )
         session.commit()
         return result
     except ShareTargetNotFoundError:
@@ -136,26 +125,14 @@ def list_outbox_share_requests(
 def search_share_recipients(
     q: str = Query(min_length=1, max_length=255),
     current_user: AuthenticatedUserDTO = current_authenticated_user_dependency,
-    session: Session = db_session_dependency,
-) -> list[UserRow]:
+    use_case: SearchShareRecipientsUseCase = search_share_recipients_use_case_dependency,
+) -> tuple[ShareUserDTO, ...]:
     """Найти пользователей-кандидатов для sharing по ФИО или email.
 
     Returns:
         Список активных пользователей без текущего пользователя.
     """
-    query = f'%{q.strip().lower()}%'
-    return list(
-        session.scalars(
-            select(UserRow)
-            .where(
-                UserRow.id != current_user.id,
-                UserRow.status == UserStatus.ACTIVE,
-                or_(UserRow.email.ilike(query), UserRow.fio.ilike(query)),
-            )
-            .order_by(UserRow.fio.asc())
-            .limit(10),
-        ),
-    )
+    return use_case.execute(user_id=current_user.id, query=q)
 
 
 @router.post('/{request_id}/accept', response_model=ShareRequestResponseSchema)
@@ -172,12 +149,6 @@ def accept_share_request(
     """
     try:
         request = use_case.execute(request_id=request_id, user_id=current_user.id)
-        AuditEventRepositoryAdapter(session).record(
-            actor_user_id=current_user.id,
-            event_type='accept',
-            entity_type='record_share_request',
-            entity_id=request.id,
-        )
         session.commit()
         return request
     except ShareRequestNotFoundError:
@@ -205,12 +176,6 @@ def decline_share_request(
     """
     try:
         request = use_case.execute(request_id=request_id, user_id=current_user.id)
-        AuditEventRepositoryAdapter(session).record(
-            actor_user_id=current_user.id,
-            event_type='decline',
-            entity_type='record_share_request',
-            entity_id=request.id,
-        )
         session.commit()
         return request
     except ShareRequestNotFoundError:
@@ -238,12 +203,6 @@ def cancel_share_request(
     """
     try:
         request = use_case.execute(request_id=request_id, user_id=current_user.id)
-        AuditEventRepositoryAdapter(session).record(
-            actor_user_id=current_user.id,
-            event_type='cancel',
-            entity_type='record_share_request',
-            entity_id=request.id,
-        )
         session.commit()
         return request
     except ShareRequestNotFoundError:
@@ -271,12 +230,6 @@ def revoke_share_request(
     """
     try:
         request = use_case.execute(request_id=request_id, user_id=current_user.id)
-        AuditEventRepositoryAdapter(session).record(
-            actor_user_id=current_user.id,
-            event_type='revoke',
-            entity_type='record_share_request',
-            entity_id=request.id,
-        )
         session.commit()
         return request
     except ShareRequestNotFoundError:

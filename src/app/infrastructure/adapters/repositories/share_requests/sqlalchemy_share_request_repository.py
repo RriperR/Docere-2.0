@@ -148,6 +148,25 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
         ).all()
         return tuple(self._to_request_dto(row) for row in rows)
 
+    def search_recipients(self, *, user_id: UUID, query: str, limit: int) -> tuple[ShareUserDTO, ...]:
+        """Найти активных пользователей по ФИО или email.
+
+        Returns:
+            Кандидаты без текущего пользователя.
+        """
+        pattern = f'%{query}%'
+        rows = self._session.scalars(
+            select(UserRow)
+            .where(
+                UserRow.id != user_id,
+                UserRow.status == UserStatus.ACTIVE,
+                or_(UserRow.email.ilike(pattern), UserRow.fio.ilike(pattern)),
+            )
+            .order_by(UserRow.fio.asc())
+            .limit(limit),
+        ).all()
+        return tuple(self._to_user_dto(row) for row in rows)
+
     def accept_request(self, *, request_id: UUID, user_id: UUID) -> ShareRequestDTO:
         """Принять pending sharing-запрос.
 

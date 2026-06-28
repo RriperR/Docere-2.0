@@ -9,6 +9,7 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 APP_DIR = ROOT_DIR / 'src' / 'app'
 DOMAIN_DIR = APP_DIR / 'domain'
 APPLICATION_DIR = APP_DIR / 'application'
+PUBLIC_REST_DIR = APP_DIR / 'presentation' / 'rest' / 'public'
 FORBIDDEN_PREFIXES = ('app.infrastructure', 'app.presentation')
 APPLICATION_FORBIDDEN_MODULES = {'zipfile', 'pydicom', 'mimetypes'}
 APPLICATION_FORBIDDEN_FROM_IMPORTS = {('io', 'BytesIO')}
@@ -64,6 +65,23 @@ def test_application_layer_does_not_import_infrastructure_or_archive_libraries()
                             'Application layer must use ports instead of infrastructure archive details. '
                             f'File={file_path}, import={node.module}.{alias.name}',
                         )
+
+
+@pytest.mark.critical
+def test_public_routers_do_not_query_orm_models_directly() -> None:
+    """Запретить ORM-модели в публичных HTTP-router модулях."""
+    for file_path in PUBLIC_REST_DIR.rglob('router.py'):
+        tree = ast.parse(file_path.read_text(encoding='utf-8'))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                import_names = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                import_names = [node.module] if node.module else []
+            else:
+                continue
+            for import_name in import_names:
+                if import_name and import_name.startswith('app.infrastructure.db.models'):
+                    raise AssertionError(f'Router must use application ports instead of ORM. File={file_path}')
 
 
 def _assert_application_import_allowed(*, file_path: Path, import_name: str) -> None:

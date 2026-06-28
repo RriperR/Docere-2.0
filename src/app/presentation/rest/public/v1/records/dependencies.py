@@ -30,7 +30,9 @@ from app.application.use_cases.share_requests.use_cases import (
     ListInboxShareRequestsUseCase,
     ListOutboxShareRequestsUseCase,
     RevokeShareRequestUseCase,
+    SearchShareRecipientsUseCase,
 )
+from app.infrastructure.adapters.repositories.audit_events import AuditEventRepositoryAdapter
 from app.infrastructure.adapters.repositories.medical_records.sqlalchemy_medical_record_repository import (
     SqlAlchemyMedicalRecordRepositoryAdapter,
 )
@@ -76,6 +78,10 @@ def _build_patient_card_repository(session: Session) -> SqlAlchemyPatientCardRep
 
 def _build_share_request_repository(session: Session) -> SqlAlchemyShareRequestRepositoryAdapter:
     return SqlAlchemyShareRequestRepositoryAdapter(session=session)
+
+
+def _build_audit_event_repository(session: Session) -> AuditEventRepositoryAdapter:
+    return AuditEventRepositoryAdapter(session=session)
 
 
 def get_create_medical_record_use_case(
@@ -206,7 +212,10 @@ def get_create_share_request_use_case(session: Session = db_session_dependency) 
     Returns:
         Настроенный use case создания sharing-запроса.
     """
-    return CreateShareRequestUseCase(repository=_build_share_request_repository(session))
+    return CreateShareRequestUseCase(
+        repository=_build_share_request_repository(session),
+        audit_events=_build_audit_event_repository(session),
+    )
 
 
 def get_list_inbox_share_requests_use_case(session: Session = db_session_dependency) -> ListInboxShareRequestsUseCase:
@@ -227,13 +236,25 @@ def get_list_outbox_share_requests_use_case(session: Session = db_session_depend
     return ListOutboxShareRequestsUseCase(repository=_build_share_request_repository(session))
 
 
+def get_search_share_recipients_use_case(session: Session = db_session_dependency) -> SearchShareRecipientsUseCase:
+    """Создать use case поиска получателей sharing.
+
+    Returns:
+        Настроенный use case поиска получателей.
+    """
+    return SearchShareRecipientsUseCase(repository=_build_share_request_repository(session))
+
+
 def get_accept_share_request_use_case(session: Session = db_session_dependency) -> AcceptShareRequestUseCase:
     """Создать use case принятия sharing-запроса.
 
     Returns:
         Настроенный use case принятия sharing-запроса.
     """
-    return AcceptShareRequestUseCase(repository=_build_share_request_repository(session))
+    return AcceptShareRequestUseCase(
+        repository=_build_share_request_repository(session),
+        audit_events=_build_audit_event_repository(session),
+    )
 
 
 def get_decline_share_request_use_case(session: Session = db_session_dependency) -> DeclineShareRequestUseCase:
@@ -242,7 +263,10 @@ def get_decline_share_request_use_case(session: Session = db_session_dependency)
     Returns:
         Настроенный use case отклонения sharing-запроса.
     """
-    return DeclineShareRequestUseCase(repository=_build_share_request_repository(session))
+    return DeclineShareRequestUseCase(
+        repository=_build_share_request_repository(session),
+        audit_events=_build_audit_event_repository(session),
+    )
 
 
 def get_cancel_share_request_use_case(session: Session = db_session_dependency) -> CancelShareRequestUseCase:
@@ -251,7 +275,10 @@ def get_cancel_share_request_use_case(session: Session = db_session_dependency) 
     Returns:
         Настроенный use case отмены sharing-запроса.
     """
-    return CancelShareRequestUseCase(repository=_build_share_request_repository(session))
+    return CancelShareRequestUseCase(
+        repository=_build_share_request_repository(session),
+        audit_events=_build_audit_event_repository(session),
+    )
 
 
 def get_revoke_share_request_use_case(session: Session = db_session_dependency) -> RevokeShareRequestUseCase:
@@ -260,7 +287,10 @@ def get_revoke_share_request_use_case(session: Session = db_session_dependency) 
     Returns:
         Настроенный use case отзыва sharing-запроса.
     """
-    return RevokeShareRequestUseCase(repository=_build_share_request_repository(session))
+    return RevokeShareRequestUseCase(
+        repository=_build_share_request_repository(session),
+        audit_events=_build_audit_event_repository(session),
+    )
 
 
 current_authenticated_user_dependency = Depends(get_current_authenticated_user)
@@ -279,6 +309,7 @@ search_patients_use_case_dependency = Depends(get_search_patients_use_case)
 create_share_request_use_case_dependency = Depends(get_create_share_request_use_case)
 list_inbox_share_requests_use_case_dependency = Depends(get_list_inbox_share_requests_use_case)
 list_outbox_share_requests_use_case_dependency = Depends(get_list_outbox_share_requests_use_case)
+search_share_recipients_use_case_dependency = Depends(get_search_share_recipients_use_case)
 accept_share_request_use_case_dependency = Depends(get_accept_share_request_use_case)
 decline_share_request_use_case_dependency = Depends(get_decline_share_request_use_case)
 cancel_share_request_use_case_dependency = Depends(get_cancel_share_request_use_case)

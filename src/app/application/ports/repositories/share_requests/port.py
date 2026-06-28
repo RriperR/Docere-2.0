@@ -8,6 +8,7 @@ from uuid import UUID
 from app.application.ports.repositories.share_requests.dtos import (
     CreateShareRequestResultDTO,
     ShareRequestDTO,
+    ShareUserDTO,
 )
 
 
@@ -43,6 +44,14 @@ class ShareRequestRepositoryPort:
 
         Returns:
             Исходящие запросы.
+        """
+        raise NotImplementedError
+
+    def search_recipients(self, *, user_id: UUID, query: str, limit: int) -> tuple[ShareUserDTO, ...]:
+        """Найти активных получателей sharing.
+
+        Returns:
+            Кандидаты без текущего пользователя.
         """
         raise NotImplementedError
 
