@@ -47,14 +47,14 @@ def get_db_session() -> Generator[Session, None, None]:
 
 
 def clear_db_session_cache() -> None:
-    """Очистить кеши engine и session-factory."""
+    """Закрыть подключения и очистить кеши engine и session-factory."""
+    engine = get_engine() if get_engine.cache_info().currsize else None
     get_session_factory.cache_clear()
+    if engine is not None:
+        engine.dispose()
     get_engine.cache_clear()
 
 
 def close_db_connections() -> None:
     """Закрыть активные подключения к БД и очистить кеш фабрик."""
-    if get_engine.cache_info().currsize:
-        get_engine().dispose()
-
     clear_db_session_cache()
