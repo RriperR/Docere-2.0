@@ -24,8 +24,6 @@ from app.application.use_cases.auth.login_user.use_case import LoginUserUseCase
 from app.application.use_cases.auth.refresh_access_token.use_case import RefreshAccessTokenUseCase
 from app.application.use_cases.auth.register_user.use_case import RegisterUserUseCase
 from app.application.use_cases.auth.update_profile.use_case import ProfileValidationError, UpdateProfileUseCase
-from app.infrastructure.adapters.repositories.audit_events import AuditEventRepositoryAdapter
-from app.infrastructure.adapters.repositories.auth.sqlalchemy_auth_repository import SqlAlchemyAuthRepositoryAdapter
 from app.presentation.rest.public.v1.auth.dependencies import (
     authenticated_user_use_case_dependency,
     bearer_token_extraction_dependency,
@@ -130,16 +128,7 @@ def login(
     try:
         token = use_case.execute(email=normalized_email, password=payload.password)
         try:
-            current_user = SqlAlchemyAuthRepositoryAdapter(session=session).find_by_email(email=normalized_email)
-            if current_user is not None:
-                AuditEventRepositoryAdapter(session).record(
-                    actor_user_id=current_user.id,
-                    event_type='login',
-                    entity_type='user',
-                    entity_id=current_user.id,
-                    metadata_json={'email': normalized_email},
-                )
-                session.commit()
+            session.commit()
         except SQLAlchemyError:
             session.rollback()
             logger.warning('Failed to record login audit event', exc_info=True)
@@ -212,14 +201,6 @@ def update_profile(
             date_of_birth=payload.date_of_birth,
             specialty=payload.specialty,
         )
-        if result.changes:
-            AuditEventRepositoryAdapter(session).record(
-                actor_user_id=current_user.id,
-                event_type='profile_updated',
-                entity_type='user',
-                entity_id=current_user.id,
-                metadata_json={'changes': result.changes},
-            )
         session.commit()
         return result.user
     except ProfileValidationError as exc:
@@ -263,12 +244,6 @@ def change_password(
             user_id=current_user.id,
             current_password=payload.current_password,
             new_password=payload.new_password,
-        )
-        AuditEventRepositoryAdapter(session).record(
-            actor_user_id=current_user.id,
-            event_type='password_changed',
-            entity_type='user',
-            entity_id=current_user.id,
         )
         session.commit()
         return Response(status_code=status.HTTP_204_NO_CONTENT)

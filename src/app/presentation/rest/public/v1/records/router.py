@@ -40,7 +40,6 @@ from app.application.use_cases.medical_records.get_medical_record.dtos import Ge
 from app.application.use_cases.medical_records.get_medical_record.use_case import GetMedicalRecordUseCase
 from app.application.use_cases.medical_records.record_attachments.dtos import AddRecordAttachmentDTO
 from app.application.use_cases.medical_records.record_attachments.use_cases import AddRecordAttachmentUseCase
-from app.infrastructure.adapters.repositories.audit_events import AuditEventRepositoryAdapter
 from app.presentation.rest.public.v1.records.dependencies import (
     add_comment_attachment_use_case_dependency,
     add_record_attachment_use_case_dependency,
@@ -125,13 +124,6 @@ def create_medical_record(
                 payload_json=payload.payload_json,
             ),
         )
-        AuditEventRepositoryAdapter(session).record(
-            actor_user_id=current_user.id,
-            event_type='create_record',
-            entity_type='medical_record',
-            entity_id=record.id,
-            metadata_json={'patient_passport_id': str(record.patient_passport_id)},
-        )
         session.commit()
         return record
     except PatientPassportNotFoundError:
@@ -193,13 +185,6 @@ def confirm_medical_record(
             record_id=record_id,
             actor_user_id=current_user.id,
             actor_role=current_user.role,
-        )
-        AuditEventRepositoryAdapter(session).record(
-            actor_user_id=current_user.id,
-            event_type='confirm_record',
-            entity_type='medical_record',
-            entity_id=record.id,
-            metadata_json={'status': record.status},
         )
         session.commit()
         return record

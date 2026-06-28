@@ -92,7 +92,10 @@ def get_create_medical_record_use_case(
     Returns:
         Настроенный use case создания записи.
     """
-    return CreateMedicalRecordUseCase(repository=_build_repository(session))
+    return CreateMedicalRecordUseCase(
+        repository=_build_repository(session),
+        audit_events=_build_audit_event_repository(session),
+    )
 
 
 def get_medical_record_use_case(
@@ -114,7 +117,10 @@ def get_confirm_medical_record_use_case(
     Returns:
         Настроенный use case подтверждения записи.
     """
-    return ConfirmMedicalRecordUseCase(repository=_build_repository(session))
+    return ConfirmMedicalRecordUseCase(
+        repository=_build_repository(session),
+        audit_events=_build_audit_event_repository(session),
+    )
 
 
 def get_add_record_comment_use_case(

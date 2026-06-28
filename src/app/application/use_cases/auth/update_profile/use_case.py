@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import date
 from uuid import UUID
 
+from app.application.ports.repositories.audit_events.port import AuditEventRepositoryPort
 from app.application.ports.repositories.user_profiles.dtos import UserProfileDTO
 from app.application.ports.repositories.user_profiles.port import UserProfileRepositoryPort
 from app.application.use_cases.auth.common.dtos import AuthenticatedUserDTO
@@ -27,13 +28,15 @@ class UpdateProfileResultDTO:
 class UpdateProfileUseCase:
     """Обновить профиль без изменения роли или статуса пользователя."""
 
-    def __init__(self, repository: UserProfileRepositoryPort) -> None:
+    def __init__(self, repository: UserProfileRepositoryPort, audit_events: AuditEventRepositoryPort) -> None:
         """Инициализировать сценарий.
 
         Args:
             repository: Репозиторий согласованного профиля.
+            audit_events: Репозиторий событий аудита.
         """
         self._repository = repository
+        self._audit_events = audit_events
 
     def execute(
         self,
@@ -78,10 +81,19 @@ class UpdateProfileUseCase:
         )
         if updated is None:
             raise UserNotFoundError
-        return UpdateProfileResultDTO(
+        result = UpdateProfileResultDTO(
             user=_to_authenticated_user(updated),
             changes=_profile_changes(current, updated),
         )
+        if result.changes:
+            self._audit_events.record(
+                actor_user_id=user_id,
+                event_type='profile_updated',
+                entity_type='user',
+                entity_id=user_id,
+                metadata_json={'changes': result.changes},
+            )
+        return result
 
 
 def _to_authenticated_user(profile: UserProfileDTO) -> AuthenticatedUserDTO:

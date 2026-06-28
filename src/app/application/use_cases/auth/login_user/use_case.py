@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import logging
+
+from app.application.ports.repositories.audit_events.port import AuditEventRepositoryPort
 from app.application.ports.repositories.auth.port import AuthRepositoryPort
 from app.application.ports.security.password_hasher import PasswordHasherPort
 from app.application.ports.security.token_service import TokenServicePort
 from app.application.use_cases.auth.common.dtos import AuthTokenDTO
 from app.application.use_cases.auth.errors import InvalidCredentialsError
+
+logger = logging.getLogger(__name__)
 
 
 class LoginUserUseCase:
@@ -17,6 +22,7 @@ class LoginUserUseCase:
         repository: AuthRepositoryPort,
         password_hasher: PasswordHasherPort,
         token_service: TokenServicePort,
+        audit_events: AuditEventRepositoryPort,
     ) -> None:
         """Инициализировать use case.
 
@@ -24,10 +30,12 @@ class LoginUserUseCase:
             repository: Репозиторий пользователей.
             password_hasher: Сервис проверки паролей.
             token_service: Сервис выпуска токенов.
+            audit_events: Репозиторий событий аудита.
         """
         self._repository = repository
         self._password_hasher = password_hasher
         self._token_service = token_service
+        self._audit_events = audit_events
 
     def execute(self, *, email: str, password: str) -> AuthTokenDTO:
         """Аутентифицировать пользователя и вернуть токены.
@@ -56,4 +64,14 @@ class LoginUserUseCase:
 
         access_token = self._token_service.create_access_token(user_id=user.id)
         refresh_token = self._token_service.create_refresh_token(user_id=user.id)
+        try:
+            self._audit_events.record(
+                actor_user_id=user.id,
+                event_type='login',
+                entity_type='user',
+                entity_id=user.id,
+                metadata_json={'email': email},
+            )
+        except Exception:
+            logger.warning('Failed to record login audit event', exc_info=True)
         return AuthTokenDTO(access_token=access_token, refresh_token=refresh_token)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from app.application.ports.repositories.audit_events.port import AuditEventRepositoryPort
 from app.application.ports.repositories.doctor_role_applications.dtos import (
     DoctorRoleApplicationDTO,
     DoctorRoleReviewerCandidateDTO,
@@ -79,13 +80,19 @@ class ListDoctorRoleReviewersUseCase:
 class CreateDoctorRoleApplicationUseCase:
     """Создать заявку пациента с выбранными проверяющими."""
 
-    def __init__(self, repository: DoctorRoleApplicationRepositoryPort) -> None:
+    def __init__(
+        self,
+        repository: DoctorRoleApplicationRepositoryPort,
+        audit_events: AuditEventRepositoryPort,
+    ) -> None:
         """Инициализировать сценарий.
 
         Args:
             repository: Репозиторий заявок на роль врача.
+            audit_events: Репозиторий событий аудита.
         """
         self._repository = repository
+        self._audit_events = audit_events
 
     def execute(
         self,
@@ -129,11 +136,22 @@ class CreateDoctorRoleApplicationUseCase:
         )
         if admin_count < 1 and doctor_count < 2:
             raise DoctorRoleApplicationValidationError
-        return self._repository.create_application(
+        application = self._repository.create_application(
             applicant_user_id=actor_user_id,
             specialty=normalized_specialty,
             reviewers=selected,
         )
+        self._audit_events.record(
+            actor_user_id=actor_user_id,
+            event_type='doctor_role_application_created',
+            entity_type='doctor_role_application',
+            entity_id=application.id,
+            metadata_json={
+                'specialty': application.specialty,
+                'reviewer_user_ids': [str(value) for value in unique_reviewer_ids],
+            },
+        )
+        return application
 
 
 class ListDoctorRoleApplicationsUseCase:
@@ -184,13 +202,19 @@ class ListDoctorRoleApplicationInboxUseCase:
 class ReviewDoctorRoleApplicationUseCase:
     """Сохранить решение проверяющего и пересчитать кворум."""
 
-    def __init__(self, repository: DoctorRoleApplicationRepositoryPort) -> None:
+    def __init__(
+        self,
+        repository: DoctorRoleApplicationRepositoryPort,
+        audit_events: AuditEventRepositoryPort,
+    ) -> None:
         """Инициализировать сценарий.
 
         Args:
             repository: Репозиторий заявок на роль врача.
+            audit_events: Репозиторий событий аудита.
         """
         self._repository = repository
+        self._audit_events = audit_events
 
     def execute(
         self,
@@ -249,8 +273,21 @@ class ReviewDoctorRoleApplicationUseCase:
             )
             if finalized is None:
                 raise DoctorRoleApplicationNotFoundError
-            return finalized
-        return updated
+            result = finalized
+        else:
+            result = updated
+        self._audit_events.record(
+            actor_user_id=actor_user_id,
+            event_type='doctor_role_application_reviewed',
+            entity_type='doctor_role_application',
+            entity_id=result.id,
+            metadata_json={
+                'decision': decision,
+                'application_status': result.status,
+                'specialty': result.specialty,
+            },
+        )
+        return result
 
 
 def _ensure_patient(actor_role: str) -> None:

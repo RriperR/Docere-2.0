@@ -12,6 +12,7 @@ from app.application.use_cases.auth.login_user.use_case import LoginUserUseCase
 from app.application.use_cases.auth.refresh_access_token.use_case import RefreshAccessTokenUseCase
 from app.application.use_cases.auth.register_user.use_case import RegisterUserUseCase
 from app.application.use_cases.auth.update_profile.use_case import UpdateProfileUseCase
+from app.infrastructure.adapters.repositories.audit_events import AuditEventRepositoryAdapter
 from app.infrastructure.adapters.repositories.auth.sqlalchemy_auth_repository import SqlAlchemyAuthRepositoryAdapter
 from app.infrastructure.adapters.repositories.patient_passports.sqlalchemy_patient_passport_repository import (
     SqlAlchemyPatientPassportRepositoryAdapter,
@@ -94,6 +95,7 @@ def get_login_user(
         repository=SqlAlchemyAuthRepositoryAdapter(session=session),
         password_hasher=Pbkdf2PasswordHasherAdapter(),
         token_service=_build_token_service(),
+        audit_events=AuditEventRepositoryAdapter(session=session),
     )
 
 
@@ -146,6 +148,7 @@ def get_change_password_use_case(
     return ChangePasswordUseCase(
         repository=SqlAlchemyAuthRepositoryAdapter(session=session),
         password_hasher=Pbkdf2PasswordHasherAdapter(),
+        audit_events=AuditEventRepositoryAdapter(session=session),
     )
 
 
@@ -162,6 +165,7 @@ def get_update_profile_use_case(
     """
     return UpdateProfileUseCase(
         repository=SqlAlchemyUserProfileRepositoryAdapter(session=session),
+        audit_events=AuditEventRepositoryAdapter(session=session),
     )
 
 

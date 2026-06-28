@@ -72,7 +72,10 @@ def get_create_application_use_case(session: Session = db_session_dependency) ->
     Returns:
         Настроенный use case.
     """
-    return CreateDoctorRoleApplicationUseCase(repository=_repository(session))
+    return CreateDoctorRoleApplicationUseCase(
+        repository=_repository(session),
+        audit_events=AuditEventRepositoryAdapter(session=session),
+    )
 
 
 def get_list_applications_use_case(session: Session = db_session_dependency) -> ListDoctorRoleApplicationsUseCase:
@@ -99,7 +102,10 @@ def get_review_application_use_case(session: Session = db_session_dependency) ->
     Returns:
         Настроенный use case.
     """
-    return ReviewDoctorRoleApplicationUseCase(repository=_repository(session))
+    return ReviewDoctorRoleApplicationUseCase(
+        repository=_repository(session),
+        audit_events=AuditEventRepositoryAdapter(session=session),
+    )
 
 
 list_specialties_use_case_dependency = Depends(get_list_specialties_use_case)
@@ -173,16 +179,6 @@ def create_doctor_role_application(
             actor_role=current_user.role,
             specialty=payload.specialty,
             reviewer_user_ids=tuple(payload.reviewer_user_ids),
-        )
-        AuditEventRepositoryAdapter(session).record(
-            actor_user_id=current_user.id,
-            event_type='doctor_role_application_created',
-            entity_type='doctor_role_application',
-            entity_id=application.id,
-            metadata_json={
-                'specialty': application.specialty,
-                'reviewer_user_ids': [str(value) for value in payload.reviewer_user_ids],
-            },
         )
         session.commit()
         return application
@@ -264,17 +260,6 @@ def review_doctor_role_application(
             actor_role=current_user.role,
             decision=payload.decision,
             note=payload.note,
-        )
-        AuditEventRepositoryAdapter(session).record(
-            actor_user_id=current_user.id,
-            event_type='doctor_role_application_reviewed',
-            entity_type='doctor_role_application',
-            entity_id=application.id,
-            metadata_json={
-                'decision': payload.decision,
-                'application_status': application.status,
-                'specialty': application.specialty,
-            },
         )
         session.commit()
         return application

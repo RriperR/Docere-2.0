@@ -105,7 +105,10 @@ def get_change_user_status_use_case(session: Session = db_session_dependency) ->
     Returns:
         Настроенный use case изменения статуса пользователя.
     """
-    return ChangeUserStatusUseCase(repository=SqlAlchemyAuthRepositoryAdapter(session=session))
+    return ChangeUserStatusUseCase(
+        repository=SqlAlchemyAuthRepositoryAdapter(session=session),
+        audit_events=AuditEventRepositoryAdapter(session=session),
+    )
 
 
 change_user_status_use_case_dependency = Depends(get_change_user_status_use_case)
@@ -242,17 +245,6 @@ def change_user_status(
             target_user_id=user_id,
             target_status=payload.status,
         )
-        if result.changed:
-            AuditEventRepositoryAdapter(session).record(
-                actor_user_id=current_user.id,
-                event_type='user_status_changed',
-                entity_type='user',
-                entity_id=user_id,
-                metadata_json={
-                    'previous_status': result.previous_status,
-                    'status': result.user.status,
-                },
-            )
         session.commit()
         return AdminUserResponseSchema.model_validate(result.user, from_attributes=True)
     except ChangeUserStatusAccessDeniedError:

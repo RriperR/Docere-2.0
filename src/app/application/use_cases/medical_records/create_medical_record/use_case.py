@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from app.application.ports.repositories.audit_events.port import AuditEventRepositoryPort
 from app.application.ports.repositories.medical_records.port import MedicalRecordRepositoryPort
 from app.application.use_cases.medical_records.common.dtos import MedicalRecordDTO
 from app.application.use_cases.medical_records.common.mappers import to_medical_record_dto
@@ -17,9 +18,14 @@ from app.application.use_cases.medical_records.errors import (
 class CreateMedicalRecordUseCase:
     """Создать медицинскую запись и вернуть ее проекцию для автора."""
 
-    def __init__(self, repository: MedicalRecordRepositoryPort) -> None:
+    def __init__(
+        self,
+        repository: MedicalRecordRepositoryPort,
+        audit_events: AuditEventRepositoryPort | None = None,
+    ) -> None:
         """Инициализировать use case репозиторием медицинских записей."""
         self._repository = repository
+        self._audit_events = audit_events
 
     def execute(self, input_dto: CreateMedicalRecordDTO) -> MedicalRecordDTO:
         """Создать медицинскую запись и определить ее врача-автора.
@@ -91,4 +97,13 @@ class CreateMedicalRecordUseCase:
             clinical_summary=input_dto.clinical_summary,
             payload_json=input_dto.payload_json,
         )
-        return to_medical_record_dto(accessible_record)
+        record = to_medical_record_dto(accessible_record)
+        if self._audit_events is not None:
+            self._audit_events.record(
+                actor_user_id=input_dto.actor_user_id,
+                event_type='create_record',
+                entity_type='medical_record',
+                entity_id=record.id,
+                metadata_json={'patient_passport_id': str(record.patient_passport_id)},
+            )
+        return record
