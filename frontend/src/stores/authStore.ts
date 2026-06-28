@@ -5,6 +5,7 @@ export type UserRole = 'doctor' | 'patient' | 'admin';
 
 interface TokenData {
   access_token: string;
+  refresh_token: string;
   token_type: string;
 }
 
