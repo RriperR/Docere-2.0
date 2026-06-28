@@ -5,6 +5,7 @@ import { AlertTriangle, ArrowLeft, CheckCircle, FileSearch, FileText } from 'luc
 
 import { Button } from '../../components/common/Button'
 import { Card } from '../../components/common/Card'
+import { ImportResultSummary } from '../../components/imports/ImportResultSummary'
 import { useUploadStore } from '../../stores/uploadStore'
 import { groupedWarnings } from '../../utils/importWarnings'
 
@@ -127,6 +128,8 @@ const UploadStatusPage: React.FC = () => {
         <Summary label="Вложения" value={Number(report.attachments_created ?? countFiles(patients))} />
         <Summary label="Предупреждения" value={warnings.length} />
       </div>
+
+      {isDone && <ImportResultSummary patients={report.resolved_patients ?? []} />}
 
       {warnings.length > 0 && (
         <Card title="Предупреждения" accent="warning">

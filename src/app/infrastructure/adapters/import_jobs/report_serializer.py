@@ -6,6 +6,7 @@ from datetime import date
 
 from app.application.use_cases.import_jobs.dtos import (
     DicomMetadata,
+    IMPORT_REPORT_SCHEMA_VERSION,
     ImportDraftResult,
     ImportedFileCandidate,
     PatientMatchCandidate,
@@ -19,6 +20,7 @@ def import_draft_result_to_json(result: ImportDraftResult) -> dict[str, object]:
         Словарь для хранения в report_json и отдачи через API-схемы.
     """
     return {
+        'schema_version': IMPORT_REPORT_SCHEMA_VERSION,
         'message': result.message,
         'source_archive': result.source_archive,
         'patients': [

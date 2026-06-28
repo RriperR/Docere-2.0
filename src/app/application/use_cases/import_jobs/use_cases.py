@@ -6,11 +6,12 @@ from datetime import date
 from uuid import UUID, uuid4
 
 from app.application.ports.import_jobs.archive_reader import ArchiveReaderPort
+from app.application.ports.repositories.audit_events.port import AuditEventRepositoryPort
 from app.application.ports.repositories.import_jobs.port import ImportJobRepositoryPort
 from app.application.ports.repositories.medical_records.port import MedicalRecordRepositoryPort
 from app.application.ports.repositories.patient_cards.port import PatientCardRepositoryPort
 from app.application.ports.storage.file_storage import FileStoragePort
-from app.application.use_cases.import_jobs.dtos import ImportJobDTO, ImportReviewDraftDTO
+from app.application.use_cases.import_jobs.dtos import IMPORT_REPORT_SCHEMA_VERSION, ImportJobDTO, ImportReviewDraftDTO
 from app.application.use_cases.import_jobs.errors import (
     ArchiveExtractionError,
     ImportJobDuplicateConfirmationRequiredError,
@@ -27,15 +28,22 @@ _FINAL_STATUSES = {'completed', 'completed_with_warnings', 'failed'}
 class CreateImportJobUseCase:
     """Сохранить ZIP-архив и создать ImportJob."""
 
-    def __init__(self, repository: ImportJobRepositoryPort, storage: FileStoragePort) -> None:
+    def __init__(
+        self,
+        repository: ImportJobRepositoryPort,
+        storage: FileStoragePort,
+        audit_events: AuditEventRepositoryPort,
+    ) -> None:
         """Инициализировать use case.
 
         Args:
             repository: Репозиторий ImportJob.
             storage: Файловое хранилище архивов.
+            audit_events: Репозиторий событий аудита.
         """
         self._repository = repository
         self._storage = storage
+        self._audit_events = audit_events
 
     def execute(
         self,
@@ -69,6 +77,13 @@ class CreateImportJobUseCase:
             original_filename=original_filename,
             archive_storage_key=storage_key,
             size_bytes=len(content),
+        )
+        self._audit_events.record(
+            actor_user_id=uploaded_by_user_id,
+            event_type='import',
+            entity_type='import_job',
+            entity_id=job.id,
+            metadata_json={'original_filename': job.original_filename, 'size_bytes': job.size_bytes},
         )
         return _to_dto(job)
 
@@ -258,6 +273,7 @@ class ResolveImportJobUseCase:
         medical_records: MedicalRecordRepositoryPort,
         storage: FileStoragePort,
         archive_reader: ArchiveReaderPort,
+        audit_events: AuditEventRepositoryPort,
     ) -> None:
         """Инициализировать use case."""
         self._import_jobs = import_jobs
@@ -265,6 +281,7 @@ class ResolveImportJobUseCase:
         self._medical_records = medical_records
         self._storage = storage
         self._archive_reader = archive_reader
+        self._audit_events = audit_events
 
     def execute(
         self,
@@ -313,11 +330,24 @@ class ResolveImportJobUseCase:
         created_records = 0
         created_attachments = 0
         duplicate_overrides: list[dict[str, object]] = []
+        resolved_patients: list[dict[str, object]] = []
         warnings = list(_as_str_list(report.get('warnings')))
 
         for candidate_id, patient in patients.items():
             decision = decision_by_candidate.get(candidate_id)
             if decision is None or decision.get('action') == 'skip':
+                resolved_patients.append(
+                    {
+                        'candidate_id': candidate_id,
+                        'action': 'skip',
+                        'patient_id': None,
+                        'record_ids': [],
+                        'record_groups': [
+                            {'group_id': str(group.get('group_id') or ''), 'action': 'skip', 'record_id': None}
+                            for group in _as_dict_list(patient.get('record_groups'))
+                        ],
+                    },
+                )
                 continue
             patient_id = self._resolve_patient_id(
                 actor_user_id=actor_user_id,
@@ -333,10 +363,13 @@ class ResolveImportJobUseCase:
                 for item in _as_dict_list(decision.get('record_groups'))
                 if item.get('group_id')
             }
+            resolved_record_ids: list[str] = []
+            resolved_groups: list[dict[str, object]] = []
             for group in _as_dict_list(patient.get('record_groups')):
                 group_id = str(group.get('group_id'))
                 group_decision = record_decisions.get(group_id, {})
                 if group_decision.get('action') == 'skip':
+                    resolved_groups.append({'group_id': group_id, 'action': 'skip', 'record_id': None})
                     continue
 
                 record_type = str(group_decision.get('record_type') or group.get('record_type') or 'other')
@@ -380,6 +413,10 @@ class ResolveImportJobUseCase:
                     ),
                 )
                 created_records += 1
+                resolved_record_ids.append(str(record.record.id))
+                resolved_groups.append(
+                    {'group_id': group_id, 'action': 'create', 'record_id': str(record.record.id)},
+                )
                 for file_info in _as_dict_list(group.get('files')):
                     path = str(file_info.get('path') or '')
                     try:
@@ -406,13 +443,25 @@ class ResolveImportJobUseCase:
                     )
                     created_attachments += 1
 
+            resolved_patients.append(
+                {
+                    'candidate_id': candidate_id,
+                    'action': str(decision.get('action')),
+                    'patient_id': str(patient_id),
+                    'record_ids': resolved_record_ids,
+                    'record_groups': resolved_groups,
+                },
+            )
+
         final_report = {
             **report,
+            'schema_version': IMPORT_REPORT_SCHEMA_VERSION,
             'message': 'Import resolved and medical records created',
             'patients_created': created_patients,
             'records_created': created_records,
             'attachments_created': created_attachments,
             'duplicate_overrides': duplicate_overrides,
+            'resolved_patients': resolved_patients,
             'warnings': warnings,
             'resolved_at': date.today().isoformat(),
         }
@@ -423,7 +472,28 @@ class ResolveImportJobUseCase:
         )
         if updated is None:
             raise ImportJobNotFoundError
-        return _to_dto(updated)
+        result = _to_dto(updated)
+        self._audit_events.record(
+            actor_user_id=actor_user_id,
+            event_type='resolve_import',
+            entity_type='import_job',
+            entity_id=result.id,
+            metadata_json={
+                'patients_created': created_patients,
+                'records_created': created_records,
+                'attachments_created': created_attachments,
+                'duplicate_overrides': duplicate_overrides,
+            },
+        )
+        if duplicate_overrides:
+            self._audit_events.record(
+                actor_user_id=actor_user_id,
+                event_type='import_duplicate_override',
+                entity_type='import_job',
+                entity_id=result.id,
+                metadata_json={'overrides': duplicate_overrides},
+            )
+        return result
 
     def _resolve_patient_id(
         self,

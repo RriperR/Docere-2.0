@@ -67,9 +67,28 @@ class ImportPatientDraftSchema(BaseModel):
     record_groups: list[ImportRecordGroupDraftSchema] = Field(default_factory=list)
 
 
+class ImportResolvedRecordGroupSchema(BaseModel):
+    """Итог resolve для одной группы архива."""
+
+    group_id: str
+    action: str = Field(pattern='^(create|skip)$')
+    record_id: UUID | None = None
+
+
+class ImportResolvedPatientSchema(BaseModel):
+    """Итог resolve для одного кандидата пациента."""
+
+    candidate_id: str
+    action: str = Field(pattern='^(existing|create|skip)$')
+    patient_id: UUID | None = None
+    record_ids: list[UUID] = Field(default_factory=list)
+    record_groups: list[ImportResolvedRecordGroupSchema] = Field(default_factory=list)
+
+
 class ImportReportSchema(BaseModel):
     """Типизированный отчёт ImportJob."""
 
+    schema_version: int | None = None
     message: str | None = None
     source_archive: str | None = None
     patients: list[ImportPatientDraftSchema] = Field(default_factory=list)
@@ -81,6 +100,7 @@ class ImportReportSchema(BaseModel):
     attachments_created: int | None = None
     errors: list[str] = Field(default_factory=list)
     duplicate_overrides: list[dict[str, object]] = Field(default_factory=list)
+    resolved_patients: list[ImportResolvedPatientSchema] = Field(default_factory=list)
     resolved_at: date | None = None
 
 

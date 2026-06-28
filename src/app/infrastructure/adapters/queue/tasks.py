@@ -9,7 +9,10 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.application.use_cases.import_jobs.dtos import ExtractImportDraftCommand
+from app.application.use_cases.import_jobs.dtos import (
+    ExtractImportDraftCommand,
+    IMPORT_REPORT_SCHEMA_VERSION,
+)
 from app.application.use_cases.import_jobs.errors import ArchiveExtractionError
 from app.application.use_cases.import_jobs.extractor import ExtractImportDraftUseCase
 from app.infrastructure.adapters.import_jobs.factory import build_zip_archive_reader
@@ -100,6 +103,7 @@ def process_import_job(job_id: str) -> None:
             repository.mark_failed(
                 job_id=job.id,
                 report_json={
+                    'schema_version': IMPORT_REPORT_SCHEMA_VERSION,
                     'message': 'Archive is not a valid ZIP file',
                     'errors': [str(exc)],
                     'source_archive': job.original_filename,
@@ -118,6 +122,7 @@ def process_import_job(job_id: str) -> None:
             repository.mark_failed(
                 job_id=job.id,
                 report_json={
+                    'schema_version': IMPORT_REPORT_SCHEMA_VERSION,
                     'message': 'Archive processing failed',
                     'errors': [str(exc)],
                     'source_archive': job.original_filename,

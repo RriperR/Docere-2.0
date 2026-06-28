@@ -153,6 +153,20 @@ const UploadReviewPage: React.FC = () => {
     )
   }
 
+  const reviewTotals = patientCandidates.reduce((totals, patient) => {
+    const decision = decisions.find((item) => item.candidate_id === patient.candidate_id)
+    const summary = reviewSummary(patient, decision)
+    const hasPatientIssue = !decision
+      || (decision.action === 'existing' && !decision.patient_passport_id)
+      || (decision.action === 'create' && !decision.fio.trim())
+    return {
+      ready: totals.ready + summary.ready,
+      unresolved: totals.unresolved + summary.needsDate + summary.needsDuplicate + (hasPatientIssue ? 1 : 0),
+      skipped: totals.skipped + summary.skipped,
+    }
+  }, { ready: 0, unresolved: 0, skipped: 0 })
+  const firstReviewIssueAnchor = findFirstReviewIssueAnchor(patientCandidates, decisions)
+
   const submit = async () => {
     if (!jobId) return
     const validationError = validateDecisions(decisions, patientCandidates)
@@ -160,6 +174,12 @@ const UploadReviewPage: React.FC = () => {
       setFormError(validationError)
       return
     }
+    const selectedPatients = decisions.filter((decision) => decision.action !== 'skip').length
+    const selectedRecords = decisions.reduce(
+      (count, decision) => count + decision.record_groups.filter((group) => group.action === 'create').length,
+      0,
+    )
+    if (!window.confirm(`Подтвердить импорт: пациентов — ${selectedPatients}, записей — ${selectedRecords}?`)) return
     setFormError('')
     await resolveJob(jobId, decisions.map(toPayload))
     navigate(`/upload/status/${jobId}`)
@@ -200,6 +220,23 @@ const UploadReviewPage: React.FC = () => {
           <p className="text-sm text-error-700">{formError || error || patientsError || reviewDraftError}</p>
         </div>
       )}
+
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+          <div className="flex flex-wrap gap-4">
+            <span className="font-medium text-success-700">Готово: {reviewTotals.ready}</span>
+            <span className={reviewTotals.unresolved > 0 ? 'font-medium text-warning-700' : 'text-gray-500'}>
+              Требуют решения: {reviewTotals.unresolved}
+            </span>
+            <span className="text-gray-500">Пропущено: {reviewTotals.skipped}</span>
+          </div>
+          {firstReviewIssueAnchor && (
+            <a className="font-medium text-primary-700 hover:underline" href={`#${firstReviewIssueAnchor}`}>
+              Перейти к следующему вопросу
+            </a>
+          )}
+        </div>
+      </Card>
 
       {patientCandidates.length > 0 && (
         <div className="sticky top-0 z-10 rounded-md border border-gray-100 bg-white/95 p-3 shadow-sm backdrop-blur">
@@ -375,7 +412,11 @@ const UploadReviewPage: React.FC = () => {
                   const needsDuplicateConfirmation = hasDuplicates && group.action === 'create' && !group.allow_possible_duplicate
                   const isSelected = getSelectedGroupIds(decision.candidate_id).includes(group.group_id)
                   return (
-                    <div key={group.group_id} className="rounded-lg border border-gray-100 p-4">
+                    <div
+                      key={group.group_id}
+                      id={`review-group-${group.group_id}`}
+                      className="scroll-mt-28 rounded-lg border border-gray-100 p-4"
+                    >
                       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                         <div className="flex items-center gap-2">
                           <FileText className="h-4 w-4 text-primary-600" />
@@ -839,6 +880,30 @@ function reviewSummary(patient: ImportPatientDraft, decision: PatientDecisionSta
     }
     return { ...summary, ready: summary.ready + 1 }
   }, { ready: 0, needsDate: 0, needsDuplicate: 0, skipped: 0 })
+}
+
+function findFirstReviewIssueAnchor(
+  patients: ImportPatientDraft[],
+  decisions: PatientDecisionState[],
+): string | null {
+  for (const decision of decisions) {
+    if (decision.action === 'skip') continue
+    const patient = patients.find((item) => item.candidate_id === decision.candidate_id)
+    if (
+      (decision.action === 'existing' && !decision.patient_passport_id)
+      || (decision.action === 'create' && !decision.fio.trim())
+    ) {
+      return decision.candidate_id
+    }
+    for (const group of decision.record_groups) {
+      if (group.action === 'skip') continue
+      const sourceGroup = patient?.record_groups.find((item) => item.group_id === group.group_id)
+      const hasUnconfirmedDuplicate =
+        getRelevantDuplicateCandidates(sourceGroup, decision).length > 0 && !group.allow_possible_duplicate
+      if (!group.event_date || hasUnconfirmedDuplicate) return `review-group-${group.group_id}`
+    }
+  }
+  return null
 }
 
 function formatFileSize(bytes: number) {

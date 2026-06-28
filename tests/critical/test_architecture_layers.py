@@ -84,6 +84,16 @@ def test_public_routers_do_not_query_orm_models_directly() -> None:
                     raise AssertionError(f'Router must use application ports instead of ORM. File={file_path}')
 
 
+@pytest.mark.critical
+def test_public_routers_do_not_record_audit_events_directly() -> None:
+    """Оставить формирование audit events внутри application use cases."""
+    for file_path in PUBLIC_REST_DIR.rglob('router.py'):
+        source = file_path.read_text(encoding='utf-8')
+        assert 'AuditEventRepositoryAdapter(session).record' not in source, (
+            f'Router must not orchestrate audit writes. File={file_path}'
+        )
+
+
 def _assert_application_import_allowed(*, file_path: Path, import_name: str) -> None:
     if import_name.startswith(FORBIDDEN_PREFIXES) or import_name in APPLICATION_FORBIDDEN_MODULES:
         raise AssertionError(

@@ -71,7 +71,11 @@ def get_create_import_job_use_case(session: Session = db_session_dependency) -> 
     Returns:
         Настроенный use case.
     """
-    return CreateImportJobUseCase(repository=_build_repository(session), storage=get_file_storage())
+    return CreateImportJobUseCase(
+        repository=_build_repository(session),
+        storage=get_file_storage(),
+        audit_events=AuditEventRepositoryAdapter(session=session),
+    )
 
 
 def get_import_job_use_case(session: Session = db_session_dependency) -> GetImportJobUseCase:
@@ -107,6 +111,7 @@ def get_resolve_import_job_use_case(session: Session = db_session_dependency) ->
         medical_records=SqlAlchemyMedicalRecordRepositoryAdapter(session=session),
         storage=get_file_storage(),
         archive_reader=build_zip_archive_reader(),
+        audit_events=AuditEventRepositoryAdapter(session=session),
     )
 
 
@@ -156,13 +161,6 @@ def create_import_job(
             original_filename=file.filename or 'archive.zip',
             content=content,
             content_type=file.content_type or 'application/zip',
-        )
-        AuditEventRepositoryAdapter(session).record(
-            actor_user_id=current_user.id,
-            event_type='import',
-            entity_type='import_job',
-            entity_id=job.id,
-            metadata_json={'original_filename': job.original_filename, 'size_bytes': job.size_bytes},
         )
         session.commit()
         with suppress(Exception):
@@ -280,27 +278,6 @@ def resolve_import_job(
             actor_fio=current_user.fio,
             decisions=[decision.model_dump(mode='json') for decision in payload.decisions],
         )
-        AuditEventRepositoryAdapter(session).record(
-            actor_user_id=current_user.id,
-            event_type='resolve_import',
-            entity_type='import_job',
-            entity_id=job.id,
-            metadata_json={
-                'patients_created': job.report_json.get('patients_created', 0),
-                'records_created': job.report_json.get('records_created', 0),
-                'attachments_created': job.report_json.get('attachments_created', 0),
-                'duplicate_overrides': job.report_json.get('duplicate_overrides', []),
-            },
-        )
-        duplicate_overrides = job.report_json.get('duplicate_overrides')
-        if isinstance(duplicate_overrides, list) and duplicate_overrides:
-            AuditEventRepositoryAdapter(session).record(
-                actor_user_id=current_user.id,
-                event_type='import_duplicate_override',
-                entity_type='import_job',
-                entity_id=job.id,
-                metadata_json={'overrides': duplicate_overrides},
-            )
         session.commit()
         return job
     except ImportJobNotFoundError:

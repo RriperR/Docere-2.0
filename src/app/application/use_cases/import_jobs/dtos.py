@@ -7,6 +7,8 @@ from datetime import date, datetime
 from enum import StrEnum
 from uuid import UUID
 
+IMPORT_REPORT_SCHEMA_VERSION = 1
+
 
 @dataclass(frozen=True, slots=True)
 class ImportJobDTO:

@@ -157,6 +157,16 @@ const PatientDetailsPage: React.FC = () => {
   }, [selectedRecordId, fetchRecordDetail])
 
   useEffect(() => {
+    const linkedRecordId = window.location.hash.startsWith('#record-')
+      ? window.location.hash.slice('#record-'.length)
+      : ''
+    if (linkedRecordId && patientRecords.some((record) => record.id === linkedRecordId)) {
+      setSelectedRecordId(linkedRecordId)
+      window.requestAnimationFrame(() => document.getElementById(`record-${linkedRecordId}`)?.scrollIntoView())
+    }
+  }, [patientRecords])
+
+  useEffect(() => {
     if (!isShareModalOpen) return
     const timer = window.setTimeout(() => {
       void searchRecipients(shareEmail)
@@ -660,6 +670,7 @@ const PatientDetailsPage: React.FC = () => {
               return (
                 <div
                   key={record.id}
+                  id={`record-${record.id}`}
                   className={`relative overflow-hidden rounded-xl border bg-white transition-all ${
                     isSelectedForShare
                       ? 'border-primary-300 ring-1 ring-primary-200'

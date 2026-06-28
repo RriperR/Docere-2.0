@@ -355,6 +355,8 @@ sequenceDiagram
 
 Потенциальный дубликат требует совпадения доступной пользователю карты пациента, типа, даты события и нормализованного названия. Само совпадение не блокирует review, но resolve требует явного `allow_possible_duplicate`. Такое разрешение сохраняется в итоговом report и отдельном audit event.
 
+`report_json` новых заданий содержит `schema_version`. После resolve поле `resolved_patients` связывает каждый исходный `candidate_id` с итоговым `patient_id`, созданными `record_ids` и решением по каждой группе. Старые отчёты без версии остаются читаемыми через optional поля публичной схемы.
+
 ## 11. Транзакции и согласованность
 
 SQLAlchemy session создаётся на HTTP request с `autoflush=False`, `autocommit=False`, `expire_on_commit=False`.
@@ -529,8 +531,6 @@ npm run lint
 | Recovery scan для import jobs | восстанавливает временные jobs после рестарта | transactional outbox и broker confirms |
 | JWT без server-side session registry | stateless API | token rotation/revocation registry для повышенных требований |
 | Эвристики распознавания архива | нет единого формата источников | confidence model и versioned extraction strategies |
-| Recipient search напрямую в presentation | небольшой read-only query появился раньше соответствующего port | перенести query в sharing repository и закрыть architecture test |
-| Audit вызывается из routers | транзакция аудита совпадает с HTTP-командой | application events и единый audit subscriber |
 
 ## 21. Как добавлять новую возможность
 

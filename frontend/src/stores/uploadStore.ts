@@ -50,6 +50,7 @@ export interface ImportPatientDraft {
 }
 
 export interface ImportReport extends Record<string, unknown> {
+  schema_version?: number
   message?: string
   source_archive?: string
   patients?: ImportPatientDraft[]
@@ -59,6 +60,19 @@ export interface ImportReport extends Record<string, unknown> {
   patients_created?: number
   records_created?: number
   attachments_created?: number
+  resolved_patients?: ImportResolvedPatient[]
+}
+
+export interface ImportResolvedPatient {
+  candidate_id: string
+  action: 'existing' | 'create' | 'skip'
+  patient_id: string | null
+  record_ids: string[]
+  record_groups: Array<{
+    group_id: string
+    action: 'create' | 'skip'
+    record_id: string | null
+  }>
 }
 
 export interface UploadJob {

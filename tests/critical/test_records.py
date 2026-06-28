@@ -597,6 +597,13 @@ def test_import_job_upload_status_and_worker_completion(
     assert resolve_response.json()['report_json']['patients_created'] == 1
     assert resolve_response.json()['report_json']['records_created'] == 1
     assert resolve_response.json()['report_json']['attachments_created'] == 1
+    resolved_report = resolve_response.json()['report_json']
+    assert resolved_report['schema_version'] == 1
+    assert resolved_report['resolved_patients'][0]['candidate_id'] == report['patients'][0]['candidate_id']
+    assert resolved_report['resolved_patients'][0]['action'] == 'create'
+    assert resolved_report['resolved_patients'][0]['patient_id']
+    assert len(resolved_report['resolved_patients'][0]['record_ids']) == 1
+    assert resolved_report['resolved_patients'][0]['record_groups'][0]['action'] == 'create'
     repeat_resolve_response = record_client.post(
         f'/api/archives/imports/{uploaded_job["id"]}/resolve',
         headers={'Authorization': f'Bearer {token}'},
