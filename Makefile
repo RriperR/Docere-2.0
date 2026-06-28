@@ -1,6 +1,6 @@
 .PHONY: install install-dev install-lint install-test install-all \
 	lint lint-fix format format-check type-check test test-critical \
-	test-with-coverage project-check migrate-up migrate-down docker-migrate-up \
+	test-with-coverage frontend-check project-check migrate-up migrate-down docker-migrate-up \
 	dev-backend dev-frontend dev
 
 PYTEST_TMPDIR ?= /tmp
@@ -43,6 +43,9 @@ test-critical:
 
 test-with-coverage:
 	TMPDIR=$(PYTEST_TMPDIR) uv run pytest --cov=src --cov-report=term-missing $(ARGS)
+
+frontend-check:
+	cd frontend && npm run build && npm run lint && npm run test
 
 project-check:
 	uv run pre-commit run --all-files

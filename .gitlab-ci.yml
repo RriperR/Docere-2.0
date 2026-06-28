@@ -21,6 +21,17 @@ project-check:
   script:
     - make project-check
 
+frontend-check:
+  stage: test
+  image: node:22-alpine
+  before_script:
+    - cd frontend
+    - npm ci
+  script:
+    - npm run build
+    - npm run lint
+    - npm run test
+
 build-image:
   stage: build
   image: docker:28-cli
