@@ -3,10 +3,12 @@
 ## Подготовка
 
 ```bash
-docker compose up -d --build
-docker compose run --rm api migrate
-docker compose run --rm -v "$(pwd):/demo" api seed-demo --archive-output /demo/docere-demo-archive.zip
+make demo-up
 ```
+
+Команда собирает образы, поднимает сервисы, применяет миграции, заполняет базу синтетическими данными и создаёт
+`docere-demo-archive.zip`. Повторно вернуть стенд в исходное состояние можно командой `make demo-reset`, проверить
+готовность — `make demo-check`, остановить — `make demo-down`.
 
 Откройте [http://localhost:8000](http://localhost:8000) и войдите как `dr.sokolov@docere.demo` с паролем
 `DemoPass123`.

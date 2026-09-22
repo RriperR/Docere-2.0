@@ -4,7 +4,7 @@
 
 Вместо безусловной загрузки файлов Docere сначала строит черновик импорта, показывает найденных пациентов и группы записей, подсвечивает неоднозначные даты и только после проверки пользователя изменяет медицинскую историю.
 
-[Возможности](#возможности) · [Демонстрация](docs/DEMO.md) · [Быстрый старт](#быстрый-старт) · [Архитектура](ARCHITECTURE.md) · [Безопасность](docs/SECURITY.md) · [Материалы диплома](docs/THESIS.md) · [Разработка](CONTRIBUTING.md)
+[Возможности](#возможности) · [Демонстрация](docs/DEMO.md) · [Быстрый старт](#быстрый-старт) · [Архитектура](ARCHITECTURE.md) · [Безопасность](docs/SECURITY.md) · [Проверка качества](docs/VALIDATION.md) · [Материалы диплома](docs/THESIS.md) · [Разработка](CONTRIBUTING.md)
 
 ![Рабочее место врача](docs/screenshots/doctor-dashboard.png)
 
@@ -103,9 +103,7 @@ Docere закрывает этот разрыв:
 frontend-разработки.
 
 ```bash
-docker compose up -d --build
-docker compose run --rm api migrate
-docker compose run --rm -v "$(pwd):/demo" api seed-demo --archive-output /demo/docere-demo-archive.zip
+make demo-up
 ```
 
 После запуска:
@@ -124,9 +122,11 @@ docker compose run --rm -v "$(pwd):/demo" api seed-demo --archive-output /demo/d
 Проверить окружение:
 
 ```bash
-docker compose ps
-curl http://localhost:8000/api/health
+make demo-check
 ```
+
+Сбросить только синтетические данные можно через `make demo-reset`, посмотреть логи — через `make demo-logs`,
+остановить стенд — через `make demo-down`.
 
 ## Что находится внутри
 

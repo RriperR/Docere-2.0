@@ -4,6 +4,8 @@
 .pytest_cache/
 .coverage
 htmlcov/
+artifacts/
+docere-demo-archive.zip
 dist/
 build/
 __pycache__/

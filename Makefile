@@ -1,7 +1,7 @@
 .PHONY: install install-dev install-lint install-test install-all \
 	lint lint-fix format format-check type-check test test-critical \
 	test-with-coverage frontend-check project-check migrate-up migrate-down docker-migrate-up \
-	dev-backend dev-frontend dev
+	dev-backend dev-frontend dev demo-up demo-reset demo-check demo-logs demo-down benchmark
 
 PYTEST_TMPDIR ?= /tmp
 
@@ -72,3 +72,21 @@ dev-frontend:
 dev:
 	docker compose up -d --build
 	cd frontend && npm run dev
+
+demo-up:
+	./scripts/demo.sh up
+
+demo-reset:
+	./scripts/demo.sh reset
+
+demo-check:
+	./scripts/demo.sh check
+
+demo-logs:
+	./scripts/demo.sh logs
+
+demo-down:
+	./scripts/demo.sh down
+
+benchmark:
+	uv run python scripts/benchmark_api.py --base-url http://localhost:8000 --rates 5 10 20 --duration 10 --output artifacts/benchmark-results.json
