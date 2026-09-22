@@ -24,13 +24,20 @@ wait_for_url() {
 check_demo() {
     wait_for_url 'http://localhost:8000/api/health' 'API'
     wait_for_url 'http://localhost:8000/' 'Web-интерфейс'
+    running_services=$(docker compose ps --status running --services)
+    for service in postgres redis minio api frontend gateway celery-worker; do
+        if ! printf '%s\n' "$running_services" | grep -qx "$service"; then
+            echo "Сервис $service не запущен" >&2
+            docker compose ps
+            return 1
+        fi
+    done
     docker compose ps
     echo 'Docere доступен: http://localhost:8000'
     echo 'OpenAPI доступен: http://localhost:8000/docs'
 }
 
 seed_demo() {
-    docker compose run --rm api migrate
     docker compose run --rm -v "$project_root:/demo" api \
         seed-demo --archive-output /demo/docere-demo-archive.zip
     echo "Синтетический архив создан: $archive_path"
@@ -38,8 +45,11 @@ seed_demo() {
 
 case "${1:-up}" in
     up)
-        docker compose up -d --build
-        check_demo
+        docker compose build api frontend celery-worker
+        docker compose up -d postgres redis minio createbuckets
+        docker compose wait createbuckets
+        docker compose run --rm --no-deps api migrate
+        docker compose up -d api frontend gateway celery-worker
         seed_demo
         check_demo
         ;;

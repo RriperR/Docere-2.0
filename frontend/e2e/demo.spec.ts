@@ -18,7 +18,8 @@ test('doctor can authenticate with the keyboard-accessible form', async ({ page 
   await expect(page.getByLabel('Пароль')).toBeFocused()
   await page.getByLabel('Пароль').fill(demoPassword)
   await page.getByLabel('Пароль').press('Enter')
-  await expect(page.getByRole('heading', { name: 'Рабочее место врача' })).toBeVisible()
+  await expect(page).toHaveURL(/\/dashboard\/doctor$/)
+  await expect(page.getByRole('heading', { name: 'Добро пожаловать, Дмитрий Соколов' })).toBeVisible()
 })
 
 test('sharing workspace remains usable at tablet width', async ({ page }) => {
@@ -41,6 +42,7 @@ test('doctor completes archive upload, review and result navigation', async ({ p
   for (const button of await page.getByRole('button', { name: 'Применить найденные даты' }).all()) {
     await button.click()
   }
+  await page.getByRole('button', { name: '01/05/2026' }).click()
   for (const button of await page.getByRole('button', { name: 'Импортировать всё равно' }).all()) {
     await button.click()
   }

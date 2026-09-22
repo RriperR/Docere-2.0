@@ -63,9 +63,10 @@ demo-e2e:
     - docker pull "$IMAGE_NAME"
     - docker pull "$FRONTEND_IMAGE_NAME"
   script:
-    - docker compose up -d --no-build
+    - docker compose up -d --no-build postgres redis minio createbuckets
     - docker compose wait createbuckets
-    - docker compose run --rm api migrate
+    - docker compose run --rm --no-deps api migrate
+    - docker compose up -d --no-build api frontend gateway celery-worker
     - docker volume create docere-e2e-fixtures
     - >
       docker compose run --rm -v docere-e2e-fixtures:/fixtures api
