@@ -70,6 +70,9 @@ demo-e2e:
     - docker compose up -d --no-build api frontend gateway celery-worker
     - docker volume create docere-e2e-fixtures
     - >
+      docker run --rm --user root --entrypoint chown
+      -v docere-e2e-fixtures:/fixtures "$IMAGE_NAME" 10001:10001 /fixtures
+    - >
       docker compose run --rm -v docere-e2e-fixtures:/fixtures api
       seed-demo --archive-output /fixtures/docere-demo-archive.zip
     - docker build -f frontend/Dockerfile.e2e -t docere-e2e-tests frontend
