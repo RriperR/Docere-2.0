@@ -156,3 +156,24 @@ npm run lint
 ```
 
 Процесс разработки, формат commit message и требования к Merge Request находятся в [CONTRIBUTING.md](CONTRIBUTING.md).
+
+### Надёжный импорт архивов
+
+Compose запускает `import-dispatcher`: он доставляет сохранённые в БД задания в Celery и восстанавливает просроченные попытки. При запуске без Compose дополнительно к API и worker запустите:
+
+```bash
+PYTHONPATH=src uv run python -m app.infrastructure.adapters.queue.recover_import_jobs --loop
+```
+
+Перед обновлением существующего окружения остановите старые API/worker/dispatcher, примените `alembic upgrade head`, затем запустите новые процессы. Миграция `20261004_17` создаёт outbox для старых `queued`/`running` заданий. Не запускайте старый worker одновременно с новым: старый код не проверяет token попытки. Downgrade выполняется только при остановленных процессах.
+
+Страница статуса импорта получает SSE; после `needs_review` работа продолжается через ручную проверку. Подробности повторной доставки, lease и ограничений SSE описаны в `ARCHITECTURE.md`, раздел 14.
+
+Регрессии доставки и PostgreSQL-конкуренции:
+
+```bash
+make test ARGS='tests/critical/test_import_delivery.py tests/critical/test_import_events.py -q'
+# Только отдельная тестовая PostgreSQL: тесты создают и удаляют свои временные схемы.
+DOCERE_TEST_POSTGRES_URL=postgresql+psycopg://USER:PASSWORD@HOST/TEST_DB \
+  make test ARGS='tests/critical/test_import_delivery.py -q'
+```

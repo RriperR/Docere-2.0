@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from contextlib import suppress
-from typing import cast, Protocol
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, status, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, status, UploadFile
 from sqlalchemy.orm import Session
 
 from app.application.use_cases.auth.common.dtos import AuthenticatedUserDTO
@@ -25,7 +23,6 @@ from app.application.use_cases.import_jobs.use_cases import (
     SaveImportReviewDraftUseCase,
 )
 from app.infrastructure.adapters.import_jobs.factory import build_zip_archive_reader
-from app.infrastructure.adapters.queue.tasks import process_import_job
 from app.infrastructure.adapters.repositories.audit_events import AuditEventRepositoryAdapter
 from app.infrastructure.adapters.repositories.import_jobs.sqlalchemy_import_job_repository import (
     SqlAlchemyImportJobRepositoryAdapter,
@@ -37,6 +34,7 @@ from app.infrastructure.adapters.repositories.patient_cards.sqlalchemy_patient_c
     SqlAlchemyPatientCardRepositoryAdapter,
 )
 from app.infrastructure.adapters.storage.factory import get_file_storage
+from app.presentation.rest.public.v1.archives.events import router as events_router
 from app.presentation.rest.public.v1.archives.schemas import (
     ImportJobResponseSchema,
     ImportReviewDraftResponseSchema,
@@ -50,15 +48,10 @@ from app.presentation.rest.public.v1.records.dependencies import (
 from app.presentation.webserver.http_errors import raise_forbidden, raise_not_found, raise_payload_too_large
 
 router = APIRouter(prefix='/archives', tags=['archives'])
+router.include_router(events_router)
 archive_file_dependency = File(...)
 MAX_ARCHIVE_SIZE_MB = 200
 MAX_ARCHIVE_SIZE_BYTES = MAX_ARCHIVE_SIZE_MB * 1024 * 1024
-
-
-class _CeleryTask(Protocol):
-    def delay(self, *args: object, **kwargs: object) -> object:
-        """Enqueue Celery task."""
-        ...
 
 
 def _build_repository(session: Session) -> SqlAlchemyImportJobRepositoryAdapter:
@@ -135,6 +128,7 @@ save_import_review_draft_use_case_dependency = Depends(get_save_import_review_dr
 
 @router.post('/imports', response_model=ImportJobResponseSchema, status_code=status.HTTP_201_CREATED)
 def create_import_job(
+    request: Request,
     file: UploadFile = archive_file_dependency,
     current_user: AuthenticatedUserDTO = current_authenticated_user_dependency,
     use_case: CreateImportJobUseCase = create_import_job_use_case_dependency,
@@ -161,10 +155,9 @@ def create_import_job(
             original_filename=file.filename or 'archive.zip',
             content=content,
             content_type=file.content_type or 'application/zip',
+            request_id=request.state.request_id,
         )
         session.commit()
-        with suppress(Exception):
-            cast(_CeleryTask, process_import_job).delay(str(job.id))
         return job
     except ImportJobValidationError as exc:
         session.rollback()

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { AlertTriangle, ArrowLeft, CheckCircle, FileSearch, FileText } from 'lucide-react'
@@ -6,11 +6,10 @@ import { AlertTriangle, ArrowLeft, CheckCircle, FileSearch, FileText } from 'luc
 import { Button } from '../../components/common/Button'
 import { Card } from '../../components/common/Card'
 import { ImportResultSummary } from '../../components/imports/ImportResultSummary'
+import { watchImport } from '../../api/importProgress'
+import { useAuthStore } from '../../stores/authStore'
 import { useUploadStore } from '../../stores/uploadStore'
 import { groupedWarnings } from '../../utils/importWarnings'
-
-const POLL_INTERVAL = 3000
-const FINAL_STATUSES = ['needs_review', 'completed', 'completed_with_warnings', 'failed']
 
 const statusLabel: Record<string, string> = {
   queued: 'В очереди',
@@ -23,38 +22,29 @@ const statusLabel: Record<string, string> = {
 
 const UploadStatusPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>()
-  const { currentJob, getJobById } = useUploadStore()
-  const currentJobStatus = currentJob?.status
-  const timerRef = useRef<number | null>(null)
+  const { currentJob, error } = useUploadStore()
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
 
   useEffect(() => {
-    if (!jobId) return undefined
+    if (!jobId || !isAuthenticated) return undefined
+    const controller = new AbortController()
+    useUploadStore.setState({ currentJob: null, error: null })
+    void watchImport(jobId, controller.signal, (job) => {
+      useUploadStore.setState((state) => ({
+        currentJob: { ...job, file: state.currentJob?.id === job.id ? state.currentJob.file : undefined },
+        jobs: state.jobs.map((item) => item.id === job.id ? job : item),
+        error: null,
+      }))
+    }, () => {
+      useUploadStore.setState({ currentJob: null, error: 'Импорт недоступен. Проверьте вход в аккаунт.' })
+    })
+    return () => controller.abort()
+  }, [jobId, isAuthenticated])
 
-    const fetchStatus = async () => {
-      await getJobById(jobId)
-    }
-
-    void fetchStatus()
-    timerRef.current = window.setInterval(() => {
-      if (currentJobStatus && FINAL_STATUSES.includes(currentJobStatus)) {
-        if (timerRef.current !== null) {
-          clearInterval(timerRef.current)
-          timerRef.current = null
-        }
-        return
-      }
-      void fetchStatus()
-    }, POLL_INTERVAL)
-
-    return () => {
-      if (timerRef.current !== null) clearInterval(timerRef.current)
-    }
-  }, [jobId, getJobById, currentJobStatus])
-
-  if (!currentJob) {
+  if (!currentJob || currentJob.id !== jobId) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <p className="text-gray-500">Загрузка статуса импорта...</p>
+        <p className="text-gray-500">{error ?? 'Загрузка статуса импорта...'}</p>
       </div>
     )
   }
@@ -150,7 +140,7 @@ const UploadStatusPage: React.FC = () => {
         </Card>
       )}
 
-      {isFailed && report.errors && Array.isArray(report.errors) && report.errors.length > 0 && (
+      {isFailed && Array.isArray(report.errors) && report.errors.length > 0 && (
         <Card title="Причина ошибки" accent="error">
           <div className="space-y-3">
             <ul className="space-y-2 text-sm text-error-700">

@@ -77,6 +77,10 @@ def create_app(*, env_file: Path | None = DEFAULT_ENV_FILE) -> FastAPI:
             Ответ приложения с заголовком `X-Request-ID`.
         """
         request_id = request.headers.get('X-Request-ID') or str(uuid4())
+        if len(request_id) > 128 or not all(
+            char.isascii() and (char.isalnum() or char in '-_.') for char in request_id
+        ):
+            request_id = str(uuid4())
         request.state.request_id = request_id
         started_at = perf_counter()
         response = await call_next(request)

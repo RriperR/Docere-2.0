@@ -129,7 +129,6 @@ services:
     entrypoint: ['/bin/sh', '-c']
     command:
       - >
-        python -m app.infrastructure.adapters.queue.recover_import_jobs &&
         celery --app app.infrastructure.adapters.queue.celery_app:celery_app worker --loglevel=INFO
     environment:
       APP_SERVICE_NAME: docere-service
@@ -145,6 +144,33 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+
+  import-dispatcher:
+    image: ${DOCERE_IMAGE:-docere-api:local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    entrypoint: ['/bin/sh', '-c']
+    command:
+      - >
+        python -m app.infrastructure.adapters.queue.recover_import_jobs --loop
+    environment:
+      APP_SERVICE_NAME: docere-service
+      APP_DATABASE__URL: postgresql+psycopg://docere:docere@postgres:5432/docere
+      APP_AUTH__SECRET_KEY: dev-secret-key
+      APP_STORAGE__ENDPOINT: http://minio:9000
+      APP_STORAGE__BUCKET: docere-records
+      APP_STORAGE__ACCESS_KEY: minioadmin
+      APP_STORAGE__SECRET_KEY: minioadmin
+      APP_QUEUE__BROKER_URL: redis://redis:6379/0
+      APP_QUEUE__RESULT_BACKEND: redis://redis:6379/1
+    depends_on:
+      postgres:
         condition: service_healthy
       minio:
         condition: service_healthy

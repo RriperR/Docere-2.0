@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from app.domain.entities.import_job import ImportJob
+from app.domain.entities.import_job import ImportJob, ImportJobProgress
 
 
 class ImportJobRepositoryPort:
@@ -17,8 +17,9 @@ class ImportJobRepositoryPort:
         original_filename: str,
         archive_storage_key: str,
         size_bytes: int,
+        request_id: str | None = None,
     ) -> ImportJob:
-        """Создать ImportJob в статусе queued."""
+        """Атомарно создать ImportJob в статусе queued и намерение отправить его обработчику."""
         raise NotImplementedError
 
     def get_job(self, *, job_id: UUID, requested_by_user_id: UUID, requested_by_role: str) -> ImportJob | None:
@@ -29,14 +30,6 @@ class ImportJobRepositoryPort:
         """Return accessible ImportJob rows."""
         raise NotImplementedError
 
-    def mark_running(self, *, job_id: UUID) -> ImportJob | None:
-        """Перевести ImportJob в running."""
-        raise NotImplementedError
-
-    def mark_needs_review(self, *, job_id: UUID, report_json: dict[str, object]) -> ImportJob | None:
-        """Перевести ImportJob в needs_review."""
-        raise NotImplementedError
-
     def mark_completed(self, *, job_id: UUID, report_json: dict[str, object]) -> ImportJob | None:
         """Перевести ImportJob в completed."""
         raise NotImplementedError
@@ -45,10 +38,16 @@ class ImportJobRepositoryPort:
         """Перевести ImportJob в completed_with_warnings."""
         raise NotImplementedError
 
-    def mark_failed(self, *, job_id: UUID, report_json: dict[str, object]) -> ImportJob | None:
-        """Перевести ImportJob в failed."""
-        raise NotImplementedError
-
     def save_review_draft(self, *, job_id: UUID, decisions: list[dict[str, object]]) -> ImportJob | None:
         """Сохранить промежуточные решения review для ImportJob."""
+        raise NotImplementedError
+
+    def get_progress(
+        self,
+        *,
+        job_id: UUID,
+        requested_by_user_id: UUID,
+        requested_by_role: str,
+    ) -> ImportJobProgress | None:
+        """Вернуть доступный статус, не загружая медицинский отчёт."""
         raise NotImplementedError

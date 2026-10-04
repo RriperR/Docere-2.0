@@ -23,6 +23,7 @@ def create_celery_app() -> Celery:
         task_ignore_result=False,
         task_publish_retry=False,
         broker_connection_timeout=1,
+        broker_transport_options={'socket_connect_timeout': 2, 'socket_timeout': 2, 'retry_on_timeout': False},
     )
     return app
 

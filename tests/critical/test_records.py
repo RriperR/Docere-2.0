@@ -530,7 +530,6 @@ def test_import_job_upload_status_and_worker_completion(
         'app.infrastructure.adapters.queue.tasks.get_file_storage',
         lambda: storage,
     )
-    monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.process_import_job.delay', lambda _: None)
     _create_doctor(email='import-owner@example.com')
     token = _login(record_client, 'import-owner@example.com', TEST_DOCTOR_PASSWORD)
     archive_content = _build_patient_archive_bytes()
@@ -667,7 +666,6 @@ def test_import_review_draft_survives_reload_and_clears_after_resolve(
     storage = _InMemoryStorage()
     monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.get_file_storage', lambda: storage)
     monkeypatch.setattr('app.infrastructure.adapters.queue.tasks.get_file_storage', lambda: storage)
-    monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.process_import_job.delay', lambda _: None)
     _create_doctor(email='import-draft-owner@example.com')
     owner_token = _login(record_client, 'import-draft-owner@example.com', TEST_DOCTOR_PASSWORD)
     upload_response = record_client.post(
@@ -747,7 +745,6 @@ def test_import_resolve_requires_event_date_when_archive_has_none(
     storage = _InMemoryStorage()
     monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.get_file_storage', lambda: storage)
     monkeypatch.setattr('app.infrastructure.adapters.queue.tasks.get_file_storage', lambda: storage)
-    monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.process_import_job.delay', lambda _: None)
     _create_doctor(email='import-no-event-date@example.com')
     token = _login(record_client, 'import-no-event-date@example.com', TEST_DOCTOR_PASSWORD)
     upload_response = record_client.post(
@@ -814,7 +811,6 @@ def test_import_job_resolve_warns_when_report_file_disappeared(
     storage = _InMemoryStorage()
     monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.get_file_storage', lambda: storage)
     monkeypatch.setattr('app.infrastructure.adapters.queue.tasks.get_file_storage', lambda: storage)
-    monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.process_import_job.delay', lambda _: None)
     _create_doctor(email='import-missing-file@example.com')
     token = _login(record_client, 'import-missing-file@example.com', TEST_DOCTOR_PASSWORD)
 
@@ -878,7 +874,6 @@ def test_import_job_resolve_warns_when_archive_becomes_unreadable(
     storage = _InMemoryStorage()
     monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.get_file_storage', lambda: storage)
     monkeypatch.setattr('app.infrastructure.adapters.queue.tasks.get_file_storage', lambda: storage)
-    monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.process_import_job.delay', lambda _: None)
     _create_doctor(email='import-unreadable-resolve@example.com')
     token = _login(record_client, 'import-unreadable-resolve@example.com', TEST_DOCTOR_PASSWORD)
 
@@ -936,7 +931,6 @@ def test_import_job_suggests_exact_accessible_patient_match(
     storage = _InMemoryStorage()
     monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.get_file_storage', lambda: storage)
     monkeypatch.setattr('app.infrastructure.adapters.queue.tasks.get_file_storage', lambda: storage)
-    monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.process_import_job.delay', lambda _: None)
     _create_doctor(email='import-match@example.com')
     token = _login(record_client, 'import-match@example.com', TEST_DOCTOR_PASSWORD)
     create_patient_response = record_client.post(
@@ -1090,7 +1084,6 @@ def test_import_job_list_shows_own_jobs_and_admin_sees_all(
 ) -> None:
     storage = _InMemoryStorage()
     monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.get_file_storage', lambda: storage)
-    monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.process_import_job.delay', lambda _: None)
     _create_doctor(email='import-list-a@example.com')
     _create_doctor(email='import-list-b@example.com')
     _create_admin(email='import-list-admin@example.com')
@@ -1131,11 +1124,10 @@ def test_import_job_recovery_enqueues_queued_jobs(
 
     class _TaskStub:
         @staticmethod
-        def delay(job_id: str) -> None:
-            enqueued.append(job_id)
+        def apply_async(*, args: list[str], kwargs: dict[str, str | None]) -> None:
+            enqueued.append(args[0])
 
     monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.get_file_storage', lambda: storage)
-    monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.process_import_job.delay', lambda _: None)
     monkeypatch.setattr('app.infrastructure.adapters.queue.recover_import_jobs.process_import_job', _TaskStub)
     _create_doctor(email='import-recover@example.com')
     token = _login(record_client, 'import-recover@example.com', TEST_DOCTOR_PASSWORD)
@@ -1174,7 +1166,6 @@ def test_import_job_extracts_dicom_metadata(
     storage = _InMemoryStorage()
     monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.get_file_storage', lambda: storage)
     monkeypatch.setattr('app.infrastructure.adapters.queue.tasks.get_file_storage', lambda: storage)
-    monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.process_import_job.delay', lambda _: None)
     _create_doctor(email='import-dicom@example.com')
     token = _login(record_client, 'import-dicom@example.com', TEST_DOCTOR_PASSWORD)
 
@@ -1212,7 +1203,6 @@ def test_import_job_worker_marks_corrupted_zip_failed(
     storage = _InMemoryStorage()
     monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.get_file_storage', lambda: storage)
     monkeypatch.setattr('app.infrastructure.adapters.queue.tasks.get_file_storage', lambda: storage)
-    monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.process_import_job.delay', lambda _: None)
     _create_doctor(email='import-broken@example.com')
     token = _login(record_client, 'import-broken@example.com', TEST_DOCTOR_PASSWORD)
 
@@ -3078,3 +3068,49 @@ def test_share_statuses_are_persisted_for_audit(record_client: TestClient) -> No
     assert share_row.status == RecordShareStatusRow.REVOKED
     assert share_row.responded_at is not None
     assert share_row.revoked_at is not None
+
+
+@pytest.mark.critical
+def test_import_events_resume_and_enforce_access(record_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    """SSE проверяет владельца, передаёт только статус и восстанавливает актуальный снимок."""
+    from app.infrastructure.db.models.import_dispatch import ImportDispatchRow
+
+    monkeypatch.setattr('app.presentation.rest.public.v1.archives.router.get_file_storage', lambda: _InMemoryStorage())
+    _create_doctor(email='events-owner@example.com')
+    token = _login(record_client, 'events-owner@example.com', TEST_DOCTOR_PASSWORD)
+    headers = {'Authorization': f'Bearer {token}', 'X-Request-ID': 'upload-correlation-123'}
+    response = record_client.post(
+        '/api/archives/imports',
+        headers=headers,
+        files={'file': ('events.zip', _build_patient_archive_bytes(), 'application/zip')},
+    )
+    assert response.status_code == 201
+    job_id = response.json()['id']
+    with get_session_factory()() as session:
+        outbox = session.get(ImportDispatchRow, UUID(job_id))
+        assert outbox is not None and outbox.request_id == headers['X-Request-ID']
+        job = session.get(ImportJobRow, UUID(job_id))
+        assert job is not None
+        job.status = ImportJobStatus.NEEDS_REVIEW
+        job.version = 3
+        session.commit()
+    url = f'/api/archives/imports/{job_id}/events'
+    events = record_client.get(url, headers={**headers, 'Last-Event-ID': '1'})
+    assert events.status_code == 200
+    assert events.headers['x-accel-buffering'] == 'no'
+    assert 'id: 3\nevent: status' in events.text
+    assert 'needs_review' in events.text and 'event: done' in events.text
+    assert 'archive_storage_key' not in events.text and 'report_json' not in events.text
+    resumed = record_client.get(url, headers={**headers, 'Last-Event-ID': '3'})
+    assert 'event: status' not in resumed.text and 'event: done' in resumed.text
+    assert record_client.get(url, headers={**headers, 'Last-Event-ID': '-1'}).status_code == 400
+    assert record_client.get(url).status_code == 401
+    _create_doctor(email='events-stranger@example.com')
+    stranger = _login(record_client, 'events-stranger@example.com', TEST_DOCTOR_PASSWORD)
+    assert record_client.get(url, headers={'Authorization': f'Bearer {stranger}'}).status_code == 404
+    with get_session_factory()() as session:
+        user = session.scalar(select(UserRow).where(UserRow.email == 'events-owner@example.com'))
+        assert user is not None
+        user.status = UserStatus.BLOCKED
+        session.commit()
+    assert record_client.get(url, headers=headers).status_code == 401

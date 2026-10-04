@@ -34,3 +34,21 @@ class ImportJob:
     review_updated_at: datetime | None
     created_at: datetime
     finished_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class ImportJobProgress:
+    """Версия и статус импорта без медицинских данных и содержимого отчёта."""
+
+    id: UUID
+    status: ImportJobStatus
+    version: int
+
+    @property
+    def processing_finished(self) -> bool:
+        """Закончен ли фоновый этап, включая ожидание ручной проверки.
+
+        Returns:
+            Признак завершения фоновой обработки.
+        """
+        return self.status not in {ImportJobStatus.QUEUED, ImportJobStatus.RUNNING}

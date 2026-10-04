@@ -52,6 +52,7 @@ class CreateImportJobUseCase:
         original_filename: str,
         content: bytes,
         content_type: str,
+        request_id: str | None = None,
     ) -> ImportJobDTO:
         """Создать ImportJob из загруженного ZIP-архива.
 
@@ -60,6 +61,7 @@ class CreateImportJobUseCase:
             original_filename: Исходное имя файла.
             content: Бинарное содержимое архива.
             content_type: MIME-тип файла.
+            request_id: Идентификатор HTTP-запроса для фоновой обработки.
 
         Returns:
             Созданный ImportJob.
@@ -77,6 +79,7 @@ class CreateImportJobUseCase:
             original_filename=original_filename,
             archive_storage_key=storage_key,
             size_bytes=len(content),
+            request_id=request_id,
         )
         self._audit_events.record(
             actor_user_id=uploaded_by_user_id,
