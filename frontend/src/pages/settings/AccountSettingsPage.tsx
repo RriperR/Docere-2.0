@@ -83,6 +83,7 @@ const AccountSettingsPage: React.FC = () => {
   }
 
   const handleSave = async () => {
+    if (!user) return
     try {
       await updateProfile({
         first_name: formData.firstName,

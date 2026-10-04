@@ -20,6 +20,23 @@ interface DateInputProps
   onChange: (value: string | null) => void;
 }
 
+// DatePicker supplies its own input ref through a named prop; preserve the caller's ref too.
+const CalendarInput = forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement> & {
+  pickerInputRef?: React.Ref<HTMLInputElement>
+  inputOnKeyDown?: React.KeyboardEventHandler<HTMLInputElement>
+}>(({ pickerInputRef, inputOnKeyDown, onKeyDown, ...props }, ref) => (
+  <input {...props} onKeyDown={(event) => {
+    inputOnKeyDown?.(event)
+    onKeyDown?.(event)
+  }} ref={(input) => {
+    for (const target of [ref, pickerInputRef]) {
+      if (typeof target === 'function') target(input)
+      else if (target) (target as React.MutableRefObject<HTMLInputElement | null>).current = input
+    }
+  }} />
+))
+CalendarInput.displayName = 'CalendarInput'
+
 const isoToDate = (value?: string | null): Date | null => {
   if (!value) return null;
 
@@ -86,7 +103,7 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(
           )}
           <DatePicker
             selected={selectedDate}
-            onChange={(date) => onChange(date ? dateToIso(date) : null)}
+            onChange={(date: Date | null) => onChange(date ? dateToIso(date) : null)}
             dateFormat="dd.MM.yyyy"
             locale="ru"
             strictParsing
@@ -111,8 +128,18 @@ export const DateInput = forwardRef<HTMLInputElement, DateInputProps>(
             calendarStartDay={1}
             popperClassName="docere-date-picker"
             wrapperClassName={fullWidth ? 'w-full' : undefined}
-            customInputRef={ref as React.Ref<HTMLInputElement>}
-            {...props}
+            customInput={<CalendarInput {...props} ref={ref} inputOnKeyDown={props.onKeyDown} />}
+            customInputRef="pickerInputRef"
+            id={props.id}
+            name={props.name}
+            form={props.form}
+            required={props.required}
+            readOnly={props.readOnly}
+            autoFocus={props.autoFocus}
+            title={props.title}
+            tabIndex={props.tabIndex}
+            onBlur={props.onBlur}
+            onFocus={props.onFocus}
           />
         </div>
         {error && (

@@ -7,7 +7,7 @@ import { ImportResultSummary } from './ImportResultSummary'
 describe('ImportResultSummary', () => {
   it('links a resolved record to its patient timeline', () => {
     render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <MemoryRouter>
         <ImportResultSummary
           patients={[
             {
@@ -31,7 +31,7 @@ describe('ImportResultSummary', () => {
 
   it('renders skipped candidates without a patient link', () => {
     render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <MemoryRouter>
         <ImportResultSummary
           patients={[
             {
