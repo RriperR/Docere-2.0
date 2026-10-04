@@ -47,6 +47,7 @@ class PractitionerPassportRow(Base):
             values_callable=enum_values,
         ),
         default=PractitionerPassportStatus.DRAFT,
+        server_default='draft',
     )
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

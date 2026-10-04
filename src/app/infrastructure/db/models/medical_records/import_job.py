@@ -6,6 +6,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import DateTime, Enum, ForeignKey, func, JSON, String, Uuid
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.domain.entities.import_job import ImportJobStatus
@@ -33,7 +34,7 @@ class ImportJobRow(Base):
     original_filename: Mapped[str | None] = mapped_column(String(length=255), nullable=True)
     archive_storage_key: Mapped[str | None] = mapped_column(String(length=512), nullable=True)
     size_bytes: Mapped[int | None] = mapped_column(nullable=True)
-    report_json: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    report_json: Mapped[dict[str, object]] = mapped_column(JSON().with_variant(JSONB(), 'postgresql'), default=dict)
     review_decisions_json: Mapped[list[dict[str, object]] | None] = mapped_column(JSON, nullable=True)
     review_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -6,7 +6,7 @@ from datetime import date, datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
-from sqlalchemy import Date, DateTime, Enum, func, String, Uuid
+from sqlalchemy import Date, DateTime, Enum, func, String, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.db.base import Base
@@ -33,10 +33,11 @@ class UserRow(Base):
     """ORM-представление таблицы `users`."""
 
     __tablename__ = 'users'
+    __table_args__ = (UniqueConstraint('email', name='uq_users_email'),)
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     fio: Mapped[str] = mapped_column(String(length=255))
-    email: Mapped[str] = mapped_column(String(length=320), unique=True, index=True)
+    email: Mapped[str] = mapped_column(String(length=320))
     phone: Mapped[str] = mapped_column(String(length=32))
     date_of_birth: Mapped[date | None] = mapped_column(Date, nullable=True)
     password_hash: Mapped[str] = mapped_column(String(length=255))

@@ -34,7 +34,7 @@ export interface FileAttachment {
   id: string
   record_id: string
   comment_id?: string
-  uploaded_by_user_id: string
+  uploaded_by_user_id: string | null
   uploaded_by_fio: string
   category: string
   filename?: string
@@ -127,7 +127,7 @@ interface BackendAttachment {
   id: string
   record_id: string
   comment_id: string | null
-  uploaded_by_user_id: string
+  uploaded_by_user_id: string | null
   uploaded_by_fio: string
   category: string
   filename: string | null

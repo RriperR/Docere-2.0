@@ -6,6 +6,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import DateTime, ForeignKey, func, JSON, String, Uuid
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.db.base import Base
@@ -21,5 +22,5 @@ class AuditEventRow(Base):
     event_type: Mapped[str] = mapped_column(String(length=128), index=True)
     entity_type: Mapped[str] = mapped_column(String(length=128), index=True)
     entity_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), index=True)
-    metadata_json: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    metadata_json: Mapped[dict[str, object]] = mapped_column(JSON().with_variant(JSONB(), 'postgresql'), default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

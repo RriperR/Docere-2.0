@@ -26,7 +26,7 @@ class FileAttachmentRow(Base):
         nullable=True,
         index=True,
     )
-    uploaded_by_user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey('users.id'), index=True)
+    uploaded_by_user_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey('users.id'), index=True)
     category: Mapped[FileAttachmentCategory] = mapped_column(
         Enum(
             FileAttachmentCategory,

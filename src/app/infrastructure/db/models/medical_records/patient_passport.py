@@ -20,7 +20,7 @@ class PatientPassportRow(Base):
     __tablename__ = 'patient_passports'
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
-    created_by_user_id: Mapped[UUID] = mapped_column(
+    created_by_user_id: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey('users.id'),
         index=True,

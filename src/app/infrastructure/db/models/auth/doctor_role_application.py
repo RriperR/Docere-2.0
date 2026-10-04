@@ -42,6 +42,7 @@ class DoctorRoleApplicationRow(Base):
             values_callable=enum_values,
         ),
         default=DoctorRoleApplicationStatus.PENDING,
+        server_default='pending',
         index=True,
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -72,6 +73,7 @@ class DoctorRoleReviewRow(Base):
             values_callable=enum_values,
         ),
         default=DoctorRoleReviewStatus.PENDING,
+        server_default='pending',
         index=True,
     )
     note: Mapped[str | None] = mapped_column(Text, nullable=True)

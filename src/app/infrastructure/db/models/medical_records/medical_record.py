@@ -6,6 +6,7 @@ from datetime import date, datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import Date, DateTime, Enum, ForeignKey, func, JSON, String, Text, Uuid
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.domain.entities.medical_record import MedicalRecordStatus, MedicalRecordType
@@ -50,7 +51,7 @@ class MedicalRecordRow(Base):
     title: Mapped[str | None] = mapped_column(String(length=255), nullable=True)
     appointment_location: Mapped[str | None] = mapped_column(String(length=255), nullable=True)
     clinical_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
-    payload_json: Mapped[dict[str, object]] = mapped_column(JSON)
+    payload_json: Mapped[dict[str, object]] = mapped_column(JSON().with_variant(JSONB(), 'postgresql'))
     confirmed_by_user_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey('users.id'), nullable=True)
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

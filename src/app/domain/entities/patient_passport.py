@@ -20,7 +20,7 @@ class PatientPassport:
     """Паспортные данные пациента в доменной модели."""
 
     id: UUID
-    created_by_user_id: UUID
+    created_by_user_id: UUID | None
     patient_user_id: UUID | None
     fio: str
     date_of_birth: date | None

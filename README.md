@@ -149,6 +149,8 @@ make project-check
 
 Команда запускает проверку форматирования, `ruff`, строгую типизацию `mypy`, backend-тесты и pre-commit hooks. Frontend проверяется отдельно:
 
+`npm run build` включает полную проверку TypeScript для приложения и Vite-конфигурации. Проверку типов можно запустить отдельно: `npm run type-check`.
+
 ```bash
 cd frontend
 npm run build
@@ -177,3 +179,5 @@ make test ARGS='tests/critical/test_import_delivery.py tests/critical/test_impor
 DOCERE_TEST_POSTGRES_URL=postgresql+psycopg://USER:PASSWORD@HOST/TEST_DB \
   make test ARGS='tests/critical/test_import_delivery.py -q'
 ```
+
+С той же переменной можно выполнить `make test ARGS='tests/integration/test_schema_migrations.py -q'`: проверяются upgrade, downgrade, повторный upgrade, сохранность старых данных и отсутствие расхождений ORM/БД через `alembic check`. Этот тест и PostgreSQL-проверки доставки включены в CI. Миграция `20261005_18` добавляет два отсутствовавших индекса по создателю; существующие миграции и сведения об авторстве не переписываются.

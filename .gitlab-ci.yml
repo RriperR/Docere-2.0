@@ -17,6 +17,14 @@ variables:
 project-check:
   stage: test
   image: python:3.13-slim
+  services:
+    - name: postgres:16-alpine
+      alias: postgres
+  variables:
+    POSTGRES_DB: docere_test
+    POSTGRES_USER: docere_test
+    POSTGRES_PASSWORD: isolated-ci-test
+    DOCERE_TEST_POSTGRES_URL: postgresql+psycopg://docere_test:isolated-ci-test@postgres:5432/docere_test
   before_script:
     - apt-get update && apt-get install -y --no-install-recommends git make
     - pip install --no-cache-dir uv
@@ -67,7 +75,7 @@ demo-e2e:
     - docker compose up -d --no-build postgres redis minio createbuckets
     - docker compose wait createbuckets
     - docker compose run --rm --no-deps api migrate
-    - docker compose up -d --no-build api frontend gateway celery-worker
+    - docker compose up -d --no-build api frontend gateway celery-worker import-dispatcher
     - docker volume create docere-e2e-fixtures
     - >
       docker run --rm --user root --entrypoint chown

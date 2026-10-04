@@ -3114,3 +3114,42 @@ def test_import_events_resume_and_enforce_access(record_client: TestClient, monk
         user.status = UserStatus.BLOCKED
         session.commit()
     assert record_client.get(url, headers=headers).status_code == 401
+
+
+@pytest.mark.critical
+def test_legacy_attachment_without_uploader_preserves_record_access(
+    record_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _register_patient(record_client, 'legacy-owner@example.com')
+    owner = _login(record_client, 'legacy-owner@example.com', TEST_PATIENT_PASSWORD)
+    patient_id = _get_patient_passport_id_by_email('legacy-owner@example.com')
+    record = _create_record(record_client, owner, patient_id, author_practitioner_full_name='Legacy clinician')
+    storage = _InMemoryStorage()
+    storage.upload(key='legacy.txt', content=b'legacy content', content_type='text/plain')
+    monkeypatch.setattr('app.presentation.rest.public.v1.records.dependencies.get_file_storage', lambda: storage)
+    with get_session_factory()() as session:
+        patient = session.get(PatientPassportRow, patient_id)
+        assert patient is not None
+        patient.created_by_user_id = None
+        attachment = FileAttachmentRow(
+            record_id=UUID(str(record['id'])),
+            uploaded_by_user_id=None,
+            category=FileAttachmentCategory.DOCUMENT,
+            storage_key='legacy.txt',
+            filename='legacy.txt',
+            mime_type='text/plain',
+            size_bytes=14,
+        )
+        session.add(attachment)
+        session.commit()
+        attachment_id = attachment.id
+    response = record_client.get(f'/api/records/{record["id"]}', headers={'Authorization': f'Bearer {owner}'})
+    assert response.status_code == 200
+    assert response.json()['attachments'][0]['uploaded_by_user_id'] is None
+    assert response.json()['attachments'][0]['uploaded_by_fio'] == 'Неизвестный пользователь'
+    url = f'/api/records/{record["id"]}/attachments/{attachment_id}'
+    assert record_client.get(url, headers={'Authorization': f'Bearer {owner}'}).content == b'legacy content'
+    _register_patient(record_client, 'legacy-stranger@example.com')
+    stranger = _login(record_client, 'legacy-stranger@example.com', TEST_PATIENT_PASSWORD)
+    assert record_client.get(url, headers={'Authorization': f'Bearer {stranger}'}).status_code == 403

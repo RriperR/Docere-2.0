@@ -400,7 +400,7 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
         """
         result = self._session.execute(
             select(FileAttachmentRow, UserRow.fio)
-            .join(UserRow, UserRow.id == FileAttachmentRow.uploaded_by_user_id)
+            .outerjoin(UserRow, UserRow.id == FileAttachmentRow.uploaded_by_user_id)
             .where(FileAttachmentRow.id == attachment_id)
             .limit(1),
         ).first()
@@ -427,7 +427,7 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
         record_attachments: list[FileAttachment] = []
         for attachment_row, uploaded_by_fio in self._session.execute(
             select(FileAttachmentRow, UserRow.fio)
-            .join(UserRow, UserRow.id == FileAttachmentRow.uploaded_by_user_id)
+            .outerjoin(UserRow, UserRow.id == FileAttachmentRow.uploaded_by_user_id)
             .where(FileAttachmentRow.record_id == record_row.id)
             .order_by(FileAttachmentRow.uploaded_at.asc()),
         ):
@@ -599,13 +599,13 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
         )
 
     @staticmethod
-    def _to_file_attachment(row: FileAttachmentRow, *, uploaded_by_fio: str) -> FileAttachment:
+    def _to_file_attachment(row: FileAttachmentRow, *, uploaded_by_fio: str | None) -> FileAttachment:
         return FileAttachment(
             id=row.id,
             record_id=row.record_id,
             comment_id=row.comment_id,
             uploaded_by_user_id=row.uploaded_by_user_id,
-            uploaded_by_fio=uploaded_by_fio,
+            uploaded_by_fio=uploaded_by_fio or 'Неизвестный пользователь',
             category=row.category,
             filename=row.filename,
             storage_key=row.storage_key,
