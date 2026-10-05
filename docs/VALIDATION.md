@@ -152,6 +152,10 @@ PLAYWRIGHT_BASE_URL=http://localhost:8000 npm run test:e2e -- clinical-cases.spe
 Playwright-сценарий совместного разбора. Область проверки, commits и оставшиеся замечания
 зафиксированы в [отчёте ревью](reviews/2026-10-05-clinical-cases.md).
 
+Замечания ревью закрыты. После миграции Tailwind на commit `a8b6e5b` повторно прошли
+34 frontend-теста, TypeScript, ESLint, сборка и все 4 Playwright-сценария. Полный
+`npm audit`, включая dev-зависимости, показывает 0 обнаруженных уязвимостей.
+
 ## Восстановление и RTO/RPO
 
 RTO и RPO остаются целями до отдельного эксперимента с согласованной копией PostgreSQL и MinIO. В протоколе
