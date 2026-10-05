@@ -11,6 +11,10 @@ import { buttonClass, cardClass, inputClass, stateLabel } from './styles'
 
 export default function CasePage() {
   const { id = '' } = useParams()
+  return <CaseWorkspace key={id} id={id} />
+}
+
+function CaseWorkspace({ id }: { id: string }) {
   const userId = useAuthStore(s => s.user?.id)
   const [view, setView] = useState<CaseView | null>(null)
   const [error, setError] = useState('')
@@ -30,6 +34,9 @@ export default function CasePage() {
   }, [id])
   useEffect(() => { setView(null); void load(); return () => { reads.current += 1 } }, [load])
   const accessible = !!view?.accessible
+  useEffect(() => {
+    if (!accessible) { setDocument(null); setReference(null) }
+  }, [accessible])
   useEffect(() => {
     if (!accessible) return
     const controller = new AbortController()

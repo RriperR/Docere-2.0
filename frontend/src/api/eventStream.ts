@@ -14,9 +14,9 @@ export async function* readEvents(stream: ReadableStream<Uint8Array>): AsyncGene
       const { value, done } = await reader.read()
       if (done) return
       pending += decoder.decode(value, { stream: true })
-      if (pending.length > 64 * 1024) throw new Error('SSE frame exceeds size limit')
       let delimiter: RegExpExecArray | null
       while ((delimiter = /\r?\n\r?\n/.exec(pending))) {
+        if (delimiter.index > 64 * 1024) throw new Error('SSE frame exceeds size limit')
         const frame = pending.slice(0, delimiter.index)
         pending = pending.slice(delimiter.index + delimiter[0].length)
         const event: ServerEvent = { event: 'message', id: '', data: '' }
@@ -31,6 +31,7 @@ export async function* readEvents(stream: ReadableStream<Uint8Array>): AsyncGene
         }
         if (data.length) yield { ...event, data: data.join('\n') }
       }
+      if (pending.length > 64 * 1024) throw new Error('SSE frame exceeds size limit')
     }
   } finally {
     await reader.cancel().catch(() => undefined)

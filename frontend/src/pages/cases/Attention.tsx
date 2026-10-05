@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import api from '../../api/api'
 import { caseError, type Page } from '../../api/cases'
@@ -13,12 +13,17 @@ export default function Attention() {
   const [offset, setOffset] = useState(0)
   const [total, setTotal] = useState(0)
   const [error, setError] = useState('')
+  const activeRead = useRef<AbortController | null>(null)
   const load = useCallback(async () => {
-    try { const page = (await api.get<Page<Task>>('/notifications/attention', { params: { offset, limit: 10 } })).data
+    activeRead.current?.abort()
+    const controller = new AbortController()
+    activeRead.current = controller
+    try { const page = (await api.get<Page<Task>>('/notifications/attention', { params: { offset, limit: 10 }, signal: controller.signal })).data
+      if (controller.signal.aborted) return
       setTasks(page.items); setTotal(page.total); setError('')
-    } catch (e) { setTasks([]); setError(caseError(e)) }
+    } catch (e) { if (controller.signal.aborted) return; setTasks([]); setError(caseError(e)) }
   }, [offset])
-  useEffect(() => { void load() }, [load, revision])
+  useEffect(() => { void load(); return () => activeRead.current?.abort() }, [load, revision])
   return <section className={cardClass}>
     <div className="flex justify-between"><h2 className="text-lg font-semibold">Требует внимания</h2>
       <Link className="text-primary-700 underline" to="/notifications">Центр уведомлений</Link></div>

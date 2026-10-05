@@ -54,21 +54,26 @@ export default function CaseDiscussion({ c, userId, onChange, onOpen, reference 
   const writable = c.status !== 'closed'
   const doctors = [{ user_id: c.coordinator_id, name: 'Координатор' }, ...c.members.filter(m => m.status === 'accepted')]
   const name = (id: string) => doctors.find(d => d.user_id === id)?.name ?? 'Врач'
+  const activeRead = useRef<AbortController | null>(null)
   const load = useCallback(async () => {
+    activeRead.current?.abort()
+    const controller = new AbortController()
+    activeRead.current = controller
     try {
       const [msg, op, act] = await Promise.all([
-        api.get<Page<Message>>(`/cases/${c.id}/messages`, { params: { offset, limit: 20 } }),
-        api.get<Page<Opinion>>(`/cases/${c.id}/opinions`, { params: { offset: opOffset, limit: 20 } }),
-        api.get<Page<Activity>>(`/cases/${c.id}/activity`, { params: { offset: actOffset, limit: 20 } }),
+        api.get<Page<Message>>(`/cases/${c.id}/messages`, { params: { offset, limit: 20 }, signal: controller.signal }),
+        api.get<Page<Opinion>>(`/cases/${c.id}/opinions`, { params: { offset: opOffset, limit: 20 }, signal: controller.signal }),
+        api.get<Page<Activity>>(`/cases/${c.id}/activity`, { params: { offset: actOffset, limit: 20 }, signal: controller.signal }),
       ])
+      if (controller.signal.aborted) return
       setMessages(msg.data.items); setTotal(msg.data.total); setOpinions(op.data.items); setOpTotal(op.data.total)
       setActivity(act.data.items); setActTotal(act.data.total)
       if (offset === 0 && msg.data.items.length) {
         await api.post(`/cases/${c.id}/discussion/read`, { sequence: Math.max(...msg.data.items.map(m => m.sequence)) })
       }
-    } catch (e) { setMessages([]); setOpinions([]); setActivity([]); setError(caseError(e)) }
+    } catch (e) { if (controller.signal.aborted) return; setMessages([]); setOpinions([]); setActivity([]); setError(caseError(e)) }
   }, [c.id, offset, opOffset, actOffset])
-  useEffect(() => { void load() }, [load, c.sequence])
+  useEffect(() => { void load(); return () => activeRead.current?.abort() }, [load, c.sequence])
   async function mutate(path: string, payload?: unknown) {
     setBusy(true); setError('')
     try { await api.post(`/cases/${c.id}/${path}`, payload); await onChange(); await load(); return true }

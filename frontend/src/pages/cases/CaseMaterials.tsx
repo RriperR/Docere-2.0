@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import api from '../../api/api'
 import { caseApi, caseError, type ClinicalCase, type Material, type Page } from '../../api/cases'
 import { buttonClass, cardClass, inputClass } from './styles'
@@ -29,18 +29,24 @@ export default function CaseMaterials({ c, owner, onChange, onOpen }: {
   const [question, setQuestion] = useState(c.question)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const activeRead = useRef<AbortController | null>(null)
   const load = useCallback(async () => {
+    activeRead.current?.abort()
+    const controller = new AbortController()
+    activeRead.current = controller
     try {
       const page = (await api.get<Page<Material>>(`/cases/${c.id}/materials`, { params: { query, offset, limit: 20,
-        record_type: type || undefined, status: status || undefined, date_from: dateFrom || undefined, date_to: dateTo || undefined } })).data
+        record_type: type || undefined, status: status || undefined, date_from: dateFrom || undefined, date_to: dateTo || undefined }, signal: controller.signal })).data
+      if (controller.signal.aborted) return
       setItems(page.items); setTotal(page.total)
       if (query) {
-        const msg = (await api.get<Page<Message>>(`/cases/${c.id}/messages`, { params: { query, offset: hitOffset, limit: 10 } })).data
+        const msg = (await api.get<Page<Message>>(`/cases/${c.id}/messages`, { params: { query, offset: hitOffset, limit: 10 }, signal: controller.signal })).data
+        if (controller.signal.aborted) return
         setHits(msg.items); setHitTotal(msg.total)
       } else { setHits([]); setHitTotal(0) }
-    } catch (e) { setItems([]); setHits([]); setError(caseError(e)); await onChange() }
+    } catch (e) { if (controller.signal.aborted) return; setItems([]); setHits([]); setError(caseError(e)); await onChange() }
   }, [c.id, query, type, status, dateFrom, dateTo, offset, hitOffset, onChange])
-  useEffect(() => { void load() }, [load, c.sequence])
+  useEffect(() => { void load(); return () => activeRead.current?.abort() }, [load, c.sequence])
   useEffect(() => {
     if (!adding && !editing) return
     let cancelled = false

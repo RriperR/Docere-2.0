@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import api from '../../api/api'
 import { caseError, type Page } from '../../api/cases'
@@ -21,12 +21,17 @@ export default function NotificationsPage() {
   const [offset, setOffset] = useState(0)
   const [total, setTotal] = useState(0)
   const [error, setError] = useState('')
+  const activeRead = useRef<AbortController | null>(null)
   const load = useCallback(async () => {
-    try { const page = (await api.get<Page<Notification>>('/notifications', { params: { offset, limit: 20 } })).data
+    activeRead.current?.abort()
+    const controller = new AbortController()
+    activeRead.current = controller
+    try { const page = (await api.get<Page<Notification>>('/notifications', { params: { offset, limit: 20 }, signal: controller.signal })).data
+      if (controller.signal.aborted) return
       setItems(page.items); setTotal(page.total); setError('')
-    } catch (e) { setItems([]); setError(caseError(e)) }
+    } catch (e) { if (controller.signal.aborted) return; setItems([]); setError(caseError(e)) }
   }, [offset])
-  useEffect(() => { void load() }, [load, revision])
+  useEffect(() => { void load(); return () => activeRead.current?.abort() }, [load, revision])
   async function read(path: string) {
     try { await api.post(`/notifications/${path}`); await refresh(); await load() } catch (e) { setError(caseError(e)) }
   }

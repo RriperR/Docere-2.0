@@ -29,8 +29,8 @@ export function caseError(error: unknown): string {
   return 'Не удалось выполнить действие. Повторите попытку.'
 }
 export const caseApi = {
-  list: async (scope: string, status: string, offset: number) =>
-    (await api.get<Page<CaseView>>('/cases', { params: { scope, status: status || undefined, offset, limit: 20 } })).data,
+  list: async (scope: string, status: string, offset: number, signal?: AbortSignal) =>
+    (await api.get<Page<CaseView>>('/cases', { params: { scope, status: status || undefined, offset, limit: 20 }, signal })).data,
   get: async (id: string) => (await api.get<CaseView>(`/cases/${id}`)).data,
   post: async (id: string, path: string, payload?: unknown) =>
     (await api.post<CaseView>(`/cases/${id}/${path}`, payload)).data,

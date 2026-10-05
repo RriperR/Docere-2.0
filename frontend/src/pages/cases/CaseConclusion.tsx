@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import CaseMaterialPicker from './CaseMaterialPicker'
 import api from '../../api/api'
@@ -25,12 +25,17 @@ export default function CaseConclusion({ c, owner, onChange, onOpen }: {
   const [eventDate, setEventDate] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const activeRead = useRef<AbortController | null>(null)
   const load = useCallback(async () => {
-    try { const page = (await api.get<Page<Conclusion>>(`/cases/${c.id}/conclusions`, { params: { offset, limit: 10 } })).data
+    activeRead.current?.abort()
+    const controller = new AbortController()
+    activeRead.current = controller
+    try { const page = (await api.get<Page<Conclusion>>(`/cases/${c.id}/conclusions`, { params: { offset, limit: 10 }, signal: controller.signal })).data
+      if (controller.signal.aborted) return
       setItems(page.items); setTotal(page.total)
-    } catch (e) { setItems([]); setPreview(null); setError(caseError(e)) }
+    } catch (e) { if (controller.signal.aborted) return; setItems([]); setPreview(null); setError(caseError(e)) }
   }, [c.id, offset])
-  useEffect(() => { void load() }, [load, c.version])
+  useEffect(() => { void load(); return () => activeRead.current?.abort() }, [load, c.version])
   async function mutate(path: string, payload: unknown) {
     setBusy(true); setError('')
     try { await api.post(`/cases/${c.id}/${path}`, payload); await onChange(); await load(); return true }

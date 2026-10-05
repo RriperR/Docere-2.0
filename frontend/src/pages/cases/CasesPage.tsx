@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { caseApi, caseError, type CaseView } from '../../api/cases'
 
@@ -13,13 +13,18 @@ export default function CasesPage() {
   const [offset, setOffset] = useState(0)
   const [total, setTotal] = useState(0)
   const [error, setError] = useState('')
+  const activeRead = useRef<AbortController | null>(null)
   const load = useCallback(async () => {
+    activeRead.current?.abort()
+    const controller = new AbortController()
+    activeRead.current = controller
     try {
-      const page = await caseApi.list(scope, status, offset)
+      const page = await caseApi.list(scope, status, offset, controller.signal)
+      if (controller.signal.aborted) return
       setItems(page.items); setTotal(page.total); setError('')
-    } catch (e) { setItems([]); setError(caseError(e)) }
+    } catch (e) { if (controller.signal.aborted) return; setItems([]); setError(caseError(e)) }
   }, [scope, status, offset])
-  useEffect(() => { void load() }, [load, revision])
+  useEffect(() => { void load(); return () => activeRead.current?.abort() }, [load, revision])
   return <div className="space-y-5">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <h1 className="text-2xl font-bold">Клинические случаи</h1>
