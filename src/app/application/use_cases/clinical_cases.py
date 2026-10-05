@@ -27,7 +27,9 @@ class CaseView:
     material_count: int
     accessible: bool
     case: ClinicalCase | None
+    unread_messages: int = 0
     patient_name: str | None = None
+    management_members: tuple[CaseMember, ...] = ()
     invitation_terms: str = 'Координатор сможет добавлять новые материалы этого пациента в совместный разбор.'
 
 
@@ -132,7 +134,9 @@ class ClinicalCasesUseCase:
             len(case.record_ids),
             accessible,
             case if accessible else None,
+            self.repository.unread_messages(case.id, user_id) if accessible else 0,
             patient.fio if patient else None,
+            tuple(case.members) if user_id == case.coordinator_id else (),
         )
 
     def list_cases(
@@ -184,6 +188,9 @@ class ClinicalCasesUseCase:
     ) -> CaseView:
         """Создать черновик одного пациента без эвристического объединения людей.
 
+        Raises:
+            CaseError: Если продолжение относится к другому пациенту.
+
         Returns:
             Результат операции в контексте доступа текущего пользователя.
 
@@ -197,7 +204,10 @@ class ClinicalCasesUseCase:
         """
         self.require_doctor(user_id)
         if previous_case_id:
-            self.require_context(self.load(previous_case_id, user_id), user_id)
+            previous = self.load(previous_case_id, user_id)
+            self.require_context(previous, user_id)
+            if previous.patient_id != patient_id:
+                raise CaseError('Продолжение должно относиться к тому же пациенту', 422)
         case = ClinicalCase(
             uuid4(),
             patient_id,
@@ -872,3 +882,45 @@ class ClinicalCasesUseCase:
         if message is None or message.case_id != case.id:
             raise CaseError('Сообщение не найдено', 404)
         return message
+
+    def mark_read(self, case_id: UUID, user_id: UUID, sequence: int) -> None:
+        """Прочитать обсуждение независимо от отметок уведомлений.
+
+        Args:
+            case_id: Идентификатор случая.
+            user_id: Текущий пользователь.
+            sequence: Параметр операции.
+        """
+        case = self.load(case_id, user_id, lock=True)
+        self.require_context(case, user_id)
+        self.repository.mark_discussion_read(case.id, user_id, min(sequence, case.sequence))
+
+    def terminate_user(self, user_id: UUID, actor_id: UUID) -> None:
+        """Прекратить участие и каскадно отозвать права без восстановления при разблокировке.
+
+        Args:
+            user_id: Текущий пользователь.
+            actor_id: Автор действия.
+        """
+        for case_id in self.repository.cases_for_user(user_id):
+            case = self.repository.get(case_id, lock=True)
+            if case is None:
+                continue
+            targets = (
+                case.members if case.coordinator_id == user_id else [m for m in case.members if m.user_id == user_id]
+            )
+            changed = False
+            for member in targets:
+                if member.status == 'accepted':
+                    self.repository.revoke(case, member.user_id)
+                    self.repository.cancel_assignee_opinions(case.id, member.user_id)
+                    member.status = 'removed'
+                    changed = True
+                elif member.status == 'pending':
+                    member.status = 'cancelled'
+                    changed = True
+            if case.coordinator_id == user_id:
+                self.repository.cancel_open_opinions(case.id)
+            if changed:
+                case.version += 1
+                self.changed(case, actor_id, 'participation_terminated', user_id, [case.coordinator_id])

@@ -5,10 +5,12 @@ from app.infrastructure.db.models.auth.doctor_role_application import DoctorRole
 from app.infrastructure.db.models.auth.user import UserRole, UserRow, UserStatus
 from app.infrastructure.db.models.clinical_cases import (
     CaseConclusionRow,
+    CaseDiscussionReadRow,
     CaseEventRow,
     CaseMaterialRow,
     CaseMemberRow,
     CaseMessageRow,
+    CaseNotificationRow,
     ClinicalCaseRow,
     OpinionRequestRow,
 )
@@ -22,6 +24,8 @@ from app.infrastructure.db.models.medical_records.record_comment import RecordCo
 from app.infrastructure.db.models.medical_records.user_record_link import UserRecordLinkRow, UserRecordLinkSourceRow
 
 __all__ = [
+    'CaseNotificationRow',
+    'CaseDiscussionReadRow',
     'CaseConclusionRow',
     'CaseMessageRow',
     'OpinionRequestRow',

@@ -8,6 +8,7 @@ import { AuthLayout } from './components/layouts/AuthLayout'
 import { DashboardLayout } from './components/layouts/DashboardLayout'
 import { useAuthStore } from './stores/authStore'
 
+const NotificationsPage = lazy(() => import('./pages/cases/NotificationsPage'))
 const CasesPage = lazy(() => import('./pages/cases/CasesPage'))
 const NewCasePage = lazy(() => import('./pages/cases/NewCasePage'))
 const CasePage = lazy(() => import('./pages/cases/CasePage'))
@@ -79,6 +80,7 @@ function App() {
               }
             />
 
+            <Route path="/notifications" element={<RoleRoute allowedRoles={['doctor']}><NotificationsPage /></RoleRoute>} />
             <Route path="/cases" element={<RoleRoute allowedRoles={['doctor']}><CasesPage /></RoleRoute>} />
             <Route path="/cases/new" element={<RoleRoute allowedRoles={['doctor']}><NewCasePage /></RoleRoute>} />
             <Route path="/cases/:id" element={<RoleRoute allowedRoles={['doctor']}><CasePage /></RoleRoute>} />

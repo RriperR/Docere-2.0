@@ -6,7 +6,7 @@ from sqlalchemy import exists, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.application.case_materials import MaterialFilters
-from app.domain.clinical_cases import CaseConclusion, CaseMember, CaseMessage, ClinicalCase, OpinionRequest
+from app.domain.clinical_cases import CaseConclusion, CaseError, CaseMember, CaseMessage, ClinicalCase, OpinionRequest
 from app.domain.entities.medical_record import MedicalRecordStatus, MedicalRecordType
 from app.infrastructure.adapters.repositories.share_requests.sqlalchemy_share_request_repository import (
     SqlAlchemyShareRequestRepositoryAdapter,
@@ -14,6 +14,7 @@ from app.infrastructure.adapters.repositories.share_requests.sqlalchemy_share_re
 from app.infrastructure.db.models.auth.user import UserRole, UserRow, UserStatus
 from app.infrastructure.db.models.clinical_cases import (
     CaseConclusionRow,
+    CaseDiscussionReadRow,
     CaseEventRow,
     CaseMaterialRow,
     CaseMemberRow,
@@ -207,6 +208,9 @@ class SqlAlchemyCaseRepository:
             case: Агрегат текущего разбора.
             user_id: Текущий пользователь.
             record_ids: Только новые материалы при дополнении, либо весь набор при принятии.
+
+        Raises:
+            CaseError: При нарушении условий операции.
         """
         member = case.member(user_id)
         request = (
@@ -232,6 +236,18 @@ class SqlAlchemyCaseRepository:
                 )
             )
             if link is None:
+                origin = self.session.scalar(
+                    select(UserRecordLinkRow)
+                    .where(
+                        UserRecordLinkRow.user_id == case.coordinator_id,
+                        UserRecordLinkRow.record_id == record_id,
+                        active_record_access(),
+                    )
+                    .order_by(UserRecordLinkRow.expires_at.desc().nulls_first())
+                    .limit(1)
+                )
+                if origin is None:
+                    raise CaseError('Координатор потерял доступ к материалу', 403)
                 share = RecordShareRow(
                     request_id=request.id,
                     record_id=record_id,
@@ -248,6 +264,7 @@ class SqlAlchemyCaseRepository:
                         source=UserRecordLinkSourceRow.SHARE_ACCEPTED,
                         source_record_share_id=share.id,
                         clinical_case_id=case.id,
+                        expires_at=origin.expires_at,
                     )
                 )
         self.session.flush()
@@ -682,3 +699,88 @@ class SqlAlchemyCaseRepository:
             ],
             'total': total,
         }
+
+    def unread_messages(self, case_id: UUID, user_id: UUID) -> int:
+        """Посчитать чужие сообщения после позиции прочтения.
+
+        Args:
+            case_id: Идентификатор случая.
+            user_id: Текущий пользователь.
+
+        Returns:
+            Результат сценария в контексте текущего пользователя.
+        """
+        marker = self.session.get(CaseDiscussionReadRow, (case_id, user_id))
+        return (
+            self.session.scalar(
+                select(func.count())
+                .select_from(CaseMessageRow)
+                .where(
+                    CaseMessageRow.case_id == case_id,
+                    CaseMessageRow.author_id != user_id,
+                    CaseMessageRow.sequence > (marker.sequence if marker else 0),
+                )
+            )
+            or 0
+        )
+
+    def mark_discussion_read(self, case_id: UUID, user_id: UUID, sequence: int) -> None:
+        """Продвинуть курсор без уменьшения при повторе или старом ответе.
+
+        Args:
+            case_id: Идентификатор случая.
+            user_id: Текущий пользователь.
+            sequence: Параметр операции.
+        """
+        marker = self.session.get(CaseDiscussionReadRow, (case_id, user_id))
+        if marker is None:
+            self.session.add(CaseDiscussionReadRow(case_id=case_id, user_id=user_id, sequence=sequence))
+        else:
+            marker.sequence = max(marker.sequence, sequence)
+
+    def cases_for_user(self, user_id: UUID) -> list[UUID]:
+        """Найти владение и действующие участия, включая непринятые приглашения.
+
+        Args:
+            user_id: Текущий пользователь.
+
+        Returns:
+            Результат сценария в контексте текущего пользователя.
+        """
+        memberships = select(CaseMemberRow.case_id).where(
+            CaseMemberRow.user_id == user_id, CaseMemberRow.status.in_(['pending', 'accepted'])
+        )
+        return list(
+            self.session.scalars(
+                select(ClinicalCaseRow.id)
+                .where(or_(ClinicalCaseRow.coordinator_id == user_id, ClinicalCaseRow.id.in_(memberships)))
+                .order_by(ClinicalCaseRow.id)
+            )
+        )
+
+    def inactive_users(self, limit: int) -> list[UUID]:
+        """Найти недействующих врачей, всё ещё участвующих в разборе.
+
+        Args:
+            limit: Размер страницы.
+
+        Returns:
+            Результат сценария в контексте текущего пользователя.
+        """
+        members = select(CaseMemberRow.user_id).where(CaseMemberRow.status.in_(['pending', 'accepted']))
+        coordinators = select(ClinicalCaseRow.coordinator_id).where(
+            ClinicalCaseRow.id.in_(
+                select(CaseMemberRow.case_id).where(CaseMemberRow.status.in_(['pending', 'accepted']))
+            )
+        )
+        return list(
+            self.session.scalars(
+                select(UserRow.id)
+                .where(
+                    or_(UserRow.id.in_(members), UserRow.id.in_(coordinators)),
+                    or_(UserRow.role != UserRole.DOCTOR, UserRow.status != UserStatus.ACTIVE),
+                )
+                .order_by(UserRow.id)
+                .limit(limit)
+            )
+        )

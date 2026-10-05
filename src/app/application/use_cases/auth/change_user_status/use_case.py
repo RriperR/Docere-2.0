@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from uuid import UUID
 
+from app.application.ports.clinical_cases import CaseParticipationPort
 from app.application.ports.repositories.audit_events.port import AuditEventRepositoryPort
 from app.application.ports.repositories.auth.dtos import AuthUserDTO
 from app.application.ports.repositories.auth.port import AuthRepositoryPort
@@ -41,15 +42,22 @@ class ChangeUserStatusUseCase:
 
     _allowed_statuses = frozenset({'active', 'blocked'})
 
-    def __init__(self, repository: AuthRepositoryPort, audit_events: AuditEventRepositoryPort) -> None:
+    def __init__(
+        self,
+        repository: AuthRepositoryPort,
+        audit_events: AuditEventRepositoryPort,
+        case_participation: CaseParticipationPort | None = None,
+    ) -> None:
         """Инициализировать сценарий.
 
         Args:
             repository: Репозиторий пользователей.
             audit_events: Репозиторий событий аудита.
+            case_participation: Прекращение участия и отзыв прав случаев при блокировке.
         """
         self._repository = repository
         self._audit_events = audit_events
+        self._case_participation = case_participation
 
     def execute(
         self,
@@ -69,6 +77,12 @@ class ChangeUserStatusUseCase:
             ChangeUserStatusValidationError: Если передан неподдерживаемый статус.
             ChangeUserStatusNotFoundError: Если целевой пользователь не найден.
             ChangeUserStatusSelfBlockError: Если администратор блокирует себя.
+
+        Args:
+            actor_user_id: Параметр операции.
+            actor_role: Параметр операции.
+            target_user_id: Параметр операции.
+            target_status: Параметр операции.
         """
         if actor_role != 'admin':
             raise ChangeUserStatusAccessDeniedError
@@ -82,6 +96,8 @@ class ChangeUserStatusUseCase:
             raise ChangeUserStatusSelfBlockError
 
         if current_user.status == target_status:
+            if target_status == 'blocked' and self._case_participation is not None:
+                self._case_participation.terminate_user(target_user_id, actor_user_id)
             return ChangeUserStatusResultDTO(
                 user=self._to_admin_user(current_user),
                 previous_status=current_user.status,
@@ -91,6 +107,8 @@ class ChangeUserStatusUseCase:
         updated_user = self._repository.set_status(user_id=target_user_id, status=target_status)
         if updated_user is None:
             raise ChangeUserStatusNotFoundError
+        if target_status == 'blocked' and self._case_participation is not None:
+            self._case_participation.terminate_user(target_user_id, actor_user_id)
         result = ChangeUserStatusResultDTO(
             user=self._to_admin_user(updated_user),
             previous_status=current_user.status,

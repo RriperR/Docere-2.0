@@ -19,6 +19,8 @@ import {
   X,
 } from 'lucide-react'
 
+import { useNotificationsStore } from '../../stores/notificationsStore'
+import { watchChanges } from '../../api/caseUpdates'
 import { useAuthStore } from '../../stores/authStore'
 import { useDoctorRoleApplicationsStore } from '../../stores/doctorRoleApplicationsStore'
 import { usePatientsStore } from '../../stores/patientsStore'
@@ -58,6 +60,16 @@ export const DashboardLayout = () => {
   const { inbox, fetchInbox: fetchShareInbox } = useShareRequestsStore()
   const roleApplicationInbox = useDoctorRoleApplicationsStore((state) => state.inbox)
   const fetchRoleApplicationInbox = useDoctorRoleApplicationsStore((state) => state.fetchInbox)
+  const clinicalUnread = useNotificationsStore(s => s.unread)
+  const refreshNotifications = useNotificationsStore(s => s.refresh)
+  const resetNotifications = useNotificationsStore(s => s.reset)
+  useEffect(() => {
+    resetNotifications()
+    if (user?.role !== 'doctor') return
+    const controller = new AbortController()
+    void watchChanges('/notifications/events', controller.signal, refreshNotifications, async () => { resetNotifications(); await refreshUser() })
+    return () => controller.abort()
+  }, [user?.id, user?.role, refreshNotifications, resetNotifications, refreshUser])
   const location = useLocation()
   const navigate = useNavigate()
 
@@ -124,6 +136,7 @@ export const DashboardLayout = () => {
 
     const roleLinks: Record<string, Array<{ path: string; label: string; icon: ReactNode; badge: number }>> = {
       doctor: [
+        { path: '/notifications', label: 'Уведомления', icon: <Bell className="h-5 w-5" />, badge: clinicalUnread },
         { path: '/cases', label: 'Клинические случаи', icon: <Users className="h-5 w-5" />, badge: 0 },
         { path: '/doctor-role-reviews', label: 'Заявки врачей', icon: <UserCheck className="h-5 w-5" />, badge: pendingRoleApplicationCount },
         { path: '/upload', label: 'Импорт архива', icon: <UploadCloud className="h-5 w-5" />, badge: 0 },

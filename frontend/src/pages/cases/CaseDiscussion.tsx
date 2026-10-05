@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { MaterialReference } from './CaseDocumentPanel'
+import CaseMaterialPicker from './CaseMaterialPicker'
 import api from '../../api/api'
+import { requestId } from '../../utils/requestId'
 import { caseError, type ClinicalCase, type Page } from '../../api/cases'
 import { buttonClass, cardClass, inputClass } from './styles'
 
@@ -61,6 +63,9 @@ export default function CaseDiscussion({ c, userId, onChange, onOpen, reference 
       ])
       setMessages(msg.data.items); setTotal(msg.data.total); setOpinions(op.data.items); setOpTotal(op.data.total)
       setActivity(act.data.items); setActTotal(act.data.total)
+      if (offset === 0 && msg.data.items.length) {
+        await api.post(`/cases/${c.id}/discussion/read`, { sequence: Math.max(...msg.data.items.map(m => m.sequence)) })
+      }
     } catch (e) { setMessages([]); setOpinions([]); setActivity([]); setError(caseError(e)) }
   }, [c.id, offset, opOffset, actOffset])
   useEffect(() => { void load() }, [load, c.sequence])
@@ -73,7 +78,7 @@ export default function CaseDiscussion({ c, userId, onChange, onOpen, reference 
   async function send() {
     const payload = { body, parent_id: parent?.id ?? null, record_id: record || null, opinion_id: replyOpinion?.id ?? null, attachment_id: attachment }
     const fingerprint = JSON.stringify(payload)
-    if (retry.current?.fingerprint !== fingerprint) retry.current = { fingerprint, key: crypto.randomUUID() }
+    if (retry.current?.fingerprint !== fingerprint) retry.current = { fingerprint, key: requestId() }
     if (await mutate('messages', { ...payload, idempotency_key: retry.current.key })) {
       setBody(''); setParent(null); setReplyOpinion(null); retry.current = null; setOffset(0)
     }
@@ -102,20 +107,20 @@ export default function CaseDiscussion({ c, userId, onChange, onOpen, reference 
         {parent && <p>Ответ: {parent.body} <button onClick={() => setParent(null)}>Отмена</button></p>}
         {replyOpinion && <p>Ответ на запрос: {replyOpinion.question} <button onClick={() => setReplyOpinion(null)}>Отмена</button></p>}
         <label className="block">Сообщение<textarea className={inputClass} maxLength={10000} value={body} onChange={e => setBody(e.target.value)} /></label>
-        <label className="block">Связанный материал<select className={inputClass} value={record} onChange={e => { setRecord(e.target.value); setAttachment(null) }}>
-          <option value="">Без ссылки</option>{c.record_ids.map(id => <option key={id} value={id}>{id.slice(0, 8)}</option>)}</select></label>
+        <CaseMaterialPicker caseId={c.id} sequence={c.sequence} selected={record ? [record] : []}
+          onAccessLost={onChange} onChange={ids => { setRecord(ids[0] ?? ''); setAttachment(null) }} />
         {attachment && <p>Ссылка на вложение: {reference?.label} <button onClick={() => setAttachment(null)}>Убрать вложение</button></p>}
         <p className="text-sm text-gray-500">Сообщения неизменяемы. Исправление отправьте новым ответом.</p>
         <button className={buttonClass} disabled={busy || !body.trim()} onClick={() => void send()}>Отправить сообщение</button>
       </div>}
     </section>
-    <section className={cardClass}><h2 className="text-lg font-semibold">Запросы мнения</h2>
+    <section id="opinions" className={cardClass}><h2 className="text-lg font-semibold">Запросы мнения</h2>
       {opinions.map(o => <article key={o.id} className="rounded-lg bg-gray-50 p-3 space-y-2">
         <p>{name(o.requester_id)} → {name(o.assignee_id)} · {o.status}</p><p>{o.question}</p>
         {o.reason && <p className="text-sm">Причина отмены: {o.reason === 'assignee_left' ? 'Адресат вышел из случая' : o.reason}</p>}
         {o.record_id && <button onClick={() => onOpen?.(o.record_id!, null)}>Открыть материал</button>}
         {writable && o.status === 'open' && o.assignee_id === userId && <button className="text-primary-700" onClick={() => {
-          setReplyOpinion(o); setParent(null); setRecord(o.record_id ?? '')
+          setReplyOpinion(o); setParent(null); setRecord(o.record_id ?? ''); setAttachment(null)
         }}>Ответить на запрос</button>}
         {writable && o.status === 'open' && [o.requester_id, c.coordinator_id].includes(userId) && <button className="ml-4" disabled={busy}
           onClick={() => void mutate(`opinions/${o.id}/cancel`)}>Отменить запрос</button>}

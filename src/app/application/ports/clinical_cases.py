@@ -239,3 +239,51 @@ class CaseRepositoryPort(Protocol):
             limit: Размер страницы.
         """
         ...
+
+    def unread_messages(self, case_id: UUID, user_id: UUID) -> int:
+        """Посчитать реплики после позиции прочтения.
+
+        Args:
+            case_id: Идентификатор случая.
+            user_id: Текущий пользователь.
+        """
+        ...
+
+    def mark_discussion_read(self, case_id: UUID, user_id: UUID, sequence: int) -> None:
+        """Монотонно продвинуть позицию прочтения.
+
+        Args:
+            case_id: Идентификатор случая.
+            user_id: Текущий пользователь.
+            sequence: Параметр операции.
+        """
+        ...
+
+    def cases_for_user(self, user_id: UUID) -> list[UUID]:
+        """Найти разборы, требующие прекращения участия пользователя.
+
+        Args:
+            user_id: Текущий пользователь.
+        """
+        ...
+
+    def inactive_users(self, limit: int) -> list[UUID]:
+        """Найти утративших роль или заблокированных участников для восстановления инварианта.
+
+        Args:
+            limit: Размер страницы.
+        """
+        ...
+
+
+class CaseParticipationPort(Protocol):
+    """Прекращение участия при блокировке аккаунта."""
+
+    def terminate_user(self, user_id: UUID, actor_id: UUID) -> None:
+        """Отозвать участие и его источники ACL в той же транзакции.
+
+        Args:
+            user_id: Текущий пользователь.
+            actor_id: Автор действия.
+        """
+        ...

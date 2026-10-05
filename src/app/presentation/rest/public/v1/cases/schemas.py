@@ -42,6 +42,24 @@ class DraftSchema(BaseModel):
     question: str = Field(min_length=1, max_length=10000)
     record_ids: list[UUID] = Field(max_length=100)
 
+    @field_validator('title', 'question')
+    @classmethod
+    def nonblank(cls, value: str) -> str:
+        """Отклонить пустое описание черновика.
+
+        Args:
+            value: Входной текст.
+
+        Returns:
+            Текст без внешних пробелов.
+
+        Raises:
+            ValueError: Если текст пуст.
+        """
+        if not value.strip():
+            raise ValueError('Введите текст')
+        return value.strip()
+
 
 class MaterialsSchema(BaseModel):
     """Добавление материалов с optimistic concurrency."""
@@ -151,3 +169,9 @@ class PublishSchema(BaseModel):
     """Дата медицинского события не подменяется временем публикации."""
 
     event_date: date
+
+
+class DiscussionReadSchema(BaseModel):
+    """Позиция прочтения реплик, не связанная с приглашениями."""
+
+    sequence: int = Field(ge=0)

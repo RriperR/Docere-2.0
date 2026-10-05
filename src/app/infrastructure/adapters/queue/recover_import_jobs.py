@@ -11,6 +11,7 @@ import structlog
 from sqlalchemy import or_, select, update
 
 from app.domain.entities.import_job import ImportJobStatus
+from app.infrastructure.adapters.queue.case_events import cleanup_invalid_participants, enqueue_case_events
 from app.infrastructure.adapters.queue.tasks import process_import_job
 from app.infrastructure.db.models._time import utc_now
 from app.infrastructure.db.models.import_dispatch import ImportDispatchRow
@@ -23,7 +24,12 @@ REDELIVERY_SECONDS = 60
 
 class _CeleryTask(Protocol):
     def apply_async(self, *, args: list[str], kwargs: dict[str, str | None]) -> object:
-        """Передать идентификаторы без содержимого медицинского архива."""
+        """Передать идентификаторы без содержимого медицинского архива.
+
+        Args:
+            args: Параметр операции.
+            kwargs: Параметр операции.
+        """
         ...
 
 
@@ -107,6 +113,8 @@ def main() -> None:
         try:
             count = enqueue_recoverable_import_jobs()
             logger.info('import_dispatch_cycle', sent=count)
+            cleanup_invalid_participants()
+            logger.info('case_dispatch_cycle', sent=enqueue_case_events())
         except Exception:
             logger.exception('import_dispatch_cycle_failed')
             if not args.loop:

@@ -4,6 +4,9 @@ Revision ID: 20261005_19
 Revises: 20261005_18
 """
 
+from collections import deque
+from uuid import UUID
+
 import sqlalchemy as sa
 from alembic import op
 
@@ -75,7 +78,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Удалить только права случаев; независимые права остаются."""
-    op.execute('DELETE FROM user_record_links WHERE clinical_case_id IS NOT NULL')
+    _revoke_case_rights()
     op.drop_table('case_members')
     op.drop_table('case_materials')
     op.execute(
@@ -101,3 +104,55 @@ def downgrade() -> None:
     op.drop_constraint('fk_share_case', 'record_share_requests', type_='foreignkey')
     op.drop_column('record_share_requests', 'clinical_case_id')
     op.drop_table('clinical_cases')
+
+
+def _revoke_case_rights() -> None:
+    """Отозвать источники случая и зависимые ветви перед удалением новой подсистемы."""
+    connection = op.get_bind()
+    pairs = connection.execute(
+        sa.text('SELECT DISTINCT user_id, record_id FROM user_record_links WHERE clinical_case_id IS NOT NULL')
+    ).all()
+    connection.execute(sa.text('DELETE FROM user_record_links WHERE clinical_case_id IS NOT NULL'))
+    queue: deque[tuple[UUID, UUID]] = deque((row[0], row[1]) for row in pairs)
+    visited: set[tuple[UUID, UUID]] = set()
+    while queue:
+        user_id, record_id = queue.popleft()
+        if (user_id, record_id) in visited:
+            continue
+        visited.add((user_id, record_id))
+        params = {'user_id': user_id, 'record_id': record_id}
+        independent = connection.scalar(
+            sa.text(
+                'SELECT EXISTS(SELECT 1 FROM user_record_links WHERE user_id=:user_id '
+                'AND record_id=:record_id AND (expires_at IS NULL OR expires_at > now()))'
+            ),
+            params,
+        )
+        if independent:
+            continue
+        downstream = connection.execute(
+            sa.text(
+                'SELECT s.id, s.request_id, r.to_user_id FROM record_shares s '
+                'JOIN record_share_requests r ON r.id=s.request_id '
+                "WHERE r.from_user_id=:user_id AND s.record_id=:record_id AND s.status IN ('pending','accepted')"
+            ),
+            params,
+        ).all()
+        for share_id, request_id, recipient in downstream:
+            connection.execute(
+                sa.text('DELETE FROM user_record_links WHERE source_record_share_id=:share_id'),
+                {'share_id': share_id},
+            )
+            connection.execute(
+                sa.text("UPDATE record_shares SET status='revoked', revoked_at=now() WHERE id=:share_id"),
+                {'share_id': share_id},
+            )
+            connection.execute(
+                sa.text(
+                    "UPDATE record_share_requests SET status='revoked', revoked_at=now() WHERE id=:request_id "
+                    'AND NOT EXISTS(SELECT 1 FROM record_shares WHERE request_id=:request_id '
+                    "AND status IN ('pending','accepted'))"
+                ),
+                {'request_id': request_id},
+            )
+            queue.append((recipient, record_id))

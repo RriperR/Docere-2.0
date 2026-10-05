@@ -187,6 +187,10 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
         for share_row in self._get_request_shares(request_row.id):
             if share_row.status != RecordShareStatusRow.PENDING:
                 continue
+            origin = self._get_access_link(user_id=request_row.from_user_id, record_id=share_row.record_id)
+            if origin is None:
+                raise ShareRequestAccessDeniedError
+            expiry = _minimum_expiry(request_row.expires_at, origin.expires_at)
             if not self._target_already_has_access(user_id=user_id, record_id=share_row.record_id, include_cases=False):
                 existing_link = self._get_existing_record_link(
                     user_id=user_id,
@@ -201,13 +205,13 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
                             patient_passport_id=share_row.patient_passport_id,
                             source=UserRecordLinkSourceRow.SHARE_ACCEPTED,
                             source_record_share_id=share_row.id,
-                            expires_at=request_row.expires_at,
+                            expires_at=expiry,
                         ),
                     )
                 else:
                     existing_link.source = UserRecordLinkSourceRow.SHARE_ACCEPTED
                     existing_link.source_record_share_id = share_row.id
-                    existing_link.expires_at = request_row.expires_at
+                    existing_link.expires_at = expiry
             share_row.status = RecordShareStatusRow.ACCEPTED
             share_row.responded_at = now
             self._confirm_record_if_patient_accepts_own_doctor_record(share_row=share_row, recipient_user_id=user_id)
@@ -405,7 +409,7 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
                 UserRecordLinkRow.record_id == record_id,
                 self._active_access_condition(),
             )
-            .order_by(UserRecordLinkRow.created_at.desc())
+            .order_by(UserRecordLinkRow.expires_at.desc().nulls_first(), UserRecordLinkRow.created_at.desc())
             .limit(1),
         )
 
@@ -603,3 +607,10 @@ def _is_expired(expires_at: datetime | None, now: datetime) -> bool:
         return False
     value = expires_at if expires_at.tzinfo is not None else expires_at.replace(tzinfo=UTC)
     return value <= now
+
+
+def _minimum_expiry(first: datetime | None, second: datetime | None) -> datetime | None:
+    values = [
+        value.replace(tzinfo=UTC) if value.tzinfo is None else value for value in (first, second) if value is not None
+    ]
+    return min(values) if values else None

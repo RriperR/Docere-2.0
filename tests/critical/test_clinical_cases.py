@@ -453,3 +453,301 @@ def test_new_material_does_not_restore_revoked_old_case_rights(record_client):
     assert added.status_code == 200
     assert client.get(url, headers=headers[1]).json()['case'] is None
     assert client.get(url + '/materials', headers=headers[1]).status_code == 403
+
+
+def deliver_case_events():
+    from app.infrastructure.adapters.queue.case_events import process_case_event
+    from app.infrastructure.db.models.clinical_cases import CaseEventRow
+
+    with get_session_factory()() as session:
+        events = list(session.scalars(select(CaseEventRow.id)))
+    for event_id in events:
+        process_case_event(str(event_id))
+        process_case_event(str(event_id))
+
+
+def test_outbox_survives_broker_outage_and_deduplicates_notifications(record_client, monkeypatch):
+    from app.infrastructure.adapters.queue.case_events import enqueue_case_events, process_case_event
+    from app.infrastructure.db.models._time import utc_now
+    from app.infrastructure.db.models.clinical_cases import CaseEventRow
+
+    client = record_client
+    case, _, ids, headers, _ = setup_case(client)
+
+    def fail(**_):
+        raise RuntimeError('broker unavailable')
+
+    monkeypatch.setattr(process_case_event, 'apply_async', fail)
+    case = invite(client, case, headers, ids[1])
+    assert enqueue_case_events() == 0
+    assert client.get(f'/api/cases/{case["id"]}', headers=headers[0]).json()['case']['status'] == 'active'
+    assert client.get('/api/notifications/count', headers=headers[1]).json()['unread'] == 0
+    queued = []
+    monkeypatch.setattr(process_case_event, 'apply_async', lambda **kwargs: queued.append(kwargs['args'][0]))
+    with get_session_factory()() as session:
+        for row in session.scalars(select(CaseEventRow)):
+            row.next_attempt_at = utc_now()
+            assert row.delivered_at is None
+        session.commit()
+    assert enqueue_case_events() == len(queued) and queued
+    for event_id in queued:
+        process_case_event(event_id)
+        process_case_event(event_id)
+    assert client.get('/api/notifications/count', headers=headers[1]).json()['unread'] == 1
+    notifications = client.get('/api/notifications', headers=headers[1])
+    assert 'Secret' not in notifications.text and notifications.json()['total'] == 1
+    notification_id = notifications.json()['items'][0]['id']
+    assert client.post(f'/api/notifications/{notification_id}/read', headers=headers[2]).status_code == 404
+    assert client.post('/api/notifications/read-all', headers=headers[1]).status_code == 200
+    assert client.get(f'/api/cases/{case["id"]}', headers=headers[1]).json()['membership_status'] == 'pending'
+    assert client.get('/api/notifications/attention', headers=headers[1]).json()['total'] == 1
+
+
+def test_messages_use_unread_positions_without_notification_fanout(record_client):
+    from uuid import uuid4
+
+    client = record_client
+    case, _, ids, headers, _ = setup_case(client)
+    case = invite(client, case, headers, ids[1])
+    url = f'/api/cases/{case["id"]}'
+    client.post(url + '/invitations/accept', headers=headers[1])
+    deliver_case_events()
+    initial_count = client.get('/api/notifications/count', headers=headers[1]).json()['unread']
+    original = client.post(
+        url + '/messages', headers=headers[0], json={'body': 'A message', 'idempotency_key': str(uuid4())}
+    ).json()
+    deliver_case_events()
+    assert client.get('/api/notifications/count', headers=headers[1]).json()['unread'] == initial_count
+    assert client.get(url, headers=headers[1]).json()['unread_messages'] == 1
+    assert client.post(url + '/discussion/read', headers=headers[1], json={'sequence': 999999}).status_code == 200
+    assert client.get(url, headers=headers[1]).json()['unread_messages'] == 0
+    client.post(url + '/messages', headers=headers[0], json={'body': 'Next message', 'idempotency_key': str(uuid4())})
+    client.post(url + '/discussion/read', headers=headers[1], json={'sequence': 0})
+    assert client.get(url, headers=headers[1]).json()['unread_messages'] == 1
+    response = client.post(
+        url + '/messages',
+        headers=headers[1],
+        json={'body': 'A reply', 'idempotency_key': str(uuid4()), 'parent_id': original['id']},
+    )
+    assert response.status_code == 201
+    deliver_case_events()
+    owner_notifications = client.get('/api/notifications', headers=headers[0]).json()['items']
+    assert any(n['event_type'] == 'message_reply' for n in owner_notifications)
+    client.post(url + '/leave', headers=headers[1])
+    item = client.get('/api/notifications', headers=headers[1]).json()['items'][0]
+    assert item['event_type'] == 'unavailable' and item['case_id'] is None and item['subject_id'] is None
+
+
+def test_blocking_revokes_case_and_downstream_rights_permanently(record_client):
+    from test_records import _create_admin, _create_share_request
+
+    client = record_client
+    case, records, ids, headers, _ = setup_case(client)
+    case = invite(client, case, headers, ids[1])
+    url = f'/api/cases/{case["id"]}'
+    client.post(url + '/invitations/accept', headers=headers[1])
+    share = _create_share_request(
+        client,
+        headers[1]['Authorization'].removeprefix('Bearer '),
+        to_user_email='outsider@cases.example.com',
+        record_ids=[records[0]['id']],
+    )['request']
+    assert client.post(f'/api/share-requests/{share["id"]}/accept', headers=headers[2]).status_code == 200
+    _create_admin()
+    admin_token = _login(client, 'admin@example.com', TEST_DOCTOR_PASSWORD)
+    admin_headers = {'Authorization': f'Bearer {admin_token}'}
+    blocked = client.patch(f'/api/admin/users/{ids[1]}/status', headers=admin_headers, json={'status': 'blocked'})
+    assert blocked.status_code == 200, blocked.text
+    assert client.get(f'/api/records/{records[0]["id"]}', headers=headers[2]).status_code in {403, 404}
+    assert (
+        client.patch(f'/api/admin/users/{ids[1]}/status', headers=admin_headers, json={'status': 'active'}).status_code
+        == 200
+    )
+    assert client.get(url, headers=headers[1]).status_code == 404
+    assert client.get(f'/api/records/{records[0]["id"]}', headers=headers[1]).status_code in {403, 404}
+
+
+def test_losing_doctor_role_is_cleaned_and_cascaded(record_client):
+    from app.infrastructure.adapters.queue.case_events import cleanup_invalid_participants
+    from app.infrastructure.db.models.auth.user import UserRole
+
+    client = record_client
+    case, records, ids, headers, _ = setup_case(client)
+    case = invite(client, case, headers, ids[1])
+    url = f'/api/cases/{case["id"]}'
+    client.post(url + '/invitations/accept', headers=headers[1])
+    with get_session_factory()() as session:
+        session.get(UserRow, ids[1]).role = UserRole.PATIENT
+        session.commit()
+    assert client.get(url, headers=headers[1]).status_code == 403
+    assert client.get(f'/api/records/{records[0]["id"]}', headers=headers[1]).status_code in {403, 404}
+    cleanup_invalid_participants()
+    with get_session_factory()() as session:
+        session.get(UserRow, ids[1]).role = UserRole.DOCTOR
+        session.commit()
+    assert client.get(url, headers=headers[1]).status_code == 404
+
+
+def test_case_sse_rechecks_access_and_never_streams_clinical_text(record_client, monkeypatch):
+    from app.presentation.rest.public.v1.cases import events
+
+    client = record_client
+    case, _, ids, headers, _ = setup_case(client)
+    case = invite(client, case, headers, ids[1])
+    url = f'/api/cases/{case["id"]}'
+    monkeypatch.setattr(events, 'CONNECTION_SECONDS', 0.03)
+    monkeypatch.setattr(events, 'POLL_SECONDS', 0.005)
+    monkeypatch.setattr(events, 'HEARTBEAT_SECONDS', 0.005)
+    assert client.get(url + '/events', headers=headers[1]).status_code == 403
+    client.post(url + '/invitations/accept', headers=headers[1])
+    initial = client.get(url + '/events', headers=headers[1])
+    assert initial.status_code == 200 and 'event: changed' in initial.text and 'Secret' not in initial.text
+    cursor = initial.text.split('id: ')[1].split('\n')[0]
+    resumed = client.get(url + '/events', headers={**headers[1], 'Last-Event-ID': cursor})
+    assert 'event: changed' not in resumed.text and 'heartbeat' in resumed.text
+    assert client.get(url + '/events', headers={**headers[1], 'Last-Event-ID': 'invalid'}).status_code == 400
+    original = events.read_snapshot
+    calls = 0
+
+    def revoke_after_first(token, case_id):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            with get_session_factory()() as session:
+                link = session.scalar(select(UserRecordLinkRow).where(UserRecordLinkRow.user_id == ids[1]))
+                session.delete(link)
+                session.commit()
+        return original(token, case_id)
+
+    monkeypatch.setattr(events, 'read_snapshot', revoke_after_first)
+    revoked = client.get(url + '/events', headers=headers[1])
+    assert 'event: access-revoked' in revoked.text and 'Secret' not in revoked.text
+
+
+def test_case_grants_and_downstream_shares_cannot_outlive_origin(record_client):
+    """Ограниченный источник не превращается в бессрочное право через случай."""
+    from datetime import datetime, timedelta, UTC
+
+    from test_records import _create_share_request
+
+    client = record_client
+    case, records, ids, headers, _ = setup_case(client)
+    expiry = datetime.now(UTC) + timedelta(days=1)
+    with get_session_factory()() as session:
+        origin = session.scalar(
+            select(UserRecordLinkRow).where(
+                UserRecordLinkRow.user_id == ids[0], UserRecordLinkRow.record_id == UUID(records[0]['id'])
+            )
+        )
+        origin.expires_at = expiry
+        session.commit()
+    case = invite(client, case, headers, ids[1])
+    url = f'/api/cases/{case["id"]}'
+    assert client.post(url + '/invitations/accept', headers=headers[1]).status_code == 200
+    downstream = _create_share_request(
+        client,
+        headers[1]['Authorization'].removeprefix('Bearer '),
+        to_user_email='outsider@cases.example.com',
+        record_ids=[records[0]['id']],
+    )
+    assert (
+        client.post(f'/api/share-requests/{downstream["request"]["id"]}/accept', headers=headers[2]).status_code == 200
+    )
+    with get_session_factory()() as session:
+        links = session.scalars(
+            select(UserRecordLinkRow).where(
+                UserRecordLinkRow.record_id == UUID(records[0]['id']), UserRecordLinkRow.user_id.in_(ids[1:])
+            )
+        ).all()
+        assert len(links) == 2
+        assert all(link.expires_at.replace(tzinfo=UTC) == expiry for link in links)
+        for link in links:
+            link.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        session.commit()
+    assert client.get(url, headers=headers[1]).json()['accessible'] is False
+    assert client.get(f'/api/records/{records[0]["id"]}', headers=headers[2]).status_code in {403, 404}
+
+
+def test_sse_requires_header_and_rejects_expired_token(record_client):
+    """Токен в URL и просроченный Bearer не открывают SSE."""
+    from datetime import datetime, timedelta, UTC
+
+    import jwt
+
+    from app.infrastructure.config.settings import get_settings
+
+    client = record_client
+    case, _, ids, headers, _ = setup_case(client)
+    url = f'/api/cases/{case["id"]}/events'
+    assert client.get(url, params={'token': headers[0]['Authorization']}).status_code in {401, 403}
+    expired = jwt.encode(
+        {'sub': str(ids[0]), 'type': 'access', 'exp': datetime.now(UTC) - timedelta(seconds=5)},
+        get_settings().auth.secret_key.get_secret_value(),
+        algorithm='HS256',
+    )
+    assert client.get(url, headers={'Authorization': f'Bearer {expired}'}).status_code == 401
+
+
+def test_followup_does_not_merge_patients_and_neutral_owner_can_revoke(record_client):
+    """Продолжение сохраняет личность пациента, отзыв не требует клинического контекста."""
+    client = record_client
+    case, records, ids, headers, _ = setup_case(client)
+    _register_patient(client, 'other@cases.example.com')
+    other = _get_patient_passport_id_by_email('other@cases.example.com')
+    assert (
+        client.post(
+            '/api/cases',
+            headers=headers[0],
+            json={
+                'patient_id': str(other),
+                'previous_case_id': case['id'],
+                'title': 'Followup',
+                'question': 'Question',
+                'record_ids': [],
+            },
+        ).status_code
+        == 422
+    )
+    case = invite(client, case, headers, ids[1])
+    url = f'/api/cases/{case["id"]}'
+    assert client.post(url + '/invitations/accept', headers=headers[1]).status_code == 200
+    with get_session_factory()() as session:
+        origin = session.scalar(
+            select(UserRecordLinkRow).where(
+                UserRecordLinkRow.user_id == ids[0], UserRecordLinkRow.record_id == UUID(records[0]['id'])
+            )
+        )
+        session.delete(origin)
+        session.commit()
+    neutral = client.get(url, headers=headers[0]).json()
+    assert neutral['case'] is None and neutral['management_members'][0]['user_id'] == str(ids[1])
+    assert client.post(url + f'/members/{ids[1]}/remove', headers=headers[0]).status_code == 200
+
+
+def test_postgres_concurrent_delivery_and_activity_version(postgres_case_client):
+    """Повторные workers не дублируют уведомление; обычная реплика обновляет входящие без fanout."""
+    from concurrent.futures import ThreadPoolExecutor
+    from uuid import uuid4
+
+    from app.infrastructure.adapters.queue.case_events import process_case_event
+    from app.infrastructure.db.models.clinical_cases import CaseEventRow
+
+    client = postgres_case_client
+    case, _, ids, headers, _ = setup_case(client)
+    case = invite(client, case, headers, ids[1])
+    with get_session_factory()() as session:
+        event_id = session.scalar(select(CaseEventRow.id).where(CaseEventRow.event_type == 'invitation'))
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        list(pool.map(process_case_event, [str(event_id)] * 4))
+    assert client.get('/api/notifications/count', headers=headers[1]).json()['unread'] == 1
+    url = f'/api/cases/{case["id"]}'
+    assert client.post(url + '/invitations/accept', headers=headers[1]).status_code == 200
+    before = client.get('/api/notifications/count', headers=headers[1]).json()
+    assert (
+        client.post(
+            url + '/messages', headers=headers[0], json={'body': 'Normal message', 'idempotency_key': str(uuid4())}
+        ).status_code
+        == 201
+    )
+    after = client.get('/api/notifications/count', headers=headers[1]).json()
+    assert after['version'] != before['version'] and after['unread'] == before['unread']

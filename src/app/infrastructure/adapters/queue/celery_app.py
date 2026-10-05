@@ -16,7 +16,7 @@ def create_celery_app() -> Celery:
         'docere',
         broker=settings.queue.broker_url,
         backend=settings.queue.result_backend,
-        include=['app.infrastructure.adapters.queue.tasks'],
+        include=['app.infrastructure.adapters.queue.tasks', 'app.infrastructure.adapters.queue.case_events'],
     )
     app.conf.update(
         task_default_queue='docere.default',

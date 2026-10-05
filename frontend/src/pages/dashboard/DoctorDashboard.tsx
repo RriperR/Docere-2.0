@@ -13,6 +13,7 @@ import {
   Users,
 } from 'lucide-react'
 
+import Attention from '../cases/Attention'
 import { Button } from '../../components/common/Button'
 import { useAuthStore } from '../../stores/authStore'
 import { usePatientsStore } from '../../stores/patientsStore'
@@ -143,6 +144,7 @@ const DoctorDashboard: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      <Attention />
       <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}

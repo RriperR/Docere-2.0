@@ -4,3 +4,6 @@ dist
 .vscode
 *.log
 .env
+
+test-results
+playwright-report

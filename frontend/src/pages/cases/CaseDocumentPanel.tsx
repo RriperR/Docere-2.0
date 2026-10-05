@@ -60,7 +60,7 @@ export default function CaseDocumentPanel({ caseId, recordId, attachmentId, onCl
       {record && <><p>{record.event_date} · {record.record_type} · {record.status}</p><p className="whitespace-pre-wrap">{record.clinical_summary}</p>
         <button className="text-primary-700 underline" onClick={() => onReference({ recordId, attachmentId: null,
           label: record.title ?? 'Медицинская запись' })}>Сослаться на запись в сообщении</button>
-        <label className="block">Вложение<select className={inputClass} value={selected} onChange={e => setSelected(e.target.value)}>
+        <label className="block">Вложение<select aria-label="Вложение" className={inputClass} value={selected} onChange={e => setSelected(e.target.value)}>
           <option value="">Выберите документ</option>{record.attachments.map(f => <option key={f.id} value={f.id}>{f.filename ?? 'Документ'} ({f.size_bytes} байт)</option>)}</select></label>
         {selected && <div className="flex flex-wrap gap-3"><button onClick={() => void download()}>Скачать файл</button>
           <button className="text-primary-700 underline" onClick={() => onReference({ recordId, attachmentId: selected,

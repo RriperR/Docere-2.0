@@ -3,11 +3,12 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, func, Integer, JSON, String, Text, UniqueConstraint, Uuid
+from sqlalchemy import DateTime, ForeignKey, func, Index, Integer, JSON, String, Text, text, UniqueConstraint, Uuid
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.db.base import Base
+from app.infrastructure.db.models._time import utc_now
 
 
 class ClinicalCaseRow(Base):
@@ -85,13 +86,24 @@ class CaseEventRow(Base):
     """Журнал доменных действий, пригодный для доставки через outbox."""
 
     __tablename__ = 'case_events'
-    __table_args__ = (UniqueConstraint('case_id', 'sequence', name='uq_case_event_sequence'),)
+    __table_args__ = (
+        UniqueConstraint('case_id', 'sequence', name='uq_case_event_sequence'),
+        Index(
+            'ix_case_event_pending',
+            'next_attempt_at',
+            postgresql_where=text('delivered_at IS NULL'),
+            sqlite_where=text('delivered_at IS NULL'),
+        ),
+    )
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     case_id: Mapped[UUID] = mapped_column(ForeignKey('clinical_cases.id'), index=True)
     sequence: Mapped[int] = mapped_column(Integer)
     event_type: Mapped[str] = mapped_column(String(32))
     actor_id: Mapped[UUID] = mapped_column(ForeignKey('users.id'))
     subject_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
     recipients: Mapped[list[str]] = mapped_column(JSON().with_variant(JSONB(), 'postgresql'))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -110,3 +122,24 @@ class CaseConclusionRow(Base):
     next_actions: Mapped[str] = mapped_column(Text)
     source_ids: Mapped[list[str]] = mapped_column(JSON().with_variant(JSONB(), 'postgresql'))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CaseNotificationRow(Base):
+    """Уведомление содержит только ссылку на событие, без клинического текста."""
+
+    __tablename__ = 'case_notifications'
+    __table_args__ = (UniqueConstraint('event_id', 'recipient_id', name='uq_case_notification_delivery'),)
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    event_id: Mapped[UUID] = mapped_column(ForeignKey('case_events.id'))
+    recipient_id: Mapped[UUID] = mapped_column(ForeignKey('users.id'), index=True)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CaseDiscussionReadRow(Base):
+    """Позиция прочтения обсуждения для координатора и участников."""
+
+    __tablename__ = 'case_discussion_reads'
+    case_id: Mapped[UUID] = mapped_column(ForeignKey('clinical_cases.id'), primary_key=True)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey('users.id'), primary_key=True)
+    sequence: Mapped[int] = mapped_column(Integer, default=0)

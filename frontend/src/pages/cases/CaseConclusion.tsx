@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import CaseMaterialPicker from './CaseMaterialPicker'
 import api from '../../api/api'
 import { caseError, type ClinicalCase, type Page } from '../../api/cases'
 import { buttonClass, cardClass, inputClass } from './styles'
@@ -60,8 +61,8 @@ export default function CaseConclusion({ c, owner, onChange, onOpen }: {
         <label>Краткое резюме<textarea className={inputClass} maxLength={10000} value={summary} onChange={e => setSummary(e.target.value)} /></label>
         <label>Выводы<textarea className={inputClass} maxLength={10000} value={findings} onChange={e => setFindings(e.target.value)} /></label>
         <label>Дальнейшие действия<textarea className={inputClass} maxLength={10000} value={actions} onChange={e => setActions(e.target.value)} /></label>
-        <p>Использованные материалы:</p>{c.record_ids.map(id => <label key={id} className="block"><input type="checkbox"
-          checked={sources.includes(id)} onChange={e => setSources(e.target.checked ? [...sources, id] : sources.filter(s => s !== id))} /> {id.slice(0, 8)}</label>)}
+        <CaseMaterialPicker caseId={c.id} sequence={c.sequence} selected={sources} multiple
+          onChange={setSources} onAccessLost={onChange} />
         <button className={buttonClass} disabled={busy || !summary.trim()} onClick={async () => {
           if (await mutate('conclusions', { version: c.version, summary, findings, next_actions: actions, source_ids: sources })) setEdit(false)
         }}>Сохранить версию итога</button><button onClick={() => setEdit(false)}>Отмена</button>

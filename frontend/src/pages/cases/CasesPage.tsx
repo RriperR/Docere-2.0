@@ -2,9 +2,11 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { caseApi, caseError, type CaseView } from '../../api/cases'
 
+import { useNotificationsStore } from '../../stores/notificationsStore'
 import { buttonClass, cardClass, inputClass, stateLabel } from './styles'
 
 export default function CasesPage() {
+  const revision = useNotificationsStore(s => s.revision)
   const [items, setItems] = useState<CaseView[]>([])
   const [scope, setScope] = useState('all')
   const [status, setStatus] = useState('')
@@ -17,7 +19,7 @@ export default function CasesPage() {
       setItems(page.items); setTotal(page.total); setError('')
     } catch (e) { setItems([]); setError(caseError(e)) }
   }, [scope, status, offset])
-  useEffect(() => { void load() }, [load])
+  useEffect(() => { void load() }, [load, revision])
   return <div className="space-y-5">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <h1 className="text-2xl font-bold">Клинические случаи</h1>
@@ -42,6 +44,7 @@ export default function CasesPage() {
       <h2 className="font-semibold">{item.case?.title ?? (item.membership_status === 'pending' ? 'Приглашение в разбор' : 'Случай недоступен')}</h2>
       <p>{item.coordinator_name} · {stateLabel[item.status]} · {item.material_count} материалов</p>
       {item.case && <p>{item.case.question}</p>}
+      {item.unread_messages > 0 && <p>Непрочитанных сообщений: {item.unread_messages}</p>}
       {item.membership_status === 'pending' && <p>Ожидает вашего ответа</p>}
     </Link>)}
     <div className="flex gap-4"><button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 20))}>Назад</button>

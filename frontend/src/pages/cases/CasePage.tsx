@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { caseApi, caseError, type CaseView, type Doctor } from '../../api/cases'
+import { watchChanges } from '../../api/caseUpdates'
 import CaseMaterials from './CaseMaterials'
 import CaseDocumentPanel, { type MaterialReference } from './CaseDocumentPanel'
 import CaseConclusion from './CaseConclusion'
@@ -28,6 +29,13 @@ export default function CasePage() {
     catch (e) { if (request === reads.current) { setView(null); setError(caseError(e)) } }
   }, [id])
   useEffect(() => { setView(null); void load(); return () => { reads.current += 1 } }, [load])
+  const accessible = !!view?.accessible
+  useEffect(() => {
+    if (!accessible) return
+    const controller = new AbortController()
+    void watchChanges(`/cases/${id}/events`, controller.signal, load, load)
+    return () => controller.abort()
+  }, [id, accessible, load])
   async function action(path: string, payload?: unknown) {
     setBusy(true); setError('')
     try { setView(await caseApi.post(id, path, payload)) }
@@ -48,6 +56,11 @@ export default function CasePage() {
       {view.membership_status === 'pending' && <><p>{view.invitation_terms}</p>
         <button className={buttonClass} disabled={busy} onClick={() => void action('invitations/accept')}>Принять приглашение</button>
         <button disabled={busy} onClick={() => void action('invitations/decline')}>Отклонить</button></>}
+      {owner && view.management_members.map(m => ['pending', 'accepted'].includes(m.status) && <div key={m.user_id}>
+        <span>{m.name} · {m.status}</span> <button disabled={busy}
+          onClick={() => void action(`members/${m.user_id}/${m.status === 'pending' ? 'cancel' : 'remove'}`)}>
+          {m.status === 'pending' ? 'Отозвать приглашение' : 'Исключить'}</button>
+      </div>)}
       {view.membership_status === 'accepted' && <button disabled={busy} onClick={() => void action('leave')}>Выйти из случая</button>}
     </section>}
     {c && <>

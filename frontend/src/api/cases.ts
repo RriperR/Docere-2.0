@@ -10,7 +10,7 @@ export interface ClinicalCase {
 }
 export interface CaseView {
   id: string; status: string; membership_status: string; coordinator_id: string; coordinator_name: string
-  patient_name: string | null; material_count: number; accessible: boolean; case: ClinicalCase | null; invitation_terms: string
+  management_members: CaseMember[]; unread_messages: number; patient_name: string | null; material_count: number; accessible: boolean; case: ClinicalCase | null; invitation_terms: string
 }
 export interface Page<T> { items: T[]; total: number }
 export interface Material {
@@ -35,7 +35,7 @@ export const caseApi = {
   post: async (id: string, path: string, payload?: unknown) =>
     (await api.post<CaseView>(`/cases/${id}/${path}`, payload)).data,
   doctors: async (query: string) => (await api.get<Doctor[]>('/cases/doctors', { params: { query } })).data,
-  patients: async (q: string) => (await api.get<PatientOption[]>('/patients/search', { params: { q, limit: 10 } })).data,
+  patients: async (q: string) => (await api.get<{ patient: PatientOption }[]>('/patients/search', { params: { q, limit: 10 } })).data.map(result => result.patient),
   available: async (patientId: string, query: string, offset: number) =>
     (await api.get<Page<Material>>(`/cases/patients/${patientId}/available-records`,
       { params: { query, offset, limit: 20 } })).data,

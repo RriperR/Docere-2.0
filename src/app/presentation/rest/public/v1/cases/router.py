@@ -16,6 +16,7 @@ from app.presentation.rest.public.v1.cases.schemas import (
     CaseCreateSchema,
     CloseSchema,
     ConclusionSchema,
+    DiscussionReadSchema,
     DraftSchema,
     InviteSchema,
     MaterialsSchema,
@@ -33,6 +34,7 @@ router = APIRouter(prefix='/cases', tags=['clinical-cases'])
 offset_query = Query(default=0, ge=0)
 limit_query = Query(default=20, ge=1, le=100)
 search_query = Query(min_length=2, max_length=100)
+optional_query = Query(default='', max_length=200)
 
 
 @router.get('')
@@ -89,7 +91,7 @@ def search_doctors(
 @router.get('/patients/{patient_id}/available-records')
 def available_records(
     patient_id: UUID,
-    query: str = '',
+    query: str = optional_query,
     offset: int = offset_query,
     limit: int = limit_query,
     actor: AuthenticatedUserDTO = current_authenticated_user_dependency,
@@ -308,7 +310,7 @@ def leave(
 @router.get('/{case_id}/messages')
 def get_messages(
     case_id: UUID,
-    query: str = '',
+    query: str = optional_query,
     offset: int = offset_query,
     limit: int = limit_query,
     actor: AuthenticatedUserDTO = current_authenticated_user_dependency,
@@ -619,3 +621,28 @@ def publish(
 
 
 router.include_router(materials_router)
+
+
+@router.post('/{case_id}/discussion/read')
+def mark_read(
+    case_id: UUID,
+    payload: DiscussionReadSchema,
+    actor: AuthenticatedUserDTO = current_authenticated_user_dependency,
+    uc: ClinicalCasesUseCase = cases_dependency,
+    session: Session = db_session_dependency,
+) -> dict[str, bool]:
+    """Отметить просмотренную позицию обсуждения монотонно.
+
+    Args:
+        case_id: Идентификатор случая.
+        payload: Проверенный HTTP payload.
+        actor: Актуальная учётная запись.
+        uc: Прикладной сценарий.
+        session: Текущая транзакционная сессия.
+
+    Returns:
+        Результат сценария в контексте текущего пользователя.
+    """
+    with case_transaction(session):
+        uc.mark_read(case_id, actor.id, payload.sequence)
+        return {'read': True}
