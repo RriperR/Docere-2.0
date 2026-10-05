@@ -99,7 +99,7 @@ src/app/
     └── cli.py                    # management commands
 ```
 
-Сценарии организованы по бизнес-возможностям: `medical_records`, `patients`, `share_requests`, `import_jobs`, `doctor_role_applications`, `auth`, `audit_events`, `admin_dashboard`.
+Сценарии организованы по бизнес-возможностям: `medical_records`, `patients`, `share_requests`, `import_jobs`, `doctor_role_applications`, `auth`, `audit_events`, `admin_dashboard`, `clinical_cases`, `notifications`.
 
 ## 5. Обычный HTTP-поток
 
@@ -569,6 +569,16 @@ npm run lint
 Такой порядок сохраняет главное свойство Docere: продуктовые правила можно читать и тестировать без запуска FastAPI, PostgreSQL, S3, ZIP parser или DICOM toolkit.
 
 ## 22. Совместные клинические случаи
+
+Сценарии `application/use_cases/clinical_cases` разделены на `management`, `discussion`, `materials`
+и `conclusions`. Все используют `CaseContext` с единой политикой доступа, проверкой ссылок и записью
+событий в текущей транзакции. Наследование и динамическая маршрутизация методов не используются.
+Входящие организованы отдельно в `use_cases/notifications`; их port находится в `application/ports`.
+Результаты — типизированные DTO, а HTTP-граница проверяет отдельные Pydantic response schemas.
+HTTP handlers не обращаются к репозиториям через внутренности use case.
+
+Проверка полного набора ACL выполняется одним SQL-запросом к правам и идентификаторам записей,
+без загрузки медицинского текста, комментариев и вложений на каждом SSE poll.
 
 Координатор создаёт черновик на основании конкретного паспорта пациента и доступных ему записей.
 Список `/api/cases` пагинируется на сервере. Приглашение показывает только имя координатора,

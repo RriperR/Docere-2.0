@@ -18,7 +18,7 @@ from app.presentation.rest.public.v1.auth.dependencies import (
     bearer_token_extraction_dependency,
     get_authenticated_user_use_case,
 )
-from app.presentation.rest.public.v1.cases.dependencies import get_cases_use_case
+from app.presentation.rest.public.v1.cases.dependencies import get_case_context
 from app.presentation.rest.public.v1.notifications.dependencies import get_notifications_use_case
 
 router = APIRouter()
@@ -32,21 +32,21 @@ def read_snapshot(token: str, case_id: UUID | None) -> tuple[str, dict[str, obje
     """Прочитать снимок в короткой сессии; медицинский текст не попадает в поток.
 
     Args:
-        token: Параметр операции.
-        case_id: Идентификатор случая.
+        token: JWT из Bearer-заголовка, проверяемый при каждом чтении.
+        case_id: Идентификатор клинического случая.
 
     Returns:
-        Результат сценария в контексте текущего пользователя.
+        Курсор версии и метаданные объекта без клинического содержимого.
     """
     with get_session_factory()() as session:
         actor = get_authenticated_user_use_case(session=session).execute(token=token)
         if case_id:
-            uc = get_cases_use_case(session=session)
+            uc = get_case_context(session=session)
             case = uc.load(case_id, actor.id)
             uc.require_context(case, actor.id)
             return str(case.sequence), {'id': str(case.id), 'version': case.version, 'sequence': case.sequence}
         snapshot = get_notifications_use_case(session=session).count(actor.id)
-        return str(snapshot['version']), {'id': str(actor.id), 'version': snapshot['version']}
+        return snapshot.version, {'id': str(actor.id), 'version': snapshot.version}
 
 
 async def changes(
@@ -55,14 +55,14 @@ async def changes(
     """Посылать изменения, heartbeat и безопасный сигнал утраты доступа.
 
     Args:
-        request: Параметр операции.
-        token: Параметр операции.
-        case_id: Идентификатор случая.
-        cursor: Параметр операции.
-        initial: Проверенный снимок метаданных.
+        request: HTTP-запрос для проверки разрыва SSE-соединения.
+        token: JWT из Bearer-заголовка, проверяемый при каждом чтении.
+        case_id: Идентификатор клинического случая.
+        cursor: Последняя версия, успешно полученная клиентом.
+        initial: Снимок метаданных, проверенный перед отправкой HTTP 200.
 
     Yields:
-        Версии объектов, heartbeat или сигнал повторной авторизации/отзыва доступа.
+        Метаданные SSE, heartbeat или безопасный сигнал завершения соединения.
     """
     started = heartbeat = monotonic()
     snapshot = initial
@@ -95,16 +95,16 @@ async def subscribe(request: Request, token: str, case_id: UUID | None, last_eve
     """Проверить авторизацию до отправки HTTP 200 и восстановить последнюю версию.
 
     Args:
-        request: Параметр операции.
-        token: Параметр операции.
-        case_id: Идентификатор случая.
-        last_event_id: Параметр операции.
+        request: HTTP-запрос для проверки разрыва SSE-соединения.
+        token: JWT из Bearer-заголовка, проверяемый при каждом чтении.
+        case_id: Идентификатор клинического случая.
+        last_event_id: Курсор предыдущего соединения из заголовка Last-Event-ID.
 
     Returns:
-        Результат сценария в контексте текущего пользователя.
+        SSE-ответ с проверенной начальной авторизацией и ограниченным временем соединения.
 
     Raises:
-        HTTPException: При нарушении условий операции.
+        HTTPException: Если доступ запрещён, ссылка недействительна или возник конфликт изменения.
     """
     if last_event_id is not None and (
         len(last_event_id) > 40 or not re.fullmatch(r'[0-9]+(?:-[0-9]+){0,2}', last_event_id)
@@ -133,13 +133,13 @@ async def case_events(
     """Подписаться с Bearer-заголовком; JWT в URL не принимается.
 
     Args:
-        request: Параметр операции.
-        case_id: Идентификатор случая.
-        token: Параметр операции.
-        last_event_id: Параметр операции.
+        request: HTTP-запрос для проверки разрыва SSE-соединения.
+        case_id: Идентификатор клинического случая.
+        token: JWT из Bearer-заголовка, проверяемый при каждом чтении.
+        last_event_id: Курсор предыдущего соединения из заголовка Last-Event-ID.
 
     Returns:
-        Результат сценария в контексте текущего пользователя.
+        SSE метаданных случая с повторной проверкой доступа.
     """
     return await subscribe(request, token, case_id, last_event_id)
 
@@ -151,11 +151,11 @@ async def notification_events(
     """Получать только идентификатор адресата и версию его уведомлений.
 
     Args:
-        request: Параметр операции.
-        token: Параметр операции.
-        last_event_id: Параметр операции.
+        request: HTTP-запрос для проверки разрыва SSE-соединения.
+        token: JWT из Bearer-заголовка, проверяемый при каждом чтении.
+        last_event_id: Курсор предыдущего соединения из заголовка Last-Event-ID.
 
     Returns:
-        Результат сценария в контексте текущего пользователя.
+        SSE версии собственных входящих без медицинского текста.
     """
     return await subscribe(request, token, None, last_event_id)

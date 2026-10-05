@@ -100,3 +100,15 @@ def _assert_application_import_allowed(*, file_path: Path, import_name: str) -> 
             'Application layer must not import outer layers or infrastructure archive libraries. '
             f'File={file_path}, import={import_name}',
         )
+
+
+@pytest.mark.critical
+def test_public_routers_do_not_reach_into_use_case_repositories() -> None:
+    """HTTP-обработчик вызывает прикладную операцию, а не репозиторий внутри неё."""
+    for file_path in PUBLIC_REST_DIR.rglob('*.py'):
+        if file_path.name not in {'router.py', 'materials.py', 'discussion.py', 'conclusions.py'}:
+            continue
+        tree = ast.parse(file_path.read_text(encoding='utf-8'))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and node.attr in {'repository', '_repository'}:
+                raise AssertionError(f'HTTP handlers must not bypass use cases. File={file_path}')

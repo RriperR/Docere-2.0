@@ -8,7 +8,8 @@ from uuid import UUID
 import structlog
 from sqlalchemy import select
 
-from app.application.use_cases.clinical_cases import ClinicalCasesUseCase
+from app.application.use_cases.clinical_cases.context import CaseContext
+from app.application.use_cases.clinical_cases.management import ClinicalCasesUseCase
 from app.infrastructure.adapters.queue.celery_app import celery_app
 from app.infrastructure.adapters.repositories.clinical_cases import SqlAlchemyCaseRepository
 from app.infrastructure.adapters.repositories.medical_records.sqlalchemy_medical_record_repository import (
@@ -32,7 +33,7 @@ class _PublishTask(Protocol):
         """Передать в брокер только идентификатор доменного события.
 
         Args:
-            args: Параметр операции.
+            args: Идентификатор события в аргументах задачи Celery.
         """
         ...
 
@@ -42,7 +43,7 @@ def process_case_event(event_id: str) -> None:
     """Доставить уведомления ровно один раз по паре событие/адресат в SQL-транзакции.
 
     Args:
-        event_id: Параметр операции.
+        event_id: UUID события PostgreSQL outbox в строковом формате.
     """
     with get_session_factory()() as session:
         row = session.scalar(select(CaseEventRow).where(CaseEventRow.id == UUID(event_id)).with_for_update())
@@ -72,10 +73,10 @@ def enqueue_case_events(*, limit: int = 100) -> int:
     """Опубликовать намерения; broker outage не отменяет уже сохранённое изменение случая.
 
     Args:
-        limit: Размер страницы.
+        limit: Максимальное число событий, передаваемых брокеру за один проход.
 
     Returns:
-        Результат сценария в контексте текущего пользователя.
+        Число событий, успешно переданных брокеру за этот вызов.
     """
     sent = 0
     for _ in range(limit):
@@ -104,7 +105,7 @@ def cleanup_invalid_participants() -> None:
     """Восстановить инвариант участия после смены роли вне обычного сценария блокировки."""
     with get_session_factory()() as session:
         repository = SqlAlchemyCaseRepository(session)
-        uc = ClinicalCasesUseCase(repository, SqlAlchemyMedicalRecordRepositoryAdapter(session))
+        uc = ClinicalCasesUseCase(CaseContext(repository, SqlAlchemyMedicalRecordRepositoryAdapter(session)))
         for user_id in repository.inactive_users(50):
             uc.terminate_user(user_id, user_id)
         session.commit()

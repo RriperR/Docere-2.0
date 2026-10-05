@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import exists, func, or_, select, union_all, update
 from sqlalchemy.orm import Session
 
-from app.application.notifications import AttentionTask, Notification
+from app.application.use_cases.notifications.dtos import AttentionTask, Notification
 from app.infrastructure.db.models._time import utc_now
 from app.infrastructure.db.models.clinical_cases import (
     CaseEventRow,
@@ -23,7 +23,7 @@ class SqlAlchemyNotificationRepository:
         """Инициализировать текущей транзакционной сессией.
 
         Args:
-            session: Текущая транзакционная сессия.
+            session: SQLAlchemy-сессия текущей транзакции.
         """
         self.session = session
 
@@ -31,12 +31,12 @@ class SqlAlchemyNotificationRepository:
         """Выбрать только уведомления адресата.
 
         Args:
-            user_id: Текущий пользователь.
-            offset: Число пропускаемых элементов.
-            limit: Размер страницы.
+            user_id: Пользователь, для которого выполняется операция.
+            offset: Число элементов, пропускаемых перед страницей.
+            limit: Максимальное число элементов страницы.
 
         Returns:
-            Результат сценария в контексте текущего пользователя.
+            Страница собственных уведомлений и их общее число.
         """
         statement = (
             select(CaseNotificationRow, CaseEventRow)
@@ -57,10 +57,10 @@ class SqlAlchemyNotificationRepository:
         """Посчитать собственные события без раскрытия медицинского содержимого.
 
         Args:
-            user_id: Текущий пользователь.
+            user_id: Пользователь, для которого выполняется операция.
 
         Returns:
-            Результат сценария в контексте текущего пользователя.
+            Общее число уведомлений, непрочитанное и сумма последовательностей доступных по членству случаев.
         """
         total = (
             self.session.scalar(
@@ -97,11 +97,11 @@ class SqlAlchemyNotificationRepository:
         """Идемпотентно отметить одно или все собственные уведомления.
 
         Args:
-            user_id: Текущий пользователь.
-            notification_id: Параметр операции.
+            user_id: Пользователь, для которого выполняется операция.
+            notification_id: Собственное уведомление; None означает отметить все свои уведомления.
 
         Returns:
-            Результат сценария в контексте текущего пользователя.
+            True, если своё уведомление найдено или запрошено прочтение всех своих уведомлений.
         """
         if notification_id:
             row = self.session.scalar(
@@ -125,12 +125,12 @@ class SqlAlchemyNotificationRepository:
         """Получить идентификаторы собственных задач, не выбирая клинический текст.
 
         Args:
-            user_id: Текущий пользователь.
-            offset: Число пропускаемых элементов.
-            limit: Размер страницы.
+            user_id: Пользователь, для которого выполняется операция.
+            offset: Число элементов, пропускаемых перед страницей.
+            limit: Максимальное число элементов страницы.
 
         Returns:
-            Результат сценария в контексте текущего пользователя.
+            Страница приглашений и запросов мнения с актуальной доступностью их целей.
         """
         from sqlalchemy import literal
 

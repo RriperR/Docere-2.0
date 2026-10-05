@@ -5,7 +5,13 @@ from uuid import UUID
 from sqlalchemy import exists, func, or_, select, update
 from sqlalchemy.orm import Session
 
-from app.application.case_materials import MaterialFilters
+from app.application.use_cases.clinical_cases.dtos import (
+    CaseActivityEntry,
+    DoctorSummary,
+    MaterialFilters,
+    MaterialSummary,
+    PageDTO,
+)
 from app.domain.clinical_cases import CaseConclusion, CaseError, CaseMember, CaseMessage, ClinicalCase, OpinionRequest
 from app.domain.entities.medical_record import MedicalRecordStatus, MedicalRecordType
 from app.infrastructure.adapters.repositories.share_requests.sqlalchemy_share_request_repository import (
@@ -37,22 +43,22 @@ class SqlAlchemyCaseRepository:
     """Персистентность агрегата; commit принадлежит HTTP boundary."""
 
     def __init__(self, session: Session) -> None:
-        """Инициализировать зависимости сценария.
+        """Привязать хранение случаев и источников прав к текущей сессии.
 
         Args:
-            session: Текущая транзакционная сессия.
+            session: SQLAlchemy-сессия текущей транзакции.
         """
         self.session = session
 
     def get(self, case_id: UUID, *, lock: bool = False) -> ClinicalCase | None:
         """Прочитать агрегат с блокировкой строки для сериализации изменений.
 
-        Returns:
-            Результат операции в контексте доступа текущего пользователя.
-
         Args:
-            case_id: Идентификатор случая.
-            lock: Параметр операции.
+            case_id: Идентификатор клинического случая.
+            lock: Заблокировать строку случая до завершения транзакции изменения.
+
+        Returns:
+            Сохранённый агрегат или None, если идентификатор не существует.
         """
         query = select(ClinicalCaseRow).where(ClinicalCaseRow.id == case_id)
         if lock:
@@ -93,8 +99,13 @@ class SqlAlchemyCaseRepository:
         if row is None:
             row = ClinicalCaseRow(id=case.id, patient_id=case.patient_id, coordinator_id=case.coordinator_id)
             self.session.add(row)
-        for name in ('title', 'question', 'status', 'version', 'previous_case_id', 'sequence', 'published_record_id'):
-            setattr(row, name, getattr(case, name))
+        row.title = case.title
+        row.question = case.question
+        row.status = case.status
+        row.version = case.version
+        row.previous_case_id = case.previous_case_id
+        row.sequence = case.sequence
+        row.published_record_id = case.published_record_id
         self.session.flush()
         case.created_at = row.created_at
         old = self.session.scalars(select(CaseMaterialRow).where(CaseMaterialRow.case_id == case.id)).all()
@@ -118,15 +129,15 @@ class SqlAlchemyCaseRepository:
     ) -> tuple[list[ClinicalCase], int]:
         """Пагинировать по членству без загрузки всей истории пациента.
 
-        Returns:
-            Результат операции в контексте доступа текущего пользователя.
-
         Args:
-            user_id: Текущий пользователь.
-            scope: Параметр операции.
-            status: Параметр операции.
-            offset: Число пропускаемых элементов.
-            limit: Размер страницы.
+            user_id: Пользователь, для которого выполняется операция.
+            scope: Отбор всех случаев, координируемых или с участием пользователя.
+            status: Состояние случая для фильтрации.
+            offset: Число элементов, пропускаемых перед страницей.
+            limit: Максимальное число элементов страницы.
+
+        Returns:
+            Случаи выбранной страницы и общее число случаев до пагинации.
         """
         member = select(CaseMemberRow.case_id).where(
             CaseMemberRow.user_id == user_id, CaseMemberRow.status.in_(['pending', 'accepted'])
@@ -149,11 +160,11 @@ class SqlAlchemyCaseRepository:
     def is_doctor(self, user_id: UUID) -> bool:
         """Проверить актуальную роль и блокировку учётной записи.
 
-        Returns:
-            Результат операции в контексте доступа текущего пользователя.
-
         Args:
-            user_id: Текущий пользователь.
+            user_id: Пользователь, для которого выполняется операция.
+
+        Returns:
+            True только для зарегистрированного активного пользователя с ролью врача.
         """
         return (
             self.session.scalar(
@@ -164,26 +175,48 @@ class SqlAlchemyCaseRepository:
             is not None
         )
 
+    def has_material_access(self, record_ids: list[UUID], user_id: UUID) -> bool:
+        """Проверить ACL всех материалов одним запросом, не читая документы и комментарии.
+
+        Args:
+            record_ids: Идентификаторы выбранных записей.
+            user_id: Пользователь, чей доступ проверяется.
+
+        Returns:
+            True, если каждая существующая запись имеет хотя бы одно действующее право.
+        """
+        selected = set(record_ids)
+        if not selected:
+            return True
+        accessible = self.session.scalar(
+            select(func.count(func.distinct(UserRecordLinkRow.record_id)))
+            .join(MedicalRecordRow, MedicalRecordRow.id == UserRecordLinkRow.record_id)
+            .where(
+                UserRecordLinkRow.user_id == user_id, UserRecordLinkRow.record_id.in_(selected), active_record_access()
+            )
+        )
+        return accessible == len(selected)
+
     def doctor_name(self, user_id: UUID) -> str:
         """Вернуть публичное имя врача без медицинских сведений.
 
-        Returns:
-            Результат операции в контексте доступа текущего пользователя.
-
         Args:
-            user_id: Текущий пользователь.
+            user_id: Пользователь, для которого выполняется операция.
+
+        Returns:
+            Публичное имя врача либо нейтральная подпись, если профиль отсутствует.
         """
         return self.session.scalar(select(UserRow.fio).where(UserRow.id == user_id)) or 'Врач'
 
-    def search_doctors(self, user_id: UUID, query: str) -> list[dict[str, str]]:
+    def search_doctors(self, user_id: UUID, query: str) -> list[DoctorSummary]:
         """Найти только активных зарегистрированных врачей.
 
-        Returns:
-            Результат операции в контексте доступа текущего пользователя.
-
         Args:
-            user_id: Текущий пользователь.
-            query: Поисковая строка.
+            user_id: Пользователь, для которого выполняется операция.
+            query: Текст для поиска по разрешённым полям.
+
+        Returns:
+            Список активных врачей, соответствующих имени или email, кроме самого пользователя.
         """
         rows = self.session.scalars(
             select(UserRow)
@@ -196,21 +229,21 @@ class SqlAlchemyCaseRepository:
             .order_by(UserRow.fio)
             .limit(10)
         )
-        return [{'id': str(row.id), 'name': row.fio, 'email': row.email} for row in rows]
+        return [DoctorSummary(row.id, row.fio, row.email) for row in rows]
 
     def grant(self, case: ClinicalCase, user_id: UUID, record_ids: list[UUID] | None = None) -> UUID:
         """Выдать отдельный источник ACL для всех актуальных материалов случая.
 
-        Returns:
-            Результат операции в контексте доступа текущего пользователя.
-
         Args:
             case: Агрегат текущего разбора.
-            user_id: Текущий пользователь.
-            record_ids: Только новые материалы при дополнении, либо весь набор при принятии.
+            user_id: Пользователь, для которого выполняется операция.
+            record_ids: Выбранные записи одного пациента.
+
+        Returns:
+            Идентификатор принятого sharing-запроса, помеченного происхождением от случая.
 
         Raises:
-            CaseError: При нарушении условий операции.
+            CaseError: Если действие запрещено ролью, членством, составом материалов или состоянием случая.
         """
         member = case.member(user_id)
         request = (
@@ -275,7 +308,7 @@ class SqlAlchemyCaseRepository:
 
         Args:
             case: Агрегат текущего разбора.
-            user_id: Текущий пользователь.
+            user_id: Пользователь, для которого выполняется операция.
         """
         requests = self.session.scalars(
             select(RecordShareRequestRow.id).where(
@@ -292,18 +325,18 @@ class SqlAlchemyCaseRepository:
 
     def available_materials(
         self, patient_id: UUID, user_id: UUID, query: str, offset: int, limit: int
-    ) -> dict[str, object]:
+    ) -> PageDTO[MaterialSummary]:
         """Выбрать страницу доступных материалов пациента без загрузки полной истории.
 
-        Returns:
-            Результат операции в контексте доступа текущего пользователя.
-
         Args:
-            patient_id: Параметр операции.
-            user_id: Текущий пользователь.
-            query: Поисковая строка.
-            offset: Число пропускаемых элементов.
-            limit: Размер страницы.
+            patient_id: Идентификатор конкретного паспорта пациента.
+            user_id: Пользователь, для которого выполняется операция.
+            query: Текст для поиска по разрешённым полям.
+            offset: Число элементов, пропускаемых перед страницей.
+            limit: Максимальное число элементов страницы.
+
+        Returns:
+            Страница доступных врачу записей выбранного пациента и их общее число.
         """
         access = exists(
             select(UserRecordLinkRow.id).where(
@@ -322,29 +355,16 @@ class SqlAlchemyCaseRepository:
         rows = self.session.scalars(
             statement.order_by(MedicalRecordRow.event_date, MedicalRecordRow.id).offset(offset).limit(limit)
         )
-        return {
-            'items': [
-                {
-                    'id': row.id,
-                    'title': row.title,
-                    'clinical_summary': row.clinical_summary,
-                    'event_date': row.event_date,
-                    'record_type': row.record_type.value,
-                    'status': row.status.value,
-                }
-                for row in rows
-            ],
-            'total': total,
-        }
+        return PageDTO([self._material(row) for row in rows], total)
 
     def message(self, message_id: UUID) -> CaseMessage | None:
         """Получить неизменяемое сообщение; доступ проверяет прикладной сценарий.
 
         Args:
-            message_id: Параметр операции.
+            message_id: Идентификатор реплики в обсуждении случая.
 
         Returns:
-            Результат сценария в контексте текущего пользователя.
+            Реплика по идентификатору либо None; проверка контекста выполняется в use case.
         """
         row = self.session.get(CaseMessageRow, message_id)
         return self._message(row) if row else None
@@ -354,11 +374,11 @@ class SqlAlchemyCaseRepository:
 
         Args:
             case_id: Идентификатор случая.
-            author_id: Параметр операции.
+            author_id: Автор отправленного сообщения.
             key: Ключ повторной отправки.
 
         Returns:
-            Результат сценария в контексте текущего пользователя.
+            Ранее отправленная реплика с этим ключом либо None.
         """
         row = self.session.scalar(
             select(CaseMessageRow).where(
@@ -373,10 +393,10 @@ class SqlAlchemyCaseRepository:
         """Сохранить новую реплику; обновлений и удалений сообщений нет.
 
         Args:
-            message: Неизменяемая реплика.
+            message: Новая неизменяемая реплика со ссылками и ключом идемпотентности.
 
         Returns:
-            Результат сценария в контексте текущего пользователя.
+            Сохранённая реплика с временем создания и именем автора.
         """
         row = CaseMessageRow(
             id=message.id,
@@ -414,13 +434,13 @@ class SqlAlchemyCaseRepository:
         """Пагинировать сообщения, не загружая весь чат в память клиента.
 
         Args:
-            case_id: Идентификатор случая.
-            offset: Число пропускаемых элементов.
-            limit: Размер страницы.
-            query: Поисковая строка.
+            case_id: Идентификатор клинического случая.
+            offset: Число элементов, пропускаемых перед страницей.
+            limit: Максимальное число элементов страницы.
+            query: Текст для поиска по разрешённым полям.
 
         Returns:
-            Результат сценария в контексте текущего пользователя.
+            Реплики выбранной страницы и общее число совпадений до пагинации.
         """
         statement = select(CaseMessageRow).where(CaseMessageRow.case_id == case_id)
         if query:
@@ -433,10 +453,10 @@ class SqlAlchemyCaseRepository:
         """Получить запрос мнения; ACL применяется в use case.
 
         Args:
-            opinion_id: Адресный запрос.
+            opinion_id: Идентификатор адресного запроса мнения.
 
         Returns:
-            Результат сценария в контексте текущего пользователя.
+            Адресный запрос либо None; проверка контекста выполняется в use case.
         """
         row = self.session.get(OpinionRequestRow, opinion_id)
         return self._opinion(row) if row else None
@@ -460,12 +480,12 @@ class SqlAlchemyCaseRepository:
         """Выбрать страницу запросов мнения.
 
         Args:
-            case_id: Идентификатор случая.
-            offset: Число пропускаемых элементов.
-            limit: Размер страницы.
+            case_id: Идентификатор клинического случая.
+            offset: Число элементов, пропускаемых перед страницей.
+            limit: Максимальное число элементов страницы.
 
         Returns:
-            Результат сценария в контексте текущего пользователя.
+            Запросы выбранной страницы и их общее число.
         """
         statement = select(OpinionRequestRow).where(OpinionRequestRow.case_id == case_id)
         total = self.session.scalar(select(func.count()).select_from(statement.subquery())) or 0
@@ -478,7 +498,7 @@ class SqlAlchemyCaseRepository:
         """Сохранить запрос или его новое состояние.
 
         Args:
-            opinion: Адресный запрос.
+            opinion: Адресный запрос с обновлённым состоянием.
         """
         row = self.session.get(OpinionRequestRow, opinion.id)
         if row is None:
@@ -499,8 +519,8 @@ class SqlAlchemyCaseRepository:
         """Закрыть запросы вышедшему адресату с устойчивой причиной.
 
         Args:
-            case_id: Идентификатор случая.
-            user_id: Текущий пользователь.
+            case_id: Идентификатор клинического случая.
+            user_id: Пользователь, для которого выполняется операция.
         """
         self.session.execute(
             update(OpinionRequestRow)
@@ -519,10 +539,10 @@ class SqlAlchemyCaseRepository:
 
         Args:
             case: Агрегат текущего разбора.
-            actor_id: Автор действия.
-            event_type: Тип доменного действия.
-            subject_id: Целевой объект события.
-            recipients: Получатели события.
+            actor_id: Автор действия для журнала событий.
+            event_type: Тип изменения без медицинского текста.
+            subject_id: Объект, связанный с событием.
+            recipients: Адресаты уведомления; автор исключается при сохранении события.
         """
         self.session.add(
             CaseEventRow(
@@ -536,46 +556,46 @@ class SqlAlchemyCaseRepository:
         )
         self.session.flush()
 
-    def activity(self, case_id: UUID, offset: int, limit: int) -> dict[str, object]:
+    def activity(self, case_id: UUID, offset: int, limit: int) -> PageDTO[CaseActivityEntry]:
         """Прочитать страницу журнала действий.
 
         Args:
-            case_id: Идентификатор случая.
-            offset: Число пропускаемых элементов.
-            limit: Размер страницы.
+            case_id: Идентификатор клинического случая.
+            offset: Число элементов, пропускаемых перед страницей.
+            limit: Максимальное число элементов страницы.
 
         Returns:
-            Результат сценария в контексте текущего пользователя.
+            Страница событий с авторами и ссылками без копирования клинического текста.
         """
         statement = select(CaseEventRow).where(CaseEventRow.case_id == case_id)
         total = self.session.scalar(select(func.count()).select_from(statement.subquery())) or 0
         rows = self.session.scalars(statement.order_by(CaseEventRow.sequence.desc()).offset(offset).limit(limit))
-        return {
-            'items': [
-                {
-                    'id': row.id,
-                    'sequence': row.sequence,
-                    'event_type': row.event_type,
-                    'actor_id': row.actor_id,
-                    'actor_name': self.doctor_name(row.actor_id),
-                    'subject_id': row.subject_id,
-                    'created_at': row.created_at,
-                }
+        return PageDTO(
+            [
+                CaseActivityEntry(
+                    row.id,
+                    row.sequence,
+                    row.event_type,
+                    row.actor_id,
+                    self.doctor_name(row.actor_id),
+                    row.subject_id,
+                    row.created_at,
+                )
                 for row in rows
             ],
-            'total': total,
-        }
+            total,
+        )
 
     def conclusions(self, case_id: UUID, offset: int, limit: int) -> tuple[list[CaseConclusion], int]:
         """Выбрать страницу неизменяемых версий итога.
 
         Args:
-            case_id: Идентификатор случая.
-            offset: Число пропускаемых элементов.
-            limit: Размер страницы.
+            case_id: Идентификатор клинического случая.
+            offset: Число элементов, пропускаемых перед страницей.
+            limit: Максимальное число элементов страницы.
 
         Returns:
-            Результат сценария в контексте текущего пользователя.
+            Версии итога, начиная с последней, и их общее число.
         """
         statement = select(CaseConclusionRow).where(CaseConclusionRow.case_id == case_id)
         total = self.session.scalar(select(func.count()).select_from(statement.subquery())) or 0
@@ -600,10 +620,10 @@ class SqlAlchemyCaseRepository:
         """Добавить строку новой версии без перезаписи предыдущих.
 
         Args:
-            conclusion: Параметр операции.
+            conclusion: Новая версия итога со ссылками на материалы.
 
         Returns:
-            Результат сценария в контексте текущего пользователя.
+            Сохранённая новая версия итога с временем создания.
         """
         row = CaseConclusionRow(
             id=conclusion.id,
@@ -623,10 +643,10 @@ class SqlAlchemyCaseRepository:
         """Посчитать открытые запросы перед закрытием случая.
 
         Args:
-            case_id: Идентификатор случая.
+            case_id: Идентификатор клинического случая.
 
         Returns:
-            Результат сценария в контексте текущего пользователя.
+            Число запросов в состоянии open.
         """
         return (
             self.session.scalar(
@@ -641,7 +661,7 @@ class SqlAlchemyCaseRepository:
         """Отменить запросы с зафиксированной причиной завершения обсуждения.
 
         Args:
-            case_id: Идентификатор случая.
+            case_id: Идентификатор клинического случая.
         """
         self.session.execute(
             update(OpinionRequestRow)
@@ -649,17 +669,19 @@ class SqlAlchemyCaseRepository:
             .values(status='cancelled', reason='case_closed')
         )
 
-    def case_materials(self, case_id: UUID, filters: MaterialFilters, offset: int, limit: int) -> dict[str, object]:
+    def case_materials(
+        self, case_id: UUID, filters: MaterialFilters, offset: int, limit: int
+    ) -> PageDTO[MaterialSummary]:
         """Поиск только по ссылкам выбранного случая, с пагинацией в SQL.
 
         Args:
-            case_id: Идентификатор случая.
-            filters: Параметр операции.
-            offset: Число пропускаемых элементов.
-            limit: Размер страницы.
+            case_id: Идентификатор клинического случая.
+            filters: Поиск по метаданным и фильтры типа, даты события и подтверждения.
+            offset: Число элементов, пропускаемых перед страницей.
+            limit: Максимальное число элементов страницы.
 
         Returns:
-            Результат сценария в контексте текущего пользователя.
+            Страница выбранных материалов, удовлетворяющих фильтрам, и общее число совпадений.
         """
         statement = select(MedicalRecordRow).join(CaseMaterialRow, CaseMaterialRow.record_id == MedicalRecordRow.id)
         statement = statement.where(CaseMaterialRow.case_id == case_id)
@@ -685,30 +707,17 @@ class SqlAlchemyCaseRepository:
         rows = self.session.scalars(
             statement.order_by(MedicalRecordRow.event_date, MedicalRecordRow.id).offset(offset).limit(limit)
         )
-        return {
-            'items': [
-                {
-                    'id': row.id,
-                    'title': row.title,
-                    'clinical_summary': row.clinical_summary,
-                    'event_date': row.event_date,
-                    'record_type': row.record_type.value,
-                    'status': row.status.value,
-                }
-                for row in rows
-            ],
-            'total': total,
-        }
+        return PageDTO([self._material(row) for row in rows], total)
 
     def unread_messages(self, case_id: UUID, user_id: UUID) -> int:
         """Посчитать чужие сообщения после позиции прочтения.
 
         Args:
-            case_id: Идентификатор случая.
-            user_id: Текущий пользователь.
+            case_id: Идентификатор клинического случая.
+            user_id: Пользователь, для которого выполняется операция.
 
         Returns:
-            Результат сценария в контексте текущего пользователя.
+            Число чужих реплик после сохранённой позиции прочтения.
         """
         marker = self.session.get(CaseDiscussionReadRow, (case_id, user_id))
         return (
@@ -728,9 +737,9 @@ class SqlAlchemyCaseRepository:
         """Продвинуть курсор без уменьшения при повторе или старом ответе.
 
         Args:
-            case_id: Идентификатор случая.
-            user_id: Текущий пользователь.
-            sequence: Параметр операции.
+            case_id: Идентификатор клинического случая.
+            user_id: Пользователь, для которого выполняется операция.
+            sequence: Последовательность событий, до которой пользователь прочитал обсуждение.
         """
         marker = self.session.get(CaseDiscussionReadRow, (case_id, user_id))
         if marker is None:
@@ -742,10 +751,10 @@ class SqlAlchemyCaseRepository:
         """Найти владение и действующие участия, включая непринятые приглашения.
 
         Args:
-            user_id: Текущий пользователь.
+            user_id: Пользователь, для которого выполняется операция.
 
         Returns:
-            Результат сценария в контексте текущего пользователя.
+            Идентификаторы координируемых случаев и действующих приглашений/участий.
         """
         memberships = select(CaseMemberRow.case_id).where(
             CaseMemberRow.user_id == user_id, CaseMemberRow.status.in_(['pending', 'accepted'])
@@ -762,10 +771,10 @@ class SqlAlchemyCaseRepository:
         """Найти недействующих врачей, всё ещё участвующих в разборе.
 
         Args:
-            limit: Размер страницы.
+            limit: Максимальное число элементов страницы.
 
         Returns:
-            Результат сценария в контексте текущего пользователя.
+            Не более limit заблокированных или утративших роль врачей с незавершённым участием.
         """
         members = select(CaseMemberRow.user_id).where(CaseMemberRow.status.in_(['pending', 'accepted']))
         coordinators = select(ClinicalCaseRow.coordinator_id).where(
@@ -783,4 +792,10 @@ class SqlAlchemyCaseRepository:
                 .order_by(UserRow.id)
                 .limit(limit)
             )
+        )
+
+    @staticmethod
+    def _material(row: MedicalRecordRow) -> MaterialSummary:
+        return MaterialSummary(
+            row.id, row.title, row.clinical_summary, row.event_date, row.record_type.value, row.status.value
         )

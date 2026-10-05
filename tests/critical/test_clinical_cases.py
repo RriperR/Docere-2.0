@@ -1,6 +1,6 @@
 """Прямые API-проверки изоляции и происхождения прав клинических случаев."""
 
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import select
@@ -24,7 +24,7 @@ pytestmark = pytest.mark.critical
 
 
 def setup_case(client):
-    """Выполнить операцию клинического случая."""
+    """Создать пациента, три врача и три записи в изолированной БД."""
     _register_patient(client, 'patient@cases.example.com')
     patient = _get_patient_passport_id_by_email('patient@cases.example.com')
     tokens, ids = [], []
@@ -56,7 +56,7 @@ def setup_case(client):
 
 
 def invite(client, view, headers, target):
-    """Выполнить операцию клинического случая."""
+    """Отправить приглашение от координатора и вернуть обновлённую карточку."""
     response = client.post(
         f'/api/cases/{view["id"]}/invitations',
         headers=headers[0],
@@ -67,7 +67,7 @@ def invite(client, view, headers, target):
 
 
 def test_pending_invitation_never_exposes_clinical_context(record_client):
-    """Выполнить операцию клинического случая."""
+    """Непринятое приглашение скрывает контекст и не открывает остальные записи пациента."""
     client = record_client
     case, records, ids, headers, _ = setup_case(client)
     case = invite(client, case, headers, ids[1])
@@ -93,7 +93,7 @@ def test_pending_invitation_never_exposes_clinical_context(record_client):
 
 
 def test_leave_preserves_independent_access_and_removes_only_case_grants(record_client):
-    """Выполнить операцию клинического случая."""
+    """Выход отзывает только источник случая, сохраняя независимый доступ."""
     client = record_client
     case, records, ids, headers, patient = setup_case(client)
     _grant_record_access(ids[1], UUID(records[0]['id']), patient)
@@ -121,7 +121,7 @@ def test_leave_preserves_independent_access_and_removes_only_case_grants(record_
 
 
 def test_loss_of_any_material_hides_entire_context(record_client):
-    """Выполнить операцию клинического случая."""
+    """Потеря любого материала скрывает весь разбор, включая сообщения и итог."""
     client = record_client
     case, _, ids, headers, _ = setup_case(client)
     case = invite(client, case, headers, ids[1])
@@ -138,7 +138,7 @@ def test_loss_of_any_material_hides_entire_context(record_client):
 
 
 def test_blocked_coordinator_invalidates_case_acl(record_client):
-    """Выполнить операцию клинического случая."""
+    """Блокировка координатора прекращает действие прав, выданных случаем."""
     client = record_client
     case, records, ids, headers, _ = setup_case(client)
     case = invite(client, case, headers, ids[1])
@@ -751,3 +751,33 @@ def test_postgres_concurrent_delivery_and_activity_version(postgres_case_client)
     )
     after = client.get('/api/notifications/count', headers=headers[1]).json()
     assert after['version'] != before['version'] and after['unread'] == before['unread']
+
+
+def test_case_access_does_not_hydrate_clinical_records(record_client, monkeypatch):
+    """Чтение карточки и SSE проверяет ACL без загрузки всех вложений и комментариев."""
+    from app.infrastructure.adapters.repositories.medical_records.sqlalchemy_medical_record_repository import (
+        SqlAlchemyMedicalRecordRepositoryAdapter,
+    )
+
+    client = record_client
+    case, records, _, headers, _ = setup_case(client)
+    response = client.post(
+        f'/api/cases/{case["id"]}/materials',
+        headers=headers[0],
+        json={'version': case['case']['version'], 'record_ids': [r['id'] for r in records]},
+    )
+    assert response.status_code == 200
+
+    def forbid_record_hydration(*args, **kwargs):
+        raise AssertionError('ACL must not hydrate medical records, comments and attachments')
+
+    monkeypatch.setattr(SqlAlchemyMedicalRecordRepositoryAdapter, 'get_accessible_record', forbid_record_hydration)
+    view = client.get(f'/api/cases/{case["id"]}', headers=headers[0])
+    assert view.status_code == 200 and view.json()['accessible']
+    assert view.json()['material_count'] == len(records)
+    with get_session_factory()() as session:
+        from app.infrastructure.adapters.repositories.clinical_cases import SqlAlchemyCaseRepository
+
+        repository = SqlAlchemyCaseRepository(session)
+        assert repository.has_material_access([], UUID(view.json()['coordinator_id']))
+        assert not repository.has_material_access([UUID(r['id']) for r in records], uuid4())

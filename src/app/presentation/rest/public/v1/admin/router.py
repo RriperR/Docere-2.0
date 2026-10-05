@@ -31,7 +31,8 @@ from app.application.use_cases.auth.create_staff_user.use_case import (
 )
 from app.application.use_cases.auth.errors import EmailAlreadyExistsError
 from app.application.use_cases.auth.list_users.use_case import ListUsersAccessDeniedError, ListUsersUseCase
-from app.application.use_cases.clinical_cases import ClinicalCasesUseCase
+from app.application.use_cases.clinical_cases.context import CaseContext
+from app.application.use_cases.clinical_cases.management import ClinicalCasesUseCase
 from app.infrastructure.adapters.repositories.admin_dashboard import SqlAlchemyAdminDashboardRepositoryAdapter
 from app.infrastructure.adapters.repositories.audit_events import AuditEventRepositoryAdapter
 from app.infrastructure.adapters.repositories.auth.sqlalchemy_auth_repository import SqlAlchemyAuthRepositoryAdapter
@@ -114,7 +115,7 @@ def get_change_user_status_use_case(session: Session = db_session_dependency) ->
         repository=SqlAlchemyAuthRepositoryAdapter(session=session),
         audit_events=AuditEventRepositoryAdapter(session=session),
         case_participation=ClinicalCasesUseCase(
-            SqlAlchemyCaseRepository(session), SqlAlchemyMedicalRecordRepositoryAdapter(session)
+            CaseContext(SqlAlchemyCaseRepository(session), SqlAlchemyMedicalRecordRepositoryAdapter(session))
         ),
     )
 

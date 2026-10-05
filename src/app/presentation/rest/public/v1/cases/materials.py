@@ -8,20 +8,28 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
-from app.application.case_materials import MaterialFilters
 from app.application.use_cases.auth.common.dtos import AuthenticatedUserDTO
-from app.application.use_cases.clinical_cases import ClinicalCasesUseCase
+from app.application.use_cases.clinical_cases.dtos import (
+    MaterialFilters,
+    MaterialSummary,
+    PageDTO,
+)
+from app.application.use_cases.clinical_cases.materials import CaseMaterialsUseCase
 from app.application.use_cases.medical_records.comment_attachments.dtos import DownloadAttachmentDTO
 from app.application.use_cases.medical_records.comment_attachments.use_cases import DownloadAttachmentUseCase
 from app.application.use_cases.medical_records.common.dtos import MedicalRecordDTO
 from app.application.use_cases.medical_records.errors import FileAttachmentNotFoundError, MedicalRecordAccessDeniedError
-from app.domain.clinical_cases import CaseMessage
-from app.presentation.rest.public.v1.cases.dependencies import case_transaction, cases_dependency
+from app.presentation.rest.public.v1.cases.dependencies import case_transaction, materials_dependency
+from app.presentation.rest.public.v1.cases.responses import (
+    MaterialResponse,
+    PageResponse,
+)
 from app.presentation.rest.public.v1.records.dependencies import (
     current_authenticated_user_dependency,
     db_session_dependency,
     download_attachment_use_case_dependency,
 )
+from app.presentation.rest.public.v1.records.schemas import MedicalRecordResponseSchema
 
 router = APIRouter()
 query_parameter = Query(default='', max_length=200)
@@ -29,7 +37,7 @@ offset_parameter = Query(default=0, ge=0)
 limit_parameter = Query(default=20, ge=1, le=100)
 
 
-@router.get('/{case_id}/materials')
+@router.get('/{case_id}/materials', response_model=PageResponse[MaterialResponse])
 def materials(
     case_id: UUID,
     query: str = query_parameter,
@@ -40,26 +48,26 @@ def materials(
     offset: int = offset_parameter,
     limit: int = limit_parameter,
     actor: AuthenticatedUserDTO = current_authenticated_user_dependency,
-    uc: ClinicalCasesUseCase = cases_dependency,
+    uc: CaseMaterialsUseCase = materials_dependency,
     session: Session = db_session_dependency,
-) -> dict[str, object]:
+) -> PageDTO[MaterialSummary]:
     """Найти страницу материалов по метаданным без чтения PDF или сканов.
 
     Args:
-        case_id: Идентификатор случая.
-        query: Поисковая строка.
-        record_type: Параметр операции.
-        status: Параметр операции.
-        date_from: Параметр операции.
-        date_to: Параметр операции.
-        offset: Число пропускаемых элементов.
-        limit: Размер страницы.
-        actor: Актуальная учётная запись.
-        uc: Прикладной сценарий.
-        session: Текущая транзакционная сессия.
+        case_id: Идентификатор клинического случая.
+        query: Текст для поиска по разрешённым полям.
+        record_type: Тип медицинской записи для фильтрации.
+        status: Состояние случая для фильтрации.
+        date_from: Нижняя включительная граница даты медицинского события.
+        date_to: Верхняя включительная граница даты медицинского события.
+        offset: Число элементов, пропускаемых перед страницей.
+        limit: Максимальное число элементов страницы.
+        actor: Аутентифицированный пользователь, выполняющий действие.
+        uc: Прикладной сценарий, выполняющий проверку доступа и операцию.
+        session: SQLAlchemy-сессия текущей транзакции.
 
     Returns:
-        Результат сценария в контексте текущего пользователя.
+        Страница найденных материалов без чтения содержимого PDF и сканов.
     """
     with case_transaction(session):
         return uc.materials(
@@ -67,25 +75,25 @@ def materials(
         )
 
 
-@router.get('/{case_id}/materials/{record_id}')
+@router.get('/{case_id}/materials/{record_id}', response_model=MedicalRecordResponseSchema)
 def material_details(
     case_id: UUID,
     record_id: UUID,
     actor: AuthenticatedUserDTO = current_authenticated_user_dependency,
-    uc: ClinicalCasesUseCase = cases_dependency,
+    uc: CaseMaterialsUseCase = materials_dependency,
     session: Session = db_session_dependency,
 ) -> MedicalRecordDTO:
     """Прочитать выбранную запись только при полном доступе к случаю.
 
     Args:
-        case_id: Идентификатор случая.
-        record_id: Ссылка на выбранный материал.
-        actor: Актуальная учётная запись.
-        uc: Прикладной сценарий.
-        session: Текущая транзакционная сессия.
+        case_id: Идентификатор клинического случая.
+        record_id: Идентификатор записи, включённой в материалы случая.
+        actor: Аутентифицированный пользователь, выполняющий действие.
+        uc: Прикладной сценарий, выполняющий проверку доступа и операцию.
+        session: SQLAlchemy-сессия текущей транзакции.
 
     Returns:
-        Результат сценария в контексте текущего пользователя.
+        Доступная медицинская запись с её вложениями и комментариями.
     """
     with case_transaction(session):
         return uc.material_details(case_id, actor.id, record_id)
@@ -98,27 +106,27 @@ def attachment(
     attachment_id: UUID,
     download: bool = False,
     actor: AuthenticatedUserDTO = current_authenticated_user_dependency,
-    uc: ClinicalCasesUseCase = cases_dependency,
+    uc: CaseMaterialsUseCase = materials_dependency,
     session: Session = db_session_dependency,
     downloader: DownloadAttachmentUseCase = download_attachment_use_case_dependency,
 ) -> Response:
     """Отдать файл без публичной ссылки на хранилище, с повторной проверкой ACL.
 
     Args:
-        case_id: Идентификатор случая.
-        record_id: Ссылка на выбранный материал.
-        attachment_id: Вложение указанного материала.
-        download: Параметр операции.
-        actor: Актуальная учётная запись.
-        uc: Прикладной сценарий.
-        session: Текущая транзакционная сессия.
-        downloader: Параметр операции.
+        case_id: Идентификатор клинического случая.
+        record_id: Идентификатор записи, включённой в материалы случая.
+        attachment_id: Вложение указанной медицинской записи.
+        download: Выдать файл как скачивание, даже если формат поддерживает просмотр.
+        actor: Аутентифицированный пользователь, выполняющий действие.
+        uc: Прикладной сценарий, выполняющий проверку доступа и операцию.
+        session: SQLAlchemy-сессия текущей транзакции.
+        downloader: Сценарий загрузки содержимого вложения из закрытого хранилища.
 
     Returns:
-        Результат сценария в контексте текущего пользователя.
+        Содержимое файла с безопасным MIME, заголовком скачивания/просмотра и запретом кэширования.
 
     Raises:
-        HTTPException: При нарушении условий операции.
+        HTTPException: Если доступ запрещён, ссылка недействительна или возник конфликт изменения.
     """
     with case_transaction(session):
         uc.authorize_attachment(case_id, actor.id, record_id, attachment_id)
@@ -142,25 +150,29 @@ def attachment(
         )
 
 
-@router.get('/{case_id}/messages/{message_id}')
-def message(
-    case_id: UUID,
-    message_id: UUID,
+@router.get('/patients/{patient_id}/available-records', response_model=PageResponse[MaterialResponse])
+def available_records(
+    patient_id: UUID,
+    query: str = query_parameter,
+    offset: int = offset_parameter,
+    limit: int = limit_parameter,
     actor: AuthenticatedUserDTO = current_authenticated_user_dependency,
-    uc: ClinicalCasesUseCase = cases_dependency,
+    uc: CaseMaterialsUseCase = materials_dependency,
     session: Session = db_session_dependency,
-) -> CaseMessage:
-    """Открыть исходное сообщение из ответа или уведомления.
+) -> PageDTO[MaterialSummary]:
+    """Выбрать страницу собственных доступных записей для нового разбора.
 
     Args:
-        case_id: Идентификатор случая.
-        message_id: Параметр операции.
-        actor: Актуальная учётная запись.
-        uc: Прикладной сценарий.
-        session: Текущая транзакционная сессия.
+        patient_id: Идентификатор конкретного паспорта пациента.
+        query: Текст для поиска по разрешённым полям.
+        offset: Число элементов, пропускаемых перед страницей.
+        limit: Максимальное число элементов страницы.
+        actor: Аутентифицированный пользователь, выполняющий действие.
+        uc: Прикладной сценарий, выполняющий проверку доступа и операцию.
+        session: SQLAlchemy-сессия текущей транзакции.
 
     Returns:
-        Результат сценария в контексте текущего пользователя.
+        Страница записей пациента, которые текущий врач может включить в разбор.
     """
     with case_transaction(session):
-        return uc.get_message(case_id, actor.id, message_id)
+        return uc.available_materials(patient_id, actor.id, query, offset, limit)
