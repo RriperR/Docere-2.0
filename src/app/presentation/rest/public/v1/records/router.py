@@ -348,7 +348,7 @@ def download_attachment(
     """
     try:
         result = use_case.execute(
-            DownloadAttachmentDTO(attachment_id=attachment_id, actor_user_id=current_user.id),
+            DownloadAttachmentDTO(attachment_id=attachment_id, actor_user_id=current_user.id, record_id=record_id),
         )
     except FileAttachmentNotFoundError:
         raise_not_found('Attachment not found')

@@ -102,7 +102,7 @@ class DownloadAttachmentUseCase:
             MedicalRecordAccessDeniedError: Если запись вложения недоступна пользователю.
         """
         attachment = self._repository.get_attachment(attachment_id=input_dto.attachment_id)
-        if attachment is None:
+        if attachment is None or (input_dto.record_id is not None and attachment.record_id != input_dto.record_id):
             raise FileAttachmentNotFoundError
 
         accessible_record = self._repository.get_accessible_record(

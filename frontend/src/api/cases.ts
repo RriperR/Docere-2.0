@@ -10,7 +10,7 @@ export interface ClinicalCase {
 }
 export interface CaseView {
   id: string; status: string; membership_status: string; coordinator_id: string; coordinator_name: string
-  material_count: number; accessible: boolean; case: ClinicalCase | null; invitation_terms: string
+  patient_name: string | null; material_count: number; accessible: boolean; case: ClinicalCase | null; invitation_terms: string
 }
 export interface Page<T> { items: T[]; total: number }
 export interface Material {

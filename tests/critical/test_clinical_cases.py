@@ -375,3 +375,81 @@ def test_postgres_concurrent_versions_and_publication(postgres_case_client):
     assert all(r.status_code == 200 for r in results)
     assert len({r.json()['record_id'] for r in results}) == 1
     assert sum(r.json()['created'] for r in results) == 1
+
+
+def test_case_search_preview_and_attachment_association(record_client, monkeypatch):
+    from test_records import _InMemoryStorage
+
+    from app.domain.entities.file_attachment import FileAttachmentCategory
+    from app.infrastructure.db.models.medical_records.file_attachment import FileAttachmentRow
+
+    client = record_client
+    case, records, ids, headers, patient = setup_case(client)
+    storage = _InMemoryStorage()
+    monkeypatch.setattr('app.presentation.rest.public.v1.records.dependencies.get_file_storage', lambda: storage)
+    files = []
+    for index, record in enumerate(records[:2]):
+        key = f'case-test-{index}.pdf'
+        content = b'%PDF-1.4\nsynthetic-document'
+        storage.upload(key=key, content=content, content_type='application/pdf')
+        with get_session_factory()() as session:
+            file = FileAttachmentRow(
+                record_id=UUID(record['id']),
+                uploaded_by_user_id=ids[0],
+                category=FileAttachmentCategory.DOCUMENT,
+                filename=f'unique-filename-{index}.pdf',
+                storage_key=key,
+                mime_type='application/pdf',
+                size_bytes=len(content),
+            )
+            session.add(file)
+            session.commit()
+            files.append(str(file.id))
+    _grant_record_access(ids[1], UUID(records[0]['id']), patient)
+    case = invite(client, case, headers, ids[1])
+    url = f'/api/cases/{case["id"]}'
+    file_url = url + f'/materials/{records[0]["id"]}/attachments/{files[0]}'
+    assert client.get(file_url, headers=headers[1]).status_code == 403
+    client.post(url + '/invitations/accept', headers=headers[1])
+    response = client.get(file_url, headers=headers[1])
+    assert response.status_code == 200
+    assert response.content.startswith(b'%PDF-')
+    assert response.headers['content-disposition'].startswith('inline')
+    assert 'no-store' in response.headers['cache-control']
+    assert (
+        client.get(file_url + '?download=true', headers=headers[1])
+        .headers['content-disposition']
+        .startswith('attachment')
+    )
+    assert (
+        client.get(url + f'/materials/{records[0]["id"]}/attachments/{files[1]}', headers=headers[1]).status_code == 404
+    )
+    assert client.get(f'/api/records/{records[0]["id"]}/attachments/{files[1]}', headers=headers[0]).status_code == 404
+    search = client.get(url + '/materials?query=unique-filename', headers=headers[1]).json()
+    assert search['total'] == 1 and search['items'][0]['id'] == records[0]['id']
+    assert client.get(url + '/materials?status=confirmed', headers=headers[1]).json()['total'] == 0
+    assert client.get(url + '/materials?date_from=2099-01-01', headers=headers[1]).json()['total'] == 0
+    assert client.get(url + '/materials?record_type=exam_result', headers=headers[1]).json()['total'] == 0
+    client.post(url + '/leave', headers=headers[1])
+    assert client.get(file_url, headers=headers[1]).status_code == 404
+    assert client.get(f'/api/records/{records[0]["id"]}/attachments/{files[0]}', headers=headers[1]).status_code == 200
+
+
+def test_new_material_does_not_restore_revoked_old_case_rights(record_client):
+    client = record_client
+    case, records, ids, headers, _ = setup_case(client)
+    case = invite(client, case, headers, ids[1])
+    url = f'/api/cases/{case["id"]}'
+    accepted = client.post(url + '/invitations/accept', headers=headers[1]).json()
+    with get_session_factory()() as session:
+        link = session.scalar(select(UserRecordLinkRow).where(UserRecordLinkRow.user_id == ids[1]))
+        session.delete(link)
+        session.commit()
+    added = client.post(
+        url + '/materials',
+        headers=headers[0],
+        json={'version': accepted['case']['version'], 'record_ids': [records[1]['id']]},
+    )
+    assert added.status_code == 200
+    assert client.get(url, headers=headers[1]).json()['case'] is None
+    assert client.get(url + '/materials', headers=headers[1]).status_code == 403

@@ -26,6 +26,7 @@ class DownloadAttachmentDTO:
 
     attachment_id: UUID
     actor_user_id: UUID
+    record_id: UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)

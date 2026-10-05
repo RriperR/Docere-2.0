@@ -11,6 +11,7 @@ from app.application.use_cases.clinical_cases import CaseView, ClinicalCasesUseC
 from app.application.use_cases.medical_records.create_medical_record.use_case import CreateMedicalRecordUseCase
 from app.domain.clinical_cases import CaseConclusion, CaseMessage, OpinionRequest
 from app.presentation.rest.public.v1.cases.dependencies import case_transaction, cases_dependency
+from app.presentation.rest.public.v1.cases.materials import router as materials_router
 from app.presentation.rest.public.v1.cases.schemas import (
     CaseCreateSchema,
     CloseSchema,
@@ -615,3 +616,6 @@ def publish(
     """
     with case_transaction(session):
         return uc.publish(case_id, actor, payload.event_date, creator)
+
+
+router.include_router(materials_router)

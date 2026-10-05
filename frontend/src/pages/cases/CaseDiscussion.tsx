@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { MaterialReference } from './CaseDocumentPanel'
 import api from '../../api/api'
 import { caseError, type ClinicalCase, type Page } from '../../api/cases'
 import { buttonClass, cardClass, inputClass } from './styles'
@@ -20,8 +21,9 @@ const labels: Record<string, string> = {
   materials_added: 'Добавлены материалы', conclusion_updated: 'Обновлён итог', closed: 'Разбор завершён', published: 'Итог опубликован',
 }
 
-export default function CaseDiscussion({ c, userId, onChange, onOpen }: {
+export default function CaseDiscussion({ c, userId, onChange, onOpen, reference }: {
   c: ClinicalCase; userId: string; onChange: () => Promise<void>
+  reference?: MaterialReference | null
   onOpen?: (recordId: string, attachmentId: string | null) => void
 }) {
   const [messages, setMessages] = useState<Message[]>([])
@@ -37,6 +39,11 @@ export default function CaseDiscussion({ c, userId, onChange, onOpen }: {
   const [parent, setParent] = useState<Message | null>(null)
   const [replyOpinion, setReplyOpinion] = useState<Opinion | null>(null)
   const [record, setRecord] = useState('')
+  const [attachment, setAttachment] = useState<string | null>(null)
+  const [parentContext, setParentContext] = useState<Message | null>(null)
+  useEffect(() => {
+    if (reference) { setRecord(reference.recordId); setAttachment(reference.attachmentId) }
+  }, [reference])
   const [question, setQuestion] = useState('')
   const [assignee, setAssignee] = useState('')
   const [error, setError] = useState('')
@@ -64,7 +71,7 @@ export default function CaseDiscussion({ c, userId, onChange, onOpen }: {
     finally { setBusy(false) }
   }
   async function send() {
-    const payload = { body, parent_id: parent?.id ?? null, record_id: record || null, opinion_id: replyOpinion?.id ?? null }
+    const payload = { body, parent_id: parent?.id ?? null, record_id: record || null, opinion_id: replyOpinion?.id ?? null, attachment_id: attachment }
     const fingerprint = JSON.stringify(payload)
     if (retry.current?.fingerprint !== fingerprint) retry.current = { fingerprint, key: crypto.randomUUID() }
     if (await mutate('messages', { ...payload, idempotency_key: retry.current.key })) {
@@ -76,7 +83,10 @@ export default function CaseDiscussion({ c, userId, onChange, onOpen }: {
     <section className={cardClass}><h2 className="text-lg font-semibold">Обсуждение</h2>
       {[...messages].reverse().map(m => <article key={m.id} className={`rounded-lg bg-gray-50 p-3 ${m.parent_id ? 'ml-6' : ''}`}>
         <p className="text-sm text-gray-500">{m.author_name} · {new Date(m.created_at).toLocaleString('ru-RU')}</p>
-        {m.parent_id && <p className="text-xs">Ответ на сообщение {m.parent_id.slice(0, 8)}</p>}
+        {m.parent_id && <button className="text-xs text-primary-700" onClick={async () => {
+          try { setParentContext((await api.get<Message>(`/cases/${c.id}/messages/${m.parent_id}`)).data) }
+          catch (e) { setError(caseError(e)); await onChange() }
+        }}>Показать исходное сообщение</button>}
         <p className="whitespace-pre-wrap">{m.body}</p>
         {m.record_id && <button className="text-primary-700 underline"
           onClick={() => onOpen?.(m.record_id!, m.attachment_id)}>Открыть связанный материал</button>}
@@ -86,12 +96,15 @@ export default function CaseDiscussion({ c, userId, onChange, onOpen }: {
       </article>)}
       <div className="flex gap-4"><button disabled={!offset} onClick={() => setOffset(offset - 20)}>Новые сообщения</button>
         <span>{total} сообщений</span><button disabled={offset + 20 >= total} onClick={() => setOffset(offset + 20)}>Ранее</button></div>
+      {parentContext && <div className="rounded-lg border p-3"><p>{parentContext.author_name}: {parentContext.body}</p>
+        <button onClick={() => setParentContext(null)}>Скрыть исходное сообщение</button></div>}
       {writable && <div className="space-y-2">
         {parent && <p>Ответ: {parent.body} <button onClick={() => setParent(null)}>Отмена</button></p>}
         {replyOpinion && <p>Ответ на запрос: {replyOpinion.question} <button onClick={() => setReplyOpinion(null)}>Отмена</button></p>}
         <label className="block">Сообщение<textarea className={inputClass} maxLength={10000} value={body} onChange={e => setBody(e.target.value)} /></label>
-        <label className="block">Связанный материал<select className={inputClass} value={record} onChange={e => setRecord(e.target.value)}>
+        <label className="block">Связанный материал<select className={inputClass} value={record} onChange={e => { setRecord(e.target.value); setAttachment(null) }}>
           <option value="">Без ссылки</option>{c.record_ids.map(id => <option key={id} value={id}>{id.slice(0, 8)}</option>)}</select></label>
+        {attachment && <p>Ссылка на вложение: {reference?.label} <button onClick={() => setAttachment(null)}>Убрать вложение</button></p>}
         <p className="text-sm text-gray-500">Сообщения неизменяемы. Исправление отправьте новым ответом.</p>
         <button className={buttonClass} disabled={busy || !body.trim()} onClick={() => void send()}>Отправить сообщение</button>
       </div>}

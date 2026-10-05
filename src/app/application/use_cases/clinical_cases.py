@@ -4,9 +4,12 @@ from dataclasses import dataclass
 from datetime import date
 from uuid import UUID, uuid4
 
+from app.application.case_materials import MaterialFilters
 from app.application.ports.clinical_cases import CaseRepositoryPort
 from app.application.ports.repositories.medical_records.port import MedicalRecordRepositoryPort
 from app.application.use_cases.auth.common.dtos import AuthenticatedUserDTO
+from app.application.use_cases.medical_records.common.dtos import MedicalRecordDTO
+from app.application.use_cases.medical_records.common.mappers import to_medical_record_dto
 from app.application.use_cases.medical_records.create_medical_record.dtos import CreateMedicalRecordDTO
 from app.application.use_cases.medical_records.create_medical_record.use_case import CreateMedicalRecordUseCase
 from app.domain.clinical_cases import CaseConclusion, CaseError, CaseMember, CaseMessage, ClinicalCase, OpinionRequest
@@ -24,6 +27,7 @@ class CaseView:
     material_count: int
     accessible: bool
     case: ClinicalCase | None
+    patient_name: str | None = None
     invitation_terms: str = 'Координатор сможет добавлять новые материалы этого пациента в совместный разбор.'
 
 
@@ -118,6 +122,7 @@ class ClinicalCasesUseCase:
         """
         accessible = self.accessible(case, user_id)
         member = case.member(user_id)
+        patient = self.records.get_patient_passport(patient_passport_id=case.patient_id) if accessible else None
         return CaseView(
             case.id,
             case.status,
@@ -127,6 +132,7 @@ class ClinicalCasesUseCase:
             len(case.record_ids),
             accessible,
             case if accessible else None,
+            patient.fio if patient else None,
         )
 
     def list_cases(
@@ -254,12 +260,13 @@ class ClinicalCasesUseCase:
         case.require_writable()
         case.check_version(version)
         self.validate_materials(case, record_ids)
-        case.record_ids = list(dict.fromkeys([*case.record_ids, *record_ids]))
+        added = list(dict.fromkeys(record_id for record_id in record_ids if record_id not in case.record_ids))
+        case.record_ids.extend(added)
         case.version += 1
         self.repository.save(case)
         for member in case.members:
-            if member.status == 'accepted' and self.repository.is_doctor(member.user_id):
-                self.repository.grant(case, member.user_id)
+            if added and member.status == 'accepted' and self.repository.is_doctor(member.user_id):
+                member.share_request_id = self.repository.grant(case, member.user_id, added)
         self.changed(case, user_id, 'materials_added', recipients=self.participants(case))
         return self.view(case, user_id)
 
@@ -791,3 +798,77 @@ class ClinicalCasesUseCase:
         case.version += 1
         self.changed(case, actor.id, 'published', record.id)
         return {'record_id': record.id, 'created': True}
+
+    def materials(
+        self, case_id: UUID, user_id: UUID, filters: MaterialFilters, offset: int, limit: int
+    ) -> dict[str, object]:
+        """Выбрать материалы; потеря одного источника блокирует весь поиск.
+
+        Args:
+            case_id: Идентификатор случая.
+            user_id: Текущий пользователь.
+            filters: Параметр операции.
+            offset: Число пропускаемых элементов.
+            limit: Размер страницы.
+
+        Returns:
+            Результат сценария в контексте текущего пользователя.
+        """
+        self.require_context(self.load(case_id, user_id), user_id)
+        return self.repository.case_materials(case_id, filters, offset, limit)
+
+    def material_details(self, case_id: UUID, user_id: UUID, record_id: UUID) -> MedicalRecordDTO:
+        """Открыть запись только в контексте полностью доступного случая.
+
+        Args:
+            case_id: Идентификатор случая.
+            user_id: Текущий пользователь.
+            record_id: Ссылка на выбранный материал.
+
+        Returns:
+            Результат сценария в контексте текущего пользователя.
+
+        Raises:
+            CaseError: При нарушении условий операции.
+        """
+        case = self.load(case_id, user_id)
+        self.require_context(case, user_id)
+        self.reference(case, user_id, record_id)
+        record = self.records.get_accessible_record(record_id, user_id)
+        if record is None:
+            raise CaseError('Материал недоступен', 403)
+        return to_medical_record_dto(record)
+
+    def authorize_attachment(self, case_id: UUID, user_id: UUID, record_id: UUID, attachment_id: UUID) -> None:
+        """Проверить все материалы случая и соответствие вложения указанной записи.
+
+        Args:
+            case_id: Идентификатор случая.
+            user_id: Текущий пользователь.
+            record_id: Ссылка на выбранный материал.
+            attachment_id: Вложение указанного материала.
+        """
+        case = self.load(case_id, user_id)
+        self.require_context(case, user_id)
+        self.reference(case, user_id, record_id, attachment_id)
+
+    def get_message(self, case_id: UUID, user_id: UUID, message_id: UUID) -> CaseMessage:
+        """Открыть исходную реплику или целевое уведомление без обхода ACL.
+
+        Args:
+            case_id: Идентификатор случая.
+            user_id: Текущий пользователь.
+            message_id: Параметр операции.
+
+        Returns:
+            Результат сценария в контексте текущего пользователя.
+
+        Raises:
+            CaseError: При нарушении условий операции.
+        """
+        case = self.load(case_id, user_id)
+        self.require_context(case, user_id)
+        message = self.repository.message(message_id)
+        if message is None or message.case_id != case.id:
+            raise CaseError('Сообщение не найдено', 404)
+        return message

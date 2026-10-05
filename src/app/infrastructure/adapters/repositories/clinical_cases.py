@@ -5,7 +5,9 @@ from uuid import UUID
 from sqlalchemy import exists, func, or_, select, update
 from sqlalchemy.orm import Session
 
+from app.application.case_materials import MaterialFilters
 from app.domain.clinical_cases import CaseConclusion, CaseMember, CaseMessage, ClinicalCase, OpinionRequest
+from app.domain.entities.medical_record import MedicalRecordStatus, MedicalRecordType
 from app.infrastructure.adapters.repositories.share_requests.sqlalchemy_share_request_repository import (
     SqlAlchemyShareRequestRepositoryAdapter,
 )
@@ -19,6 +21,7 @@ from app.infrastructure.db.models.clinical_cases import (
     ClinicalCaseRow,
     OpinionRequestRow,
 )
+from app.infrastructure.db.models.medical_records.file_attachment import FileAttachmentRow
 from app.infrastructure.db.models.medical_records.medical_record import MedicalRecordRow
 from app.infrastructure.db.models.medical_records.record_share import (
     RecordShareRequestRow,
@@ -194,7 +197,7 @@ class SqlAlchemyCaseRepository:
         )
         return [{'id': str(row.id), 'name': row.fio, 'email': row.email} for row in rows]
 
-    def grant(self, case: ClinicalCase, user_id: UUID) -> UUID:
+    def grant(self, case: ClinicalCase, user_id: UUID, record_ids: list[UUID] | None = None) -> UUID:
         """Выдать отдельный источник ACL для всех актуальных материалов случая.
 
         Returns:
@@ -203,6 +206,7 @@ class SqlAlchemyCaseRepository:
         Args:
             case: Агрегат текущего разбора.
             user_id: Текущий пользователь.
+            record_ids: Только новые материалы при дополнении, либо весь набор при принятии.
         """
         member = case.member(user_id)
         request = (
@@ -219,7 +223,7 @@ class SqlAlchemyCaseRepository:
             )
             self.session.add(request)
             self.session.flush()
-        for record_id in case.record_ids:
+        for record_id in case.record_ids if record_ids is None else record_ids:
             link = self.session.scalar(
                 select(UserRecordLinkRow).where(
                     UserRecordLinkRow.user_id == user_id,
@@ -256,10 +260,16 @@ class SqlAlchemyCaseRepository:
             case: Агрегат текущего разбора.
             user_id: Текущий пользователь.
         """
-        member = case.member(user_id)
-        if member and member.share_request_id:
+        requests = self.session.scalars(
+            select(RecordShareRequestRow.id).where(
+                RecordShareRequestRow.clinical_case_id == case.id,
+                RecordShareRequestRow.to_user_id == user_id,
+                RecordShareRequestRow.status == RecordShareStatusRow.ACCEPTED,
+            )
+        )
+        for request_id in list(requests):
             SqlAlchemyShareRequestRepositoryAdapter(self.session).revoke_case_request(
-                request_id=member.share_request_id,
+                request_id=request_id,
                 user_id=case.coordinator_id,
             )
 
@@ -621,3 +631,54 @@ class SqlAlchemyCaseRepository:
             .where(OpinionRequestRow.case_id == case_id, OpinionRequestRow.status == 'open')
             .values(status='cancelled', reason='case_closed')
         )
+
+    def case_materials(self, case_id: UUID, filters: MaterialFilters, offset: int, limit: int) -> dict[str, object]:
+        """Поиск только по ссылкам выбранного случая, с пагинацией в SQL.
+
+        Args:
+            case_id: Идентификатор случая.
+            filters: Параметр операции.
+            offset: Число пропускаемых элементов.
+            limit: Размер страницы.
+
+        Returns:
+            Результат сценария в контексте текущего пользователя.
+        """
+        statement = select(MedicalRecordRow).join(CaseMaterialRow, CaseMaterialRow.record_id == MedicalRecordRow.id)
+        statement = statement.where(CaseMaterialRow.case_id == case_id)
+        if filters.query:
+            pattern = f'%{filters.query}%'
+            filename = exists(
+                select(FileAttachmentRow.id).where(
+                    FileAttachmentRow.record_id == MedicalRecordRow.id, FileAttachmentRow.filename.ilike(pattern)
+                )
+            )
+            statement = statement.where(
+                or_(MedicalRecordRow.title.ilike(pattern), MedicalRecordRow.clinical_summary.ilike(pattern), filename)
+            )
+        if filters.record_type:
+            statement = statement.where(MedicalRecordRow.record_type == MedicalRecordType(filters.record_type))
+        if filters.status:
+            statement = statement.where(MedicalRecordRow.status == MedicalRecordStatus(filters.status))
+        if filters.date_from:
+            statement = statement.where(MedicalRecordRow.event_date >= filters.date_from)
+        if filters.date_to:
+            statement = statement.where(MedicalRecordRow.event_date <= filters.date_to)
+        total = self.session.scalar(select(func.count()).select_from(statement.subquery())) or 0
+        rows = self.session.scalars(
+            statement.order_by(MedicalRecordRow.event_date, MedicalRecordRow.id).offset(offset).limit(limit)
+        )
+        return {
+            'items': [
+                {
+                    'id': row.id,
+                    'title': row.title,
+                    'clinical_summary': row.clinical_summary,
+                    'event_date': row.event_date,
+                    'record_type': row.record_type.value,
+                    'status': row.status.value,
+                }
+                for row in rows
+            ],
+            'total': total,
+        }

@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { caseApi, caseError, type CaseView, type Doctor } from '../../api/cases'
+import CaseMaterials from './CaseMaterials'
+import CaseDocumentPanel, { type MaterialReference } from './CaseDocumentPanel'
 import CaseConclusion from './CaseConclusion'
 import CaseDiscussion from './CaseDiscussion'
 import { useAuthStore } from '../../stores/authStore'
@@ -13,11 +15,19 @@ export default function CasePage() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [query, setQuery] = useState('')
+  const [document, setDocument] = useState<{ recordId: string; attachmentId: string | null } | null>(null)
+  const [reference, setReference] = useState<MaterialReference | null>(null)
+  const openMaterial = useCallback((recordId: string, attachmentId: string | null = null) => {
+    setDocument({ recordId, attachmentId })
+  }, [])
   const [doctors, setDoctors] = useState<Doctor[]>([])
+  const reads = useRef(0)
   const load = useCallback(async () => {
-    try { setView(await caseApi.get(id)) } catch (e) { setView(null); setError(caseError(e)) }
+    const request = ++reads.current
+    try { const next = await caseApi.get(id); if (request === reads.current) setView(next) }
+    catch (e) { if (request === reads.current) { setView(null); setError(caseError(e)) } }
   }, [id])
-  useEffect(() => { void load() }, [load])
+  useEffect(() => { setView(null); void load(); return () => { reads.current += 1 } }, [load])
   async function action(path: string, payload?: unknown) {
     setBusy(true); setError('')
     try { setView(await caseApi.post(id, path, payload)) }
@@ -42,7 +52,7 @@ export default function CasePage() {
     </section>}
     {c && <>
       <section className={cardClass}>
-        <h1 className="text-2xl font-bold">{c.title}</h1><p>{c.question}</p>
+        <h1 className="text-2xl font-bold">{c.title}</h1><p>Пациент: {view.patient_name}</p><p>{c.question}</p>
         <p>{stateLabel[c.status]} · Координатор: {view.coordinator_name} · версия {c.version}</p>
         <p>Участие врача не означает согласия с выводами.</p>
         {c.previous_case_id && <Link to={`/cases/${c.previous_case_id}`}>Предыдущий случай (доступ проверяется отдельно)</Link>}
@@ -63,11 +73,12 @@ export default function CasePage() {
             onClick={() => void action('invitations', { user_id: d.id, version: c.version })}>Пригласить: {d.name} ({d.email})</button>)}
         </div>}
       </section>
-      <section className={cardClass}><h2 className="font-semibold">Материалы</h2>
-        <p>{c.record_ids.length} выбранных записей. Доступ к остальной истории пациента не предоставляется.</p>
-      </section>
-      <CaseConclusion c={c} owner={owner} onChange={load} />
-      <CaseDiscussion c={c} userId={userId ?? ''} onChange={load} />
+      <CaseMaterials c={c} owner={owner} onChange={load} onOpen={openMaterial} />
+      <CaseDiscussion c={c} userId={userId ?? ''} onChange={load} onOpen={openMaterial} reference={reference} />
+      <CaseConclusion c={c} owner={owner} onChange={load} onOpen={openMaterial} />
+      {document && <CaseDocumentPanel key={`${id}-${document.recordId}`} caseId={id} recordId={document.recordId}
+        attachmentId={document.attachmentId} onClose={() => setDocument(null)} onAccessLost={load}
+        onReference={ref => { setReference(ref); setDocument(null) }} />}
     </>}
   </div>
 }

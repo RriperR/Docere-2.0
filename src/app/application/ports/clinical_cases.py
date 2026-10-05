@@ -3,6 +3,7 @@
 from typing import Protocol
 from uuid import UUID
 
+from app.application.case_materials import MaterialFilters
 from app.domain.clinical_cases import CaseConclusion, CaseMessage, ClinicalCase, OpinionRequest
 
 
@@ -65,12 +66,13 @@ class CaseRepositoryPort(Protocol):
         """
         ...
 
-    def grant(self, case: ClinicalCase, user_id: UUID) -> UUID:
+    def grant(self, case: ClinicalCase, user_id: UUID, record_ids: list[UUID] | None = None) -> UUID:
         """Создать права с происхождением от случая.
 
         Args:
             case: Агрегат текущего разбора.
             user_id: Текущий пользователь.
+            record_ids: Только новые материалы при дополнении, либо весь набор при принятии.
         """
         ...
 
@@ -224,5 +226,16 @@ class CaseRepositoryPort(Protocol):
 
         Args:
             case_id: Идентификатор случая.
+        """
+        ...
+
+    def case_materials(self, case_id: UUID, filters: MaterialFilters, offset: int, limit: int) -> dict[str, object]:
+        """Найти страницу материалов по описанию, названию и имени вложения.
+
+        Args:
+            case_id: Идентификатор случая.
+            filters: Параметр операции.
+            offset: Число пропускаемых элементов.
+            limit: Размер страницы.
         """
         ...
