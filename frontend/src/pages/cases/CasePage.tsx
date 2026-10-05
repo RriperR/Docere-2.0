@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { caseApi, caseError, type CaseView, type Doctor } from '../../api/cases'
+import CaseDiscussion from './CaseDiscussion'
 import { useAuthStore } from '../../stores/authStore'
-import { buttonClass, cardClass, inputClass, stateLabel } from './CasesPage'
+import { buttonClass, cardClass, inputClass, stateLabel } from './styles'
 
 export default function CasePage() {
   const { id = '' } = useParams()
@@ -64,6 +65,7 @@ export default function CasePage() {
       <section className={cardClass}><h2 className="font-semibold">Материалы</h2>
         <p>{c.record_ids.length} выбранных записей. Доступ к остальной истории пациента не предоставляется.</p>
       </section>
+      <CaseDiscussion c={c} userId={userId ?? ''} onChange={load} />
     </>}
   </div>
 }

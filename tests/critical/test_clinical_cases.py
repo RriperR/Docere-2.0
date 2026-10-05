@@ -149,3 +149,101 @@ def test_blocked_coordinator_invalidates_case_acl(record_client):
         session.commit()
     assert client.get(url, headers=headers[1]).json()['case'] is None
     assert client.get(f'/api/records/{records[0]["id"]}', headers=headers[1]).status_code in {403, 404}
+
+
+def test_discussion_idempotency_one_reply_level_and_context_gate(record_client):
+    from uuid import uuid4
+
+    client = record_client
+    case, records, ids, headers, _ = setup_case(client)
+    case = invite(client, case, headers, ids[1])
+    url = f'/api/cases/{case["id"]}'
+    for path in ['messages', 'opinions', 'activity']:
+        assert client.get(url + '/' + path, headers=headers[1]).status_code == 403
+        assert client.get(url + '/' + path, headers=headers[2]).status_code == 404
+    client.post(url + '/invitations/accept', headers=headers[1])
+    payload = {'body': 'Review this material', 'idempotency_key': str(uuid4()), 'record_id': records[0]['id']}
+    original = client.post(url + '/messages', headers=headers[0], json=payload)
+    assert original.status_code == 201, original.text
+    repeated = client.post(url + '/messages', headers=headers[0], json=payload)
+    assert repeated.json()['id'] == original.json()['id']
+    assert client.post(url + '/messages', headers=headers[0], json={**payload, 'body': 'Different'}).status_code == 409
+    reply = client.post(
+        url + '/messages',
+        headers=headers[1],
+        json={'body': 'Reply', 'idempotency_key': str(uuid4()), 'parent_id': original.json()['id']},
+    )
+    assert reply.status_code == 201
+    assert (
+        client.post(
+            url + '/messages',
+            headers=headers[1],
+            json={'body': 'Too deep', 'idempotency_key': str(uuid4()), 'parent_id': reply.json()['id']},
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            url + '/messages',
+            headers=headers[1],
+            json={'body': 'Wrong record', 'idempotency_key': str(uuid4()), 'record_id': records[1]['id']},
+        ).status_code
+        == 404
+    )
+    page = client.get(url + '/messages?limit=1', headers=headers[1]).json()
+    assert page['total'] == 2 and len(page['items']) == 1
+    with get_session_factory()() as session:
+        link = session.scalar(select(UserRecordLinkRow).where(UserRecordLinkRow.user_id == ids[1]))
+        session.delete(link)
+        session.commit()
+    assert client.get(url + '/messages', headers=headers[1]).status_code == 403
+
+
+def test_opinion_answer_permissions_and_leaving_cancels_open_requests(record_client):
+    from uuid import uuid4
+
+    client = record_client
+    case, records, ids, headers, _ = setup_case(client)
+    case = invite(client, case, headers, ids[1])
+    url = f'/api/cases/{case["id"]}'
+    client.post(url + '/invitations/accept', headers=headers[1])
+    response = client.post(
+        url + '/opinions',
+        headers=headers[0],
+        json={'assignee_id': str(ids[1]), 'question': 'Please review', 'record_id': records[0]['id']},
+    )
+    assert response.status_code == 201, response.text
+    opinion = response.json()
+    answer = {'body': 'Opinion', 'idempotency_key': str(uuid4()), 'opinion_id': opinion['id']}
+    assert client.post(url + '/messages', headers=headers[0], json=answer).status_code == 403
+    assert client.post(url + '/messages', headers=headers[1], json=answer).status_code == 201
+    assert client.get(url + '/opinions', headers=headers[0]).json()['items'][0]['status'] == 'answered'
+    response = client.post(
+        url + '/opinions', headers=headers[0], json={'assignee_id': str(ids[1]), 'question': 'One more question'}
+    )
+    assert response.status_code == 201
+    client.post(url + '/leave', headers=headers[1])
+    cancelled = next(
+        item
+        for item in client.get(url + '/opinions', headers=headers[0]).json()['items']
+        if item['id'] == response.json()['id']
+    )
+    assert cancelled['status'] == 'cancelled' and cancelled['reason'] == 'assignee_left'
+
+
+def test_acceptance_uses_latest_materials(record_client):
+    client = record_client
+    case, records, ids, headers, _ = setup_case(client)
+    case = invite(client, case, headers, ids[1])
+    url = f'/api/cases/{case["id"]}'
+    assert (
+        client.post(
+            url + '/materials',
+            headers=headers[0],
+            json={'version': case['case']['version'], 'record_ids': [records[1]['id'], records[1]['id']]},
+        ).status_code
+        == 200
+    )
+    accepted = client.post(url + '/invitations/accept', headers=headers[1]).json()
+    assert len(accepted['case']['record_ids']) == 2
+    assert client.get(f'/api/records/{records[1]["id"]}', headers=headers[1]).status_code == 200

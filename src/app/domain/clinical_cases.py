@@ -9,7 +9,12 @@ class CaseError(Exception):
     """Ошибка сценария с безопасным для пользователя сообщением."""
 
     def __init__(self, message: str, status: int = 409) -> None:
-        """Инициализировать зависимости сценария."""
+        """Инициализировать зависимости сценария.
+
+        Args:
+            message: Неизменяемая реплика.
+            status: Параметр операции.
+        """
         super().__init__(message)
         self.status = status
 
@@ -48,6 +53,9 @@ class ClinicalCase:
 
         Returns:
             Результат операции в контексте доступа текущего пользователя.
+
+        Args:
+            user_id: Текущий пользователь.
         """
         return next((item for item in self.members if item.user_id == user_id), None)
 
@@ -56,6 +64,9 @@ class ClinicalCase:
 
         Raises:
             CaseError: При нарушении условий операции.
+
+        Args:
+            user_id: Текущий пользователь.
         """
         if user_id != self.coordinator_id:
             raise CaseError('Действие доступно только координатору', 403)
@@ -74,6 +85,43 @@ class ClinicalCase:
 
         Raises:
             CaseError: При нарушении условий операции.
+
+        Args:
+            version: Версия, прочитанная клиентом.
         """
         if version != self.version:
             raise CaseError('Случай изменился. Обновите данные')
+
+
+@dataclass(frozen=True)
+class CaseMessage:
+    """Неизменяемое сообщение с одним уровнем ответов и ключом повтора."""
+
+    id: UUID
+    case_id: UUID
+    author_id: UUID
+    body: str
+    idempotency_key: UUID
+    sequence: int
+    parent_id: UUID | None = None
+    record_id: UUID | None = None
+    attachment_id: UUID | None = None
+    opinion_id: UUID | None = None
+    created_at: datetime | None = None
+    author_name: str = ''
+
+
+@dataclass
+class OpinionRequest:
+    """Адресный запрос мнения внутри случая."""
+
+    id: UUID
+    case_id: UUID
+    requester_id: UUID
+    assignee_id: UUID
+    question: str
+    status: str = 'open'
+    record_id: UUID | None = None
+    reason: str | None = None
+    response_message_id: UUID | None = None
+    created_at: datetime | None = None

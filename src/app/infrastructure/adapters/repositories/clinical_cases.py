@@ -2,15 +2,22 @@
 
 from uuid import UUID
 
-from sqlalchemy import exists, func, or_, select
+from sqlalchemy import exists, func, or_, select, update
 from sqlalchemy.orm import Session
 
-from app.domain.clinical_cases import CaseMember, ClinicalCase
+from app.domain.clinical_cases import CaseMember, CaseMessage, ClinicalCase, OpinionRequest
 from app.infrastructure.adapters.repositories.share_requests.sqlalchemy_share_request_repository import (
     SqlAlchemyShareRequestRepositoryAdapter,
 )
 from app.infrastructure.db.models.auth.user import UserRole, UserRow, UserStatus
-from app.infrastructure.db.models.clinical_cases import CaseMaterialRow, CaseMemberRow, ClinicalCaseRow
+from app.infrastructure.db.models.clinical_cases import (
+    CaseEventRow,
+    CaseMaterialRow,
+    CaseMemberRow,
+    CaseMessageRow,
+    ClinicalCaseRow,
+    OpinionRequestRow,
+)
 from app.infrastructure.db.models.medical_records.medical_record import MedicalRecordRow
 from app.infrastructure.db.models.medical_records.record_share import (
     RecordShareRequestRow,
@@ -25,7 +32,11 @@ class SqlAlchemyCaseRepository:
     """Персистентность агрегата; commit принадлежит HTTP boundary."""
 
     def __init__(self, session: Session) -> None:
-        """Инициализировать зависимости сценария."""
+        """Инициализировать зависимости сценария.
+
+        Args:
+            session: Текущая транзакционная сессия.
+        """
         self.session = session
 
     def get(self, case_id: UUID, *, lock: bool = False) -> ClinicalCase | None:
@@ -33,6 +44,10 @@ class SqlAlchemyCaseRepository:
 
         Returns:
             Результат операции в контексте доступа текущего пользователя.
+
+        Args:
+            case_id: Идентификатор случая.
+            lock: Параметр операции.
         """
         query = select(ClinicalCaseRow).where(ClinicalCaseRow.id == case_id)
         if lock:
@@ -64,7 +79,11 @@ class SqlAlchemyCaseRepository:
         )
 
     def save(self, case: ClinicalCase) -> None:
-        """Сохранить агрегат и ссылки на документы без изменения самих записей."""
+        """Сохранить агрегат и ссылки на документы без изменения самих записей.
+
+        Args:
+            case: Агрегат текущего разбора.
+        """
         row = self.session.get(ClinicalCaseRow, case.id)
         if row is None:
             row = ClinicalCaseRow(id=case.id, patient_id=case.patient_id, coordinator_id=case.coordinator_id)
@@ -96,6 +115,13 @@ class SqlAlchemyCaseRepository:
 
         Returns:
             Результат операции в контексте доступа текущего пользователя.
+
+        Args:
+            user_id: Текущий пользователь.
+            scope: Параметр операции.
+            status: Параметр операции.
+            offset: Число пропускаемых элементов.
+            limit: Размер страницы.
         """
         member = select(CaseMemberRow.case_id).where(
             CaseMemberRow.user_id == user_id, CaseMemberRow.status.in_(['pending', 'accepted'])
@@ -120,6 +146,9 @@ class SqlAlchemyCaseRepository:
 
         Returns:
             Результат операции в контексте доступа текущего пользователя.
+
+        Args:
+            user_id: Текущий пользователь.
         """
         return (
             self.session.scalar(
@@ -135,6 +164,9 @@ class SqlAlchemyCaseRepository:
 
         Returns:
             Результат операции в контексте доступа текущего пользователя.
+
+        Args:
+            user_id: Текущий пользователь.
         """
         return self.session.scalar(select(UserRow.fio).where(UserRow.id == user_id)) or 'Врач'
 
@@ -143,6 +175,10 @@ class SqlAlchemyCaseRepository:
 
         Returns:
             Результат операции в контексте доступа текущего пользователя.
+
+        Args:
+            user_id: Текущий пользователь.
+            query: Поисковая строка.
         """
         rows = self.session.scalars(
             select(UserRow)
@@ -162,6 +198,10 @@ class SqlAlchemyCaseRepository:
 
         Returns:
             Результат операции в контексте доступа текущего пользователя.
+
+        Args:
+            case: Агрегат текущего разбора.
+            user_id: Текущий пользователь.
         """
         member = case.member(user_id)
         request = (
@@ -209,7 +249,12 @@ class SqlAlchemyCaseRepository:
         return request.id
 
     def revoke(self, case: ClinicalCase, user_id: UUID) -> None:
-        """Отозвать только права этого случая существующим каскадным механизмом."""
+        """Отозвать только права этого случая существующим каскадным механизмом.
+
+        Args:
+            case: Агрегат текущего разбора.
+            user_id: Текущий пользователь.
+        """
         member = case.member(user_id)
         if member and member.share_request_id:
             SqlAlchemyShareRequestRepositoryAdapter(self.session).revoke_case_request(
@@ -224,6 +269,13 @@ class SqlAlchemyCaseRepository:
 
         Returns:
             Результат операции в контексте доступа текущего пользователя.
+
+        Args:
+            patient_id: Параметр операции.
+            user_id: Текущий пользователь.
+            query: Поисковая строка.
+            offset: Число пропускаемых элементов.
+            limit: Размер страницы.
         """
         access = exists(
             select(UserRecordLinkRow.id).where(
@@ -251,6 +303,235 @@ class SqlAlchemyCaseRepository:
                     'event_date': row.event_date,
                     'record_type': row.record_type.value,
                     'status': row.status.value,
+                }
+                for row in rows
+            ],
+            'total': total,
+        }
+
+    def message(self, message_id: UUID) -> CaseMessage | None:
+        """Получить неизменяемое сообщение; доступ проверяет прикладной сценарий.
+
+        Args:
+            message_id: Параметр операции.
+
+        Returns:
+            Результат сценария в контексте текущего пользователя.
+        """
+        row = self.session.get(CaseMessageRow, message_id)
+        return self._message(row) if row else None
+
+    def find_message(self, case_id: UUID, author_id: UUID, key: UUID) -> CaseMessage | None:
+        """Найти результат идемпотентной отправки.
+
+        Args:
+            case_id: Идентификатор случая.
+            author_id: Параметр операции.
+            key: Ключ повторной отправки.
+
+        Returns:
+            Результат сценария в контексте текущего пользователя.
+        """
+        row = self.session.scalar(
+            select(CaseMessageRow).where(
+                CaseMessageRow.case_id == case_id,
+                CaseMessageRow.author_id == author_id,
+                CaseMessageRow.idempotency_key == key,
+            )
+        )
+        return self._message(row) if row else None
+
+    def add_message(self, message: CaseMessage) -> CaseMessage:
+        """Сохранить новую реплику; обновлений и удалений сообщений нет.
+
+        Args:
+            message: Неизменяемая реплика.
+
+        Returns:
+            Результат сценария в контексте текущего пользователя.
+        """
+        row = CaseMessageRow(
+            id=message.id,
+            case_id=message.case_id,
+            author_id=message.author_id,
+            body=message.body,
+            idempotency_key=message.idempotency_key,
+            sequence=message.sequence,
+            parent_id=message.parent_id,
+            record_id=message.record_id,
+            attachment_id=message.attachment_id,
+            opinion_id=message.opinion_id,
+        )
+        self.session.add(row)
+        self.session.flush()
+        return self._message(row)
+
+    def _message(self, row: CaseMessageRow) -> CaseMessage:
+        return CaseMessage(
+            row.id,
+            row.case_id,
+            row.author_id,
+            row.body,
+            row.idempotency_key,
+            row.sequence,
+            row.parent_id,
+            row.record_id,
+            row.attachment_id,
+            row.opinion_id,
+            row.created_at,
+            self.doctor_name(row.author_id),
+        )
+
+    def messages(self, case_id: UUID, offset: int, limit: int, query: str = '') -> tuple[list[CaseMessage], int]:
+        """Пагинировать сообщения, не загружая весь чат в память клиента.
+
+        Args:
+            case_id: Идентификатор случая.
+            offset: Число пропускаемых элементов.
+            limit: Размер страницы.
+            query: Поисковая строка.
+
+        Returns:
+            Результат сценария в контексте текущего пользователя.
+        """
+        statement = select(CaseMessageRow).where(CaseMessageRow.case_id == case_id)
+        if query:
+            statement = statement.where(CaseMessageRow.body.ilike(f'%{query}%'))
+        total = self.session.scalar(select(func.count()).select_from(statement.subquery())) or 0
+        rows = self.session.scalars(statement.order_by(CaseMessageRow.sequence.desc()).offset(offset).limit(limit))
+        return [self._message(row) for row in rows], total
+
+    def opinion(self, opinion_id: UUID) -> OpinionRequest | None:
+        """Получить запрос мнения; ACL применяется в use case.
+
+        Args:
+            opinion_id: Адресный запрос.
+
+        Returns:
+            Результат сценария в контексте текущего пользователя.
+        """
+        row = self.session.get(OpinionRequestRow, opinion_id)
+        return self._opinion(row) if row else None
+
+    @staticmethod
+    def _opinion(row: OpinionRequestRow) -> OpinionRequest:
+        return OpinionRequest(
+            row.id,
+            row.case_id,
+            row.requester_id,
+            row.assignee_id,
+            row.question,
+            row.status,
+            row.record_id,
+            row.reason,
+            row.response_message_id,
+            row.created_at,
+        )
+
+    def opinions(self, case_id: UUID, offset: int, limit: int) -> tuple[list[OpinionRequest], int]:
+        """Выбрать страницу запросов мнения.
+
+        Args:
+            case_id: Идентификатор случая.
+            offset: Число пропускаемых элементов.
+            limit: Размер страницы.
+
+        Returns:
+            Результат сценария в контексте текущего пользователя.
+        """
+        statement = select(OpinionRequestRow).where(OpinionRequestRow.case_id == case_id)
+        total = self.session.scalar(select(func.count()).select_from(statement.subquery())) or 0
+        rows = self.session.scalars(
+            statement.order_by(OpinionRequestRow.created_at.desc(), OpinionRequestRow.id).offset(offset).limit(limit)
+        )
+        return [self._opinion(row) for row in rows], total
+
+    def save_opinion(self, opinion: OpinionRequest) -> None:
+        """Сохранить запрос или его новое состояние.
+
+        Args:
+            opinion: Адресный запрос.
+        """
+        row = self.session.get(OpinionRequestRow, opinion.id)
+        if row is None:
+            row = OpinionRequestRow(
+                id=opinion.id,
+                case_id=opinion.case_id,
+                requester_id=opinion.requester_id,
+                assignee_id=opinion.assignee_id,
+                question=opinion.question,
+                record_id=opinion.record_id,
+            )
+            self.session.add(row)
+        row.status, row.reason, row.response_message_id = opinion.status, opinion.reason, opinion.response_message_id
+        self.session.flush()
+        opinion.created_at = row.created_at
+
+    def cancel_assignee_opinions(self, case_id: UUID, user_id: UUID) -> None:
+        """Закрыть запросы вышедшему адресату с устойчивой причиной.
+
+        Args:
+            case_id: Идентификатор случая.
+            user_id: Текущий пользователь.
+        """
+        self.session.execute(
+            update(OpinionRequestRow)
+            .where(
+                OpinionRequestRow.case_id == case_id,
+                OpinionRequestRow.assignee_id == user_id,
+                OpinionRequestRow.status == 'open',
+            )
+            .values(status='cancelled', reason='assignee_left')
+        )
+
+    def emit(
+        self, case: ClinicalCase, actor_id: UUID, event_type: str, subject_id: UUID | None, recipients: list[UUID]
+    ) -> None:
+        """Сохранить событие и адресатов без текста пациента, документов и обсуждения.
+
+        Args:
+            case: Агрегат текущего разбора.
+            actor_id: Автор действия.
+            event_type: Тип доменного действия.
+            subject_id: Целевой объект события.
+            recipients: Получатели события.
+        """
+        self.session.add(
+            CaseEventRow(
+                case_id=case.id,
+                sequence=case.sequence,
+                actor_id=actor_id,
+                event_type=event_type,
+                subject_id=subject_id,
+                recipients=[str(u) for u in recipients],
+            )
+        )
+        self.session.flush()
+
+    def activity(self, case_id: UUID, offset: int, limit: int) -> dict[str, object]:
+        """Прочитать страницу журнала действий.
+
+        Args:
+            case_id: Идентификатор случая.
+            offset: Число пропускаемых элементов.
+            limit: Размер страницы.
+
+        Returns:
+            Результат сценария в контексте текущего пользователя.
+        """
+        statement = select(CaseEventRow).where(CaseEventRow.case_id == case_id)
+        total = self.session.scalar(select(func.count()).select_from(statement.subquery())) or 0
+        rows = self.session.scalars(statement.order_by(CaseEventRow.sequence.desc()).offset(offset).limit(limit))
+        return {
+            'items': [
+                {
+                    'id': row.id,
+                    'sequence': row.sequence,
+                    'event_type': row.event_type,
+                    'actor_id': row.actor_id,
+                    'actor_name': self.doctor_name(row.actor_id),
+                    'subject_id': row.subject_id,
+                    'created_at': row.created_at,
                 }
                 for row in rows
             ],

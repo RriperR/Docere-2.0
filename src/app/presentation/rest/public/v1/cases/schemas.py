@@ -24,6 +24,9 @@ class CaseCreateSchema(BaseModel):
 
         Raises:
             ValueError: При нарушении условий операции.
+
+        Args:
+            value: Параметр операции.
         """
         if not value.strip():
             raise ValueError('Введите текст')
@@ -51,3 +54,58 @@ class InviteSchema(BaseModel):
 
     version: int = Field(ge=1)
     user_id: UUID
+
+
+class MessageSchema(BaseModel):
+    """Новая неизменяемая реплика или ответ."""
+
+    body: str = Field(min_length=1, max_length=10000)
+    idempotency_key: UUID
+    parent_id: UUID | None = None
+    record_id: UUID | None = None
+    attachment_id: UUID | None = None
+    opinion_id: UUID | None = None
+
+    @field_validator('body')
+    @classmethod
+    def nonblank(cls, value: str) -> str:
+        """Не принимать пустые реплики.
+
+        Args:
+            value: Параметр операции.
+
+        Returns:
+            Результат сценария в контексте текущего пользователя.
+
+        Raises:
+            ValueError: При нарушении условий операции.
+        """
+        if not value.strip():
+            raise ValueError('Введите сообщение')
+        return value.strip()
+
+
+class OpinionSchema(BaseModel):
+    """Вопрос конкретному участнику."""
+
+    assignee_id: UUID
+    question: str = Field(min_length=1, max_length=10000)
+    record_id: UUID | None = None
+
+    @field_validator('question')
+    @classmethod
+    def nonblank(cls, value: str) -> str:
+        """Не принимать пустые вопросы.
+
+        Args:
+            value: Параметр операции.
+
+        Returns:
+            Результат сценария в контексте текущего пользователя.
+
+        Raises:
+            ValueError: При нарушении условий операции.
+        """
+        if not value.strip():
+            raise ValueError('Введите вопрос')
+        return value.strip()

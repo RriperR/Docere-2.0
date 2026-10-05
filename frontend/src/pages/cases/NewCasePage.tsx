@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { caseApi, caseError, type Material, type PatientOption } from '../../api/cases'
-import { buttonClass, cardClass, inputClass } from './CasesPage'
+import { buttonClass, cardClass, inputClass } from './styles'
 
 export default function NewCasePage() {
   const [params] = useSearchParams()

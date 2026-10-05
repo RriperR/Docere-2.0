@@ -8,8 +8,16 @@ from sqlalchemy.orm import Session
 
 from app.application.use_cases.auth.common.dtos import AuthenticatedUserDTO
 from app.application.use_cases.clinical_cases import CaseView, ClinicalCasesUseCase
+from app.domain.clinical_cases import CaseMessage, OpinionRequest
 from app.presentation.rest.public.v1.cases.dependencies import case_transaction, cases_dependency
-from app.presentation.rest.public.v1.cases.schemas import CaseCreateSchema, DraftSchema, InviteSchema, MaterialsSchema
+from app.presentation.rest.public.v1.cases.schemas import (
+    CaseCreateSchema,
+    DraftSchema,
+    InviteSchema,
+    MaterialsSchema,
+    MessageSchema,
+    OpinionSchema,
+)
 from app.presentation.rest.public.v1.records.dependencies import (
     current_authenticated_user_dependency,
     db_session_dependency,
@@ -35,6 +43,15 @@ def list_cases(
 
     Returns:
         Результат операции в контексте доступа текущего пользователя.
+
+    Args:
+        scope: Параметр операции.
+        status: Параметр операции.
+        offset: Число пропускаемых элементов.
+        limit: Размер страницы.
+        actor: Актуальная учётная запись.
+        uc: Прикладной сценарий.
+        session: Текущая транзакционная сессия.
     """
     with case_transaction(session):
         return uc.list_cases(actor.id, scope=scope, status=status, offset=offset, limit=limit)
@@ -51,6 +68,12 @@ def search_doctors(
 
     Returns:
         Результат операции в контексте доступа текущего пользователя.
+
+    Args:
+        query: Поисковая строка.
+        actor: Актуальная учётная запись.
+        uc: Прикладной сценарий.
+        session: Текущая транзакционная сессия.
     """
     with case_transaction(session):
         uc.require_doctor(actor.id)
@@ -71,6 +94,15 @@ def available_records(
 
     Returns:
         Результат операции в контексте доступа текущего пользователя.
+
+    Args:
+        patient_id: Параметр операции.
+        query: Поисковая строка.
+        offset: Число пропускаемых элементов.
+        limit: Размер страницы.
+        actor: Актуальная учётная запись.
+        uc: Прикладной сценарий.
+        session: Текущая транзакционная сессия.
     """
     with case_transaction(session):
         uc.require_doctor(actor.id)
@@ -88,6 +120,12 @@ def create_case(
 
     Returns:
         Результат операции в контексте доступа текущего пользователя.
+
+    Args:
+        payload: Проверенный HTTP payload.
+        actor: Актуальная учётная запись.
+        uc: Прикладной сценарий.
+        session: Текущая транзакционная сессия.
     """
     with case_transaction(session):
         return uc.create(
@@ -106,6 +144,12 @@ def get_case(
 
     Returns:
         Результат операции в контексте доступа текущего пользователя.
+
+    Args:
+        case_id: Идентификатор случая.
+        actor: Актуальная учётная запись.
+        uc: Прикладной сценарий.
+        session: Текущая транзакционная сессия.
     """
     with case_transaction(session):
         return uc.view(uc.load(case_id, actor.id), actor.id)
@@ -123,6 +167,13 @@ def update_draft(
 
     Returns:
         Результат операции в контексте доступа текущего пользователя.
+
+    Args:
+        case_id: Идентификатор случая.
+        payload: Проверенный HTTP payload.
+        actor: Актуальная учётная запись.
+        uc: Прикладной сценарий.
+        session: Текущая транзакционная сессия.
     """
     with case_transaction(session):
         return uc.update_draft(case_id, actor.id, payload.version, payload.title, payload.question, payload.record_ids)
@@ -140,6 +191,13 @@ def add_materials(
 
     Returns:
         Результат операции в контексте доступа текущего пользователя.
+
+    Args:
+        case_id: Идентификатор случая.
+        payload: Проверенный HTTP payload.
+        actor: Актуальная учётная запись.
+        uc: Прикладной сценарий.
+        session: Текущая транзакционная сессия.
     """
     with case_transaction(session):
         return uc.add_materials(case_id, actor.id, payload.version, payload.record_ids)
@@ -157,6 +215,13 @@ def invite(
 
     Returns:
         Результат операции в контексте доступа текущего пользователя.
+
+    Args:
+        case_id: Идентификатор случая.
+        payload: Проверенный HTTP payload.
+        actor: Актуальная учётная запись.
+        uc: Прикладной сценарий.
+        session: Текущая транзакционная сессия.
     """
     with case_transaction(session):
         return uc.invite(case_id, actor.id, payload.user_id, payload.version)
@@ -174,6 +239,13 @@ def respond(
 
     Returns:
         Результат операции в контексте доступа текущего пользователя.
+
+    Args:
+        case_id: Идентификатор случая.
+        action: Параметр операции.
+        actor: Актуальная учётная запись.
+        uc: Прикладной сценарий.
+        session: Текущая транзакционная сессия.
     """
     with case_transaction(session):
         return uc.membership(case_id, actor.id, action)
@@ -192,6 +264,14 @@ def manage_member(
 
     Returns:
         Результат операции в контексте доступа текущего пользователя.
+
+    Args:
+        case_id: Идентификатор случая.
+        user_id: Текущий пользователь.
+        action: Параметр операции.
+        actor: Актуальная учётная запись.
+        uc: Прикладной сценарий.
+        session: Текущая транзакционная сессия.
     """
     with case_transaction(session):
         return uc.membership(case_id, actor.id, action, user_id)
@@ -208,6 +288,173 @@ def leave(
 
     Returns:
         Результат операции в контексте доступа текущего пользователя.
+
+    Args:
+        case_id: Идентификатор случая.
+        actor: Актуальная учётная запись.
+        uc: Прикладной сценарий.
+        session: Текущая транзакционная сессия.
     """
     with case_transaction(session):
         return uc.membership(case_id, actor.id, 'leave')
+
+
+@router.get('/{case_id}/messages')
+def get_messages(
+    case_id: UUID,
+    query: str = '',
+    offset: int = offset_query,
+    limit: int = limit_query,
+    actor: AuthenticatedUserDTO = current_authenticated_user_dependency,
+    uc: ClinicalCasesUseCase = cases_dependency,
+    session: Session = db_session_dependency,
+) -> dict[str, object]:
+    """Прочитать страницу защищённого обсуждения.
+
+    Args:
+        case_id: Идентификатор случая.
+        query: Поисковая строка.
+        offset: Число пропускаемых элементов.
+        limit: Размер страницы.
+        actor: Актуальная учётная запись.
+        uc: Прикладной сценарий.
+        session: Текущая транзакционная сессия.
+
+    Returns:
+        Результат сценария в контексте текущего пользователя.
+    """
+    with case_transaction(session):
+        return uc.discussion(case_id, actor.id, offset, limit, query)
+
+
+@router.post('/{case_id}/messages', status_code=201)
+def send_message(
+    case_id: UUID,
+    payload: MessageSchema,
+    actor: AuthenticatedUserDTO = current_authenticated_user_dependency,
+    uc: ClinicalCasesUseCase = cases_dependency,
+    session: Session = db_session_dependency,
+) -> CaseMessage:
+    """Отправить реплику или ответ адресному запросу идемпотентно.
+
+    Args:
+        case_id: Идентификатор случая.
+        payload: Проверенный HTTP payload.
+        actor: Актуальная учётная запись.
+        uc: Прикладной сценарий.
+        session: Текущая транзакционная сессия.
+
+    Returns:
+        Результат сценария в контексте текущего пользователя.
+    """
+    with case_transaction(session):
+        return uc.send_message(
+            case_id,
+            actor.id,
+            payload.body,
+            payload.idempotency_key,
+            payload.parent_id,
+            payload.record_id,
+            payload.attachment_id,
+            payload.opinion_id,
+        )
+
+
+@router.get('/{case_id}/opinions')
+def get_opinions(
+    case_id: UUID,
+    offset: int = offset_query,
+    limit: int = limit_query,
+    actor: AuthenticatedUserDTO = current_authenticated_user_dependency,
+    uc: ClinicalCasesUseCase = cases_dependency,
+    session: Session = db_session_dependency,
+) -> dict[str, object]:
+    """Прочитать страницу адресных запросов.
+
+    Args:
+        case_id: Идентификатор случая.
+        offset: Число пропускаемых элементов.
+        limit: Размер страницы.
+        actor: Актуальная учётная запись.
+        uc: Прикладной сценарий.
+        session: Текущая транзакционная сессия.
+
+    Returns:
+        Результат сценария в контексте текущего пользователя.
+    """
+    with case_transaction(session):
+        return uc.list_opinions(case_id, actor.id, offset, limit)
+
+
+@router.post('/{case_id}/opinions', status_code=201)
+def request_opinion(
+    case_id: UUID,
+    payload: OpinionSchema,
+    actor: AuthenticatedUserDTO = current_authenticated_user_dependency,
+    uc: ClinicalCasesUseCase = cases_dependency,
+    session: Session = db_session_dependency,
+) -> OpinionRequest:
+    """Запросить мнение другого участника.
+
+    Args:
+        case_id: Идентификатор случая.
+        payload: Проверенный HTTP payload.
+        actor: Актуальная учётная запись.
+        uc: Прикладной сценарий.
+        session: Текущая транзакционная сессия.
+
+    Returns:
+        Результат сценария в контексте текущего пользователя.
+    """
+    with case_transaction(session):
+        return uc.request_opinion(case_id, actor.id, payload.assignee_id, payload.question, payload.record_id)
+
+
+@router.post('/{case_id}/opinions/{opinion_id}/cancel')
+def cancel_opinion(
+    case_id: UUID,
+    opinion_id: UUID,
+    actor: AuthenticatedUserDTO = current_authenticated_user_dependency,
+    uc: ClinicalCasesUseCase = cases_dependency,
+    session: Session = db_session_dependency,
+) -> OpinionRequest:
+    """Отменить запрос автором или координатором.
+
+    Args:
+        case_id: Идентификатор случая.
+        opinion_id: Адресный запрос.
+        actor: Актуальная учётная запись.
+        uc: Прикладной сценарий.
+        session: Текущая транзакционная сессия.
+
+    Returns:
+        Результат сценария в контексте текущего пользователя.
+    """
+    with case_transaction(session):
+        return uc.cancel_opinion(case_id, actor.id, opinion_id)
+
+
+@router.get('/{case_id}/activity')
+def get_activity(
+    case_id: UUID,
+    offset: int = offset_query,
+    limit: int = limit_query,
+    actor: AuthenticatedUserDTO = current_authenticated_user_dependency,
+    uc: ClinicalCasesUseCase = cases_dependency,
+    session: Session = db_session_dependency,
+) -> dict[str, object]:
+    """Прочитать страницу журнала действий.
+
+    Args:
+        case_id: Идентификатор случая.
+        offset: Число пропускаемых элементов.
+        limit: Размер страницы.
+        actor: Актуальная учётная запись.
+        uc: Прикладной сценарий.
+        session: Текущая транзакционная сессия.
+
+    Returns:
+        Результат сценария в контексте текущего пользователя.
+    """
+    with case_transaction(session):
+        return uc.activity(case_id, actor.id, offset, limit)

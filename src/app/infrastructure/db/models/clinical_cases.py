@@ -3,7 +3,8 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, func, Integer, String, Text, UniqueConstraint, Uuid
+from sqlalchemy import DateTime, ForeignKey, func, Integer, JSON, String, Text, UniqueConstraint, Uuid
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.db.base import Base
@@ -44,3 +45,52 @@ class CaseMemberRow(Base):
     status: Mapped[str] = mapped_column(String(16), default='pending')
     share_request_id: Mapped[UUID | None] = mapped_column(ForeignKey('record_share_requests.id'), nullable=True)
     read_sequence: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class CaseMessageRow(Base):
+    """Append-only сообщения обсуждения."""
+
+    __tablename__ = 'case_messages'
+    __table_args__ = (UniqueConstraint('case_id', 'author_id', 'idempotency_key', name='uq_case_message_retry'),)
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    case_id: Mapped[UUID] = mapped_column(ForeignKey('clinical_cases.id'), index=True)
+    author_id: Mapped[UUID] = mapped_column(ForeignKey('users.id'))
+    body: Mapped[str] = mapped_column(Text)
+    idempotency_key: Mapped[UUID] = mapped_column(Uuid)
+    sequence: Mapped[int] = mapped_column(Integer)
+    parent_id: Mapped[UUID | None] = mapped_column(ForeignKey('case_messages.id'), nullable=True)
+    record_id: Mapped[UUID | None] = mapped_column(ForeignKey('medical_records.id'), nullable=True)
+    attachment_id: Mapped[UUID | None] = mapped_column(ForeignKey('file_attachments.id'), nullable=True)
+    opinion_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class OpinionRequestRow(Base):
+    """Адресат, вопрос и результат адресного запроса."""
+
+    __tablename__ = 'case_opinions'
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    case_id: Mapped[UUID] = mapped_column(ForeignKey('clinical_cases.id'), index=True)
+    requester_id: Mapped[UUID] = mapped_column(ForeignKey('users.id'))
+    assignee_id: Mapped[UUID] = mapped_column(ForeignKey('users.id'))
+    question: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(16), default='open')
+    record_id: Mapped[UUID | None] = mapped_column(ForeignKey('medical_records.id'), nullable=True)
+    reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    response_message_id: Mapped[UUID | None] = mapped_column(ForeignKey('case_messages.id'), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CaseEventRow(Base):
+    """Журнал доменных действий, пригодный для доставки через outbox."""
+
+    __tablename__ = 'case_events'
+    __table_args__ = (UniqueConstraint('case_id', 'sequence', name='uq_case_event_sequence'),)
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    case_id: Mapped[UUID] = mapped_column(ForeignKey('clinical_cases.id'), index=True)
+    sequence: Mapped[int] = mapped_column(Integer)
+    event_type: Mapped[str] = mapped_column(String(32))
+    actor_id: Mapped[UUID] = mapped_column(ForeignKey('users.id'))
+    subject_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    recipients: Mapped[list[str]] = mapped_column(JSON().with_variant(JSONB(), 'postgresql'))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
