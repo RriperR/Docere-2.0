@@ -544,7 +544,7 @@ npm run lint
 | JSON report для import draft | формат эвристического отчёта развивается быстрее основной схемы | versioned report schema и миграции payload |
 | In-memory auth rate limit | прост и достаточен для локального single-instance | distributed limiter в Redis |
 | Синхронные SQLAlchemy repositories | прозрачные транзакции и умеренная нагрузка | async I/O после измерений, не как самоцель |
-| Recovery scan для import jobs | восстанавливает временные jobs после рестарта | transactional outbox и broker confirms |
+| PostgreSQL outbox и recovery scan | восстанавливают доставку импорта и уведомлений после сбоя | мониторинг задержки доставки и регулярные проверки отказа брокера |
 | JWT без server-side session registry | stateless API | token rotation/revocation registry для повышенных требований |
 | Эвристики распознавания архива | нет единого формата источников | confidence model и versioned extraction strategies |
 
