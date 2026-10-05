@@ -31,6 +31,7 @@ from app.infrastructure.db.models.medical_records.user_record_link import (
     UserRecordLinkRow,
     UserRecordLinkSourceRow,
 )
+from app.infrastructure.db.record_access import active_record_access
 
 
 class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
@@ -505,7 +506,7 @@ class SqlAlchemyMedicalRecordRepositoryAdapter(MedicalRecordRepositoryPort):
 
     @staticmethod
     def _active_access_condition() -> ColumnElement[bool]:
-        return or_(UserRecordLinkRow.expires_at.is_(None), UserRecordLinkRow.expires_at > utc_now())
+        return active_record_access()
 
     def _can_confirm_record(
         self,

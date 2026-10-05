@@ -41,6 +41,12 @@ class RecordShareRequestRow(Base):
         ),
         default=RecordShareStatusRow.PENDING,
     )
+    clinical_case_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey('clinical_cases.id'),
+        nullable=True,
+        index=True,
+    )
     message: Mapped[str | None] = mapped_column(Text, nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, UTC
 from uuid import UUID
 
-from sqlalchemy import exists, func, or_, select
+from sqlalchemy import exists, func, or_, select, true
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -38,6 +38,7 @@ from app.infrastructure.db.models.medical_records.user_record_link import (
     UserRecordLinkRow,
     UserRecordLinkSourceRow,
 )
+from app.infrastructure.db.record_access import active_record_access
 
 
 class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
@@ -88,6 +89,7 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
             if self._target_already_has_access(
                 user_id=target_user.id,
                 record_id=record_id,
+                include_cases=False,
             ) or self._has_open_share(to_user_id=target_user.id, record_id=record_id):
                 skipped_record_ids.append(record_id)
                 continue
@@ -130,7 +132,7 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
         """
         rows = self._session.scalars(
             select(RecordShareRequestRow)
-            .where(RecordShareRequestRow.to_user_id == user_id)
+            .where(RecordShareRequestRow.to_user_id == user_id, RecordShareRequestRow.clinical_case_id.is_(None))
             .order_by(RecordShareRequestRow.created_at.desc()),
         ).all()
         return tuple(self._to_request_dto(row) for row in rows)
@@ -143,7 +145,7 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
         """
         rows = self._session.scalars(
             select(RecordShareRequestRow)
-            .where(RecordShareRequestRow.from_user_id == user_id)
+            .where(RecordShareRequestRow.from_user_id == user_id, RecordShareRequestRow.clinical_case_id.is_(None))
             .order_by(RecordShareRequestRow.created_at.desc()),
         ).all()
         return tuple(self._to_request_dto(row) for row in rows)
@@ -185,7 +187,7 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
         for share_row in self._get_request_shares(request_row.id):
             if share_row.status != RecordShareStatusRow.PENDING:
                 continue
-            if not self._target_already_has_access(user_id=user_id, record_id=share_row.record_id):
+            if not self._target_already_has_access(user_id=user_id, record_id=share_row.record_id, include_cases=False):
                 existing_link = self._get_existing_record_link(
                     user_id=user_id,
                     record_id=share_row.record_id,
@@ -253,6 +255,22 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
         return self._to_request_dto(request_row)
 
     def revoke_request(self, *, request_id: UUID, user_id: UUID) -> ShareRequestDTO:
+        """Отозвать только обычный sharing-запрос.
+
+        Returns:
+            Обновлённый запрос.
+        """
+        return self._revoke_request(request_id=request_id, user_id=user_id, allow_case=False)
+
+    def revoke_case_request(self, *, request_id: UUID, user_id: UUID) -> ShareRequestDTO:
+        """Отозвать внутренний запрос из сценария случая с каскадом.
+
+        Returns:
+            Обновлённый запрос.
+        """
+        return self._revoke_request(request_id=request_id, user_id=user_id, allow_case=True)
+
+    def _revoke_request(self, *, request_id: UUID, user_id: UUID, allow_case: bool) -> ShareRequestDTO:
         """Отозвать accepted sharing-запрос отправителем.
 
         Returns:
@@ -261,7 +279,7 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
         Raises:
             ShareRequestAccessDeniedError: Если запрос не находится в статусе accepted.
         """
-        request_row = self._get_request_for_sender(request_id, user_id)
+        request_row = self._get_request_for_sender(request_id, user_id, allow_case=allow_case)
         if request_row.status != RecordShareStatusRow.ACCEPTED:
             raise ShareRequestAccessDeniedError
 
@@ -385,12 +403,13 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
             .where(
                 UserRecordLinkRow.user_id == user_id,
                 UserRecordLinkRow.record_id == record_id,
+                self._active_access_condition(),
             )
             .order_by(UserRecordLinkRow.created_at.desc())
             .limit(1),
         )
 
-    def _target_already_has_access(self, *, user_id: UUID, record_id: UUID) -> bool:
+    def _target_already_has_access(self, *, user_id: UUID, record_id: UUID, include_cases: bool = True) -> bool:
         return bool(
             self._session.scalar(
                 select(
@@ -398,6 +417,7 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
                         UserRecordLinkRow.user_id == user_id,
                         UserRecordLinkRow.record_id == record_id,
                         self._active_access_condition(),
+                        (true() if include_cases else UserRecordLinkRow.clinical_case_id.is_(None)),
                     ),
                 ),
             ),
@@ -411,6 +431,7 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
                     .where(
                         RecordShareRequestRow.id == RecordShareRow.request_id,
                         RecordShareRequestRow.to_user_id == to_user_id,
+                        RecordShareRequestRow.clinical_case_id.is_(None),
                         RecordShareRow.record_id == record_id,
                         self._active_share_request_condition(),
                         RecordShareRow.status.in_(
@@ -430,6 +451,7 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
         patient_passport_id: UUID | None,
     ) -> UserRecordLinkRow | None:
         query = select(UserRecordLinkRow).where(
+            UserRecordLinkRow.clinical_case_id.is_(None),
             UserRecordLinkRow.user_id == user_id,
             UserRecordLinkRow.record_id == record_id,
         )
@@ -441,7 +463,7 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
 
     @staticmethod
     def _active_access_condition() -> ColumnElement[bool]:
-        return or_(UserRecordLinkRow.expires_at.is_(None), UserRecordLinkRow.expires_at > utc_now())
+        return active_record_access()
 
     @staticmethod
     def _active_share_request_condition() -> ColumnElement[bool]:
@@ -475,17 +497,21 @@ class SqlAlchemyShareRequestRepositoryAdapter(ShareRequestRepositoryPort):
             select(RecordShareRequestRow).where(
                 RecordShareRequestRow.id == request_id,
                 RecordShareRequestRow.to_user_id == user_id,
+                RecordShareRequestRow.clinical_case_id.is_(None),
             ),
         )
         if request_row is None:
             raise ShareRequestNotFoundError
         return request_row
 
-    def _get_request_for_sender(self, request_id: UUID, user_id: UUID) -> RecordShareRequestRow:
+    def _get_request_for_sender(
+        self, request_id: UUID, user_id: UUID, *, allow_case: bool = False
+    ) -> RecordShareRequestRow:
         request_row = self._session.scalar(
             select(RecordShareRequestRow).where(
                 RecordShareRequestRow.id == request_id,
                 RecordShareRequestRow.from_user_id == user_id,
+                (true() if allow_case else RecordShareRequestRow.clinical_case_id.is_(None)),
             ),
         )
         if request_row is None:

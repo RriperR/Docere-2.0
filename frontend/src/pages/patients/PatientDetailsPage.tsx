@@ -386,6 +386,7 @@ const PatientDetailsPage: React.FC = () => {
               {patientInitials}
             </div>
             <div>
+              {user?.role === 'doctor' && <Link to={`/cases/new?patient=${id}`} className="text-primary-700 underline">Создать клинический случай</Link>}
               <h1 className="text-2xl font-bold text-gray-900">{currentPatient.fio}</h1>
               <div className="mt-1 flex flex-wrap items-center gap-2">
                 <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-medium ${accessContextClasses(currentPatient.accessContext)}`}>

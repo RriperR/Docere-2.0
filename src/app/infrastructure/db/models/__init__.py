@@ -3,6 +3,7 @@
 from app.infrastructure.db.models.audit_event import AuditEventRow
 from app.infrastructure.db.models.auth.doctor_role_application import DoctorRoleApplicationRow, DoctorRoleReviewRow
 from app.infrastructure.db.models.auth.user import UserRole, UserRow, UserStatus
+from app.infrastructure.db.models.clinical_cases import CaseMaterialRow, CaseMemberRow, ClinicalCaseRow
 from app.infrastructure.db.models.import_dispatch import ImportDispatchRow
 from app.infrastructure.db.models.medical_records.file_attachment import FileAttachmentRow
 from app.infrastructure.db.models.medical_records.import_job import ImportJobRow
@@ -13,6 +14,9 @@ from app.infrastructure.db.models.medical_records.record_comment import RecordCo
 from app.infrastructure.db.models.medical_records.user_record_link import UserRecordLinkRow, UserRecordLinkSourceRow
 
 __all__ = [
+    'ClinicalCaseRow',
+    'CaseMaterialRow',
+    'CaseMemberRow',
     'FileAttachmentRow',
     'AuditEventRow',
     'DoctorRoleApplicationRow',

@@ -22,11 +22,11 @@ from app.domain.entities.patient_passport import PatientPassportStatus
 from app.infrastructure.adapters.repositories.medical_records.sqlalchemy_medical_record_repository import (
     SqlAlchemyMedicalRecordRepositoryAdapter,
 )
-from app.infrastructure.db.models._time import utc_now
 from app.infrastructure.db.models.auth.user import UserRow
 from app.infrastructure.db.models.medical_records.medical_record import MedicalRecordRow
 from app.infrastructure.db.models.medical_records.patient_passport import PatientPassportRow
 from app.infrastructure.db.models.medical_records.user_record_link import UserRecordLinkRow
+from app.infrastructure.db.record_access import active_record_access
 
 
 class SqlAlchemyPatientCardRepositoryAdapter(PatientCardRepositoryPort):
@@ -152,6 +152,7 @@ class SqlAlchemyPatientCardRepositoryAdapter(PatientCardRepositoryPort):
                 UserRecordLinkRow.patient_passport_id == patient_id,
                 self._active_access_condition(),
             )
+            .group_by(UserRecordLinkRow.record_id, MedicalRecordRow.event_date, MedicalRecordRow.created_at)
             .order_by(MedicalRecordRow.event_date.desc(), MedicalRecordRow.created_at.desc()),
         ).all()
 
@@ -241,7 +242,7 @@ class SqlAlchemyPatientCardRepositoryAdapter(PatientCardRepositoryPort):
 
     @staticmethod
     def _active_access_condition() -> ColumnElement[bool]:
-        return or_(UserRecordLinkRow.expires_at.is_(None), UserRecordLinkRow.expires_at > utc_now())
+        return active_record_access()
 
     @classmethod
     def _patient_match_score(

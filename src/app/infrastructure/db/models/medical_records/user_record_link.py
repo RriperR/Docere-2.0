@@ -53,25 +53,32 @@ class UserRecordLinkRow(Base):
         ForeignKey('record_shares.id'),
         nullable=True,
     )
+    clinical_case_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey('clinical_cases.id'),
+        nullable=True,
+        index=True,
+    )
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
+        Index('uq_record_link_case', 'user_id', 'record_id', 'clinical_case_id', unique=True),
         Index(
             'uq_user_record_links_user_record_patient',
             'user_id',
             'record_id',
             'patient_passport_id',
             unique=True,
-            sqlite_where=text('patient_passport_id IS NOT NULL'),
-            postgresql_where=text('patient_passport_id IS NOT NULL'),
+            sqlite_where=text('patient_passport_id IS NOT NULL AND clinical_case_id IS NULL'),
+            postgresql_where=text('patient_passport_id IS NOT NULL AND clinical_case_id IS NULL'),
         ),
         Index(
             'uq_user_record_links_user_record_null_patient',
             'user_id',
             'record_id',
             unique=True,
-            sqlite_where=text('patient_passport_id IS NULL'),
-            postgresql_where=text('patient_passport_id IS NULL'),
+            sqlite_where=text('patient_passport_id IS NULL AND clinical_case_id IS NULL'),
+            postgresql_where=text('patient_passport_id IS NULL AND clinical_case_id IS NULL'),
         ),
     )
