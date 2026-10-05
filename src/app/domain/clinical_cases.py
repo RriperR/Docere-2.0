@@ -125,3 +125,18 @@ class OpinionRequest:
     reason: str | None = None
     response_message_id: UUID | None = None
     created_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class CaseConclusion:
+    """Неизменяемая версия итога без автоматического согласия участников."""
+
+    id: UUID
+    case_id: UUID
+    number: int
+    author_id: UUID
+    summary: str
+    findings: str
+    next_actions: str
+    source_ids: list[UUID]
+    created_at: datetime | None = None

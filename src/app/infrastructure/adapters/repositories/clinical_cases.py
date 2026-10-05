@@ -5,12 +5,13 @@ from uuid import UUID
 from sqlalchemy import exists, func, or_, select, update
 from sqlalchemy.orm import Session
 
-from app.domain.clinical_cases import CaseMember, CaseMessage, ClinicalCase, OpinionRequest
+from app.domain.clinical_cases import CaseConclusion, CaseMember, CaseMessage, ClinicalCase, OpinionRequest
 from app.infrastructure.adapters.repositories.share_requests.sqlalchemy_share_request_repository import (
     SqlAlchemyShareRequestRepositoryAdapter,
 )
 from app.infrastructure.db.models.auth.user import UserRole, UserRow, UserStatus
 from app.infrastructure.db.models.clinical_cases import (
+    CaseConclusionRow,
     CaseEventRow,
     CaseMaterialRow,
     CaseMemberRow,
@@ -537,3 +538,86 @@ class SqlAlchemyCaseRepository:
             ],
             'total': total,
         }
+
+    def conclusions(self, case_id: UUID, offset: int, limit: int) -> tuple[list[CaseConclusion], int]:
+        """Выбрать страницу неизменяемых версий итога.
+
+        Args:
+            case_id: Идентификатор случая.
+            offset: Число пропускаемых элементов.
+            limit: Размер страницы.
+
+        Returns:
+            Результат сценария в контексте текущего пользователя.
+        """
+        statement = select(CaseConclusionRow).where(CaseConclusionRow.case_id == case_id)
+        total = self.session.scalar(select(func.count()).select_from(statement.subquery())) or 0
+        rows = self.session.scalars(statement.order_by(CaseConclusionRow.number.desc()).offset(offset).limit(limit))
+        return [self._conclusion(row) for row in rows], total
+
+    @staticmethod
+    def _conclusion(row: CaseConclusionRow) -> CaseConclusion:
+        return CaseConclusion(
+            row.id,
+            row.case_id,
+            row.number,
+            row.author_id,
+            row.summary,
+            row.findings,
+            row.next_actions,
+            [UUID(value) for value in row.source_ids],
+            row.created_at,
+        )
+
+    def add_conclusion(self, conclusion: CaseConclusion) -> CaseConclusion:
+        """Добавить строку новой версии без перезаписи предыдущих.
+
+        Args:
+            conclusion: Параметр операции.
+
+        Returns:
+            Результат сценария в контексте текущего пользователя.
+        """
+        row = CaseConclusionRow(
+            id=conclusion.id,
+            case_id=conclusion.case_id,
+            number=conclusion.number,
+            author_id=conclusion.author_id,
+            summary=conclusion.summary,
+            findings=conclusion.findings,
+            next_actions=conclusion.next_actions,
+            source_ids=[str(value) for value in conclusion.source_ids],
+        )
+        self.session.add(row)
+        self.session.flush()
+        return self._conclusion(row)
+
+    def open_opinions(self, case_id: UUID) -> int:
+        """Посчитать открытые запросы перед закрытием случая.
+
+        Args:
+            case_id: Идентификатор случая.
+
+        Returns:
+            Результат сценария в контексте текущего пользователя.
+        """
+        return (
+            self.session.scalar(
+                select(func.count())
+                .select_from(OpinionRequestRow)
+                .where(OpinionRequestRow.case_id == case_id, OpinionRequestRow.status == 'open')
+            )
+            or 0
+        )
+
+    def cancel_open_opinions(self, case_id: UUID) -> None:
+        """Отменить запросы с зафиксированной причиной завершения обсуждения.
+
+        Args:
+            case_id: Идентификатор случая.
+        """
+        self.session.execute(
+            update(OpinionRequestRow)
+            .where(OpinionRequestRow.case_id == case_id, OpinionRequestRow.status == 'open')
+            .values(status='cancelled', reason='case_closed')
+        )

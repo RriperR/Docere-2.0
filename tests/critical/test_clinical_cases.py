@@ -247,3 +247,131 @@ def test_acceptance_uses_latest_materials(record_client):
     accepted = client.post(url + '/invitations/accept', headers=headers[1]).json()
     assert len(accepted['case']['record_ids']) == 2
     assert client.get(f'/api/records/{records[1]["id"]}', headers=headers[1]).status_code == 200
+
+
+def test_conclusion_close_and_idempotent_publication(record_client):
+    from uuid import uuid4
+
+    client = record_client
+    case, records, ids, headers, _ = setup_case(client)
+    case = invite(client, case, headers, ids[1])
+    url = f'/api/cases/{case["id"]}'
+    client.post(url + '/invitations/accept', headers=headers[1])
+    view = client.get(url, headers=headers[0]).json()
+    case = invite(client, view, headers, ids[2])
+    payload = {
+        'version': case['case']['version'],
+        'summary': 'Case discussion result',
+        'findings': 'Findings',
+        'next_actions': 'Follow up',
+        'source_ids': [records[0]['id']],
+    }
+    assert client.post(url + '/conclusions', headers=headers[1], json=payload).status_code == 403
+    assert client.get(url + '/conclusions', headers=headers[2]).status_code == 403
+    assert client.post(url + '/conclusions', headers=headers[0], json=payload).status_code == 201
+    assert client.post(url + '/conclusions', headers=headers[0], json=payload).status_code == 409
+    opinion = client.post(
+        url + '/opinions', headers=headers[0], json={'assignee_id': str(ids[1]), 'question': 'Pending question'}
+    )
+    assert opinion.status_code == 201
+    version = client.get(url, headers=headers[0]).json()['case']['version']
+    assert client.post(url + '/close', headers=headers[0], json={'version': version}).status_code == 409
+    closed = client.post(url + '/close', headers=headers[0], json={'version': version, 'cancel_open_requests': True})
+    assert closed.status_code == 200, closed.text
+    assert client.get(url, headers=headers[1]).json()['accessible']
+    assert client.get(url, headers=headers[2]).status_code == 404
+    assert (
+        client.post(
+            url + '/messages', headers=headers[1], json={'body': 'Late', 'idempotency_key': str(uuid4())}
+        ).status_code
+        == 409
+    )
+    assert (
+        client.post(
+            url + '/conclusions', headers=headers[0], json={**payload, 'version': closed.json()['case']['version']}
+        ).status_code
+        == 409
+    )
+    assert client.post(url + '/publish', headers=headers[1], json={'event_date': '2026-01-10'}).status_code == 403
+    first = client.post(url + '/publish', headers=headers[0], json={'event_date': '2026-01-10'})
+    assert first.status_code == 200, first.text
+    second = client.post(url + '/publish', headers=headers[0], json={'event_date': '2026-02-10'})
+    assert first.json()['record_id'] == second.json()['record_id']
+    assert second.json()['created'] is False
+    record_id = first.json()['record_id']
+    record = client.get(f'/api/records/{record_id}', headers=headers[0]).json()
+    assert record['event_date'] == '2026-01-10' and record['status'] == 'unconfirmed'
+    assert record['payload_json']['case_provenance']['case_id'] == case['id']
+    assert record['payload_json']['case_provenance']['conclusion_version'] == 1
+    assert client.get(f'/api/records/{record_id}', headers=headers[1]).status_code in {403, 404}
+    with get_session_factory()() as session:
+        link = session.scalar(
+            select(UserRecordLinkRow).where(
+                UserRecordLinkRow.user_id == ids[0], UserRecordLinkRow.record_id == UUID(records[0]['id'])
+            )
+        )
+        session.delete(link)
+        session.commit()
+    assert client.get(url, headers=headers[0]).json()['case'] is None
+    assert client.get(f'/api/records/{record_id}', headers=headers[0]).status_code == 200
+    assert client.post(url + '/publish', headers=headers[0], json={'event_date': '2026-01-10'}).status_code == 403
+
+
+def test_empty_result_cannot_close_case(record_client):
+    client = record_client
+    case, _, _, headers, _ = setup_case(client)
+    assert (
+        client.post(
+            f'/api/cases/{case["id"]}/close', headers=headers[0], json={'version': case['case']['version']}
+        ).status_code
+        == 422
+    )
+
+
+def test_postgres_concurrent_versions_and_publication(postgres_case_client):
+    from concurrent.futures import ThreadPoolExecutor
+
+    client = postgres_case_client
+    case, records, _, headers, _ = setup_case(client)
+    url = f'/api/cases/{case["id"]}'
+    version = case['case']['version']
+
+    def add(record):
+        return client.post(
+            url + '/materials', headers=headers[0], json={'version': version, 'record_ids': [record['id']]}
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(add, records[1:]))
+    assert sorted(r.status_code for r in results) == [200, 409]
+    version = client.get(url, headers=headers[0]).json()['case']['version']
+    assert (
+        client.post(
+            url + '/conclusions', headers=headers[0], json={'version': version, 'summary': 'Final result'}
+        ).status_code
+        == 201
+    )
+    version = client.get(url, headers=headers[0]).json()['case']['version']
+
+    def close_or_append(action):
+        if action == 'close':
+            return client.post(url + '/close', headers=headers[0], json={'version': version})
+        return client.post(
+            url + '/materials', headers=headers[0], json={'version': version, 'record_ids': [records[0]['id']]}
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(close_or_append, ['close', 'append']))
+    assert sorted(r.status_code for r in results) == [200, 409]
+    latest = client.get(url, headers=headers[0]).json()['case']
+    if latest['status'] != 'closed':
+        assert client.post(url + '/close', headers=headers[0], json={'version': latest['version']}).status_code == 200
+
+    def publish(_):
+        return client.post(url + '/publish', headers=headers[0], json={'event_date': '2026-02-20'})
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(publish, range(4)))
+    assert all(r.status_code == 200 for r in results)
+    assert len({r.json()['record_id'] for r in results}) == 1
+    assert sum(r.json()['created'] for r in results) == 1

@@ -1,5 +1,6 @@
 """Входные контракты клинических случаев."""
 
+from datetime import date
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
@@ -109,3 +110,44 @@ class OpinionSchema(BaseModel):
         if not value.strip():
             raise ValueError('Введите вопрос')
         return value.strip()
+
+
+class ConclusionSchema(BaseModel):
+    """Новая версия итога и ссылки на использованные материалы."""
+
+    version: int = Field(ge=1)
+    summary: str = Field(min_length=1, max_length=10000)
+    findings: str = Field(default='', max_length=10000)
+    next_actions: str = Field(default='', max_length=10000)
+    source_ids: list[UUID] = Field(default_factory=list, max_length=100)
+
+    @field_validator('summary')
+    @classmethod
+    def nonblank(cls, value: str) -> str:
+        """Не принимать пустой итог.
+
+        Args:
+            value: Параметр операции.
+
+        Returns:
+            Результат сценария в контексте текущего пользователя.
+
+        Raises:
+            ValueError: При нарушении условий операции.
+        """
+        if not value.strip():
+            raise ValueError('Введите резюме')
+        return value.strip()
+
+
+class CloseSchema(BaseModel):
+    """Явное подтверждение отмены оставшихся запросов."""
+
+    version: int = Field(ge=1)
+    cancel_open_requests: bool = False
+
+
+class PublishSchema(BaseModel):
+    """Дата медицинского события не подменяется временем публикации."""
+
+    event_date: date

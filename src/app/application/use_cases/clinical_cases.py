@@ -1,11 +1,15 @@
 """Сценарии создания случая, приглашения и управления доступом."""
 
 from dataclasses import dataclass
+from datetime import date
 from uuid import UUID, uuid4
 
 from app.application.ports.clinical_cases import CaseRepositoryPort
 from app.application.ports.repositories.medical_records.port import MedicalRecordRepositoryPort
-from app.domain.clinical_cases import CaseError, CaseMember, CaseMessage, ClinicalCase, OpinionRequest
+from app.application.use_cases.auth.common.dtos import AuthenticatedUserDTO
+from app.application.use_cases.medical_records.create_medical_record.dtos import CreateMedicalRecordDTO
+from app.application.use_cases.medical_records.create_medical_record.use_case import CreateMedicalRecordUseCase
+from app.domain.clinical_cases import CaseConclusion, CaseError, CaseMember, CaseMessage, ClinicalCase, OpinionRequest
 
 
 @dataclass(frozen=True)
@@ -589,3 +593,201 @@ class ClinicalCasesUseCase:
         """
         self.require_context(self.load(case_id, user_id), user_id)
         return self.repository.activity(case_id, offset, limit)
+
+    def list_conclusions(self, case_id: UUID, user_id: UUID, offset: int, limit: int) -> dict[str, object]:
+        """Прочитать версии только при полном доступе к клиническому контексту.
+
+        Args:
+            case_id: Идентификатор случая.
+            user_id: Текущий пользователь.
+            offset: Число пропускаемых элементов.
+            limit: Размер страницы.
+
+        Returns:
+            Результат сценария в контексте текущего пользователя.
+        """
+        self.require_context(self.load(case_id, user_id), user_id)
+        items, total = self.repository.conclusions(case_id, offset, limit)
+        return {'items': items, 'total': total}
+
+    def save_conclusion(
+        self,
+        case_id: UUID,
+        user_id: UUID,
+        version: int,
+        summary: str,
+        findings: str,
+        next_actions: str,
+        source_ids: list[UUID],
+    ) -> CaseConclusion:
+        """Сохранить новую версию итога координатором до завершения разбора.
+
+        Args:
+            case_id: Идентификатор случая.
+            user_id: Текущий пользователь.
+            version: Версия, прочитанная клиентом.
+            summary: Параметр операции.
+            findings: Параметр операции.
+            next_actions: Параметр операции.
+            source_ids: Параметр операции.
+
+        Returns:
+            Результат сценария в контексте текущего пользователя.
+        """
+        case = self.load(case_id, user_id, lock=True)
+        self.require_context(case, user_id)
+        case.require_coordinator(user_id)
+        case.require_writable()
+        case.check_version(version)
+        for record_id in source_ids:
+            self.reference(case, user_id, record_id)
+        _, total = self.repository.conclusions(case.id, 0, 1)
+        result = self.repository.add_conclusion(
+            CaseConclusion(
+                uuid4(), case.id, total + 1, user_id, summary, findings, next_actions, list(dict.fromkeys(source_ids))
+            )
+        )
+        case.version += 1
+        self.changed(case, user_id, 'conclusion_updated', result.id, self.participants(case))
+        return result
+
+    def closure_preview(self, case_id: UUID, user_id: UUID) -> dict[str, object]:
+        """Показать незавершённые запросы до явного подтверждения закрытия.
+
+        Args:
+            case_id: Идентификатор случая.
+            user_id: Текущий пользователь.
+
+        Returns:
+            Результат сценария в контексте текущего пользователя.
+        """
+        case = self.load(case_id, user_id)
+        self.require_context(case, user_id)
+        case.require_coordinator(user_id)
+        return {'open_requests': self.repository.open_opinions(case.id), 'version': case.version}
+
+    def close(self, case_id: UUID, user_id: UUID, version: int, cancel_open_requests: bool) -> CaseView:
+        """Зафиксировать итог и явно отменить незавершённые запросы при необходимости.
+
+        Args:
+            case_id: Идентификатор случая.
+            user_id: Текущий пользователь.
+            version: Версия, прочитанная клиентом.
+            cancel_open_requests: Параметр операции.
+
+        Returns:
+            Результат сценария в контексте текущего пользователя.
+
+        Raises:
+            CaseError: При нарушении условий операции.
+        """
+        case = self.load(case_id, user_id, lock=True)
+        self.require_context(case, user_id)
+        case.require_coordinator(user_id)
+        case.require_writable()
+        case.check_version(version)
+        conclusions, _ = self.repository.conclusions(case.id, 0, 1)
+        if not conclusions or not conclusions[0].summary.strip():
+            raise CaseError('Для завершения сохраните непустой итог', 422)
+        if self.repository.open_opinions(case.id):
+            if not cancel_open_requests:
+                raise CaseError('Есть незавершённые запросы. Подтвердите их отмену при закрытии')
+            self.repository.cancel_open_opinions(case.id)
+        for member in case.members:
+            if member.status == 'pending':
+                member.status = 'cancelled'
+        case.status = 'closed'
+        case.version += 1
+        self.changed(case, user_id, 'closed', recipients=self.participants(case))
+        return self.view(case, user_id)
+
+    def publication_preview(self, case_id: UUID, user_id: UUID) -> dict[str, object]:
+        """Подготовить запись, не публикуя её и не подтверждая автоматически.
+
+        Args:
+            case_id: Идентификатор случая.
+            user_id: Текущий пользователь.
+
+        Returns:
+            Результат сценария в контексте текущего пользователя.
+
+        Raises:
+            CaseError: При нарушении условий операции.
+        """
+        case = self.load(case_id, user_id)
+        self.require_context(case, user_id)
+        case.require_coordinator(user_id)
+        if case.status != 'closed':
+            raise CaseError('Публикация доступна после завершения разбора')
+        conclusions, _ = self.repository.conclusions(case.id, 0, 1)
+        if not conclusions:
+            raise CaseError('Итог отсутствует')
+        result = conclusions[0]
+        text = '\n\n'.join(
+            [result.summary, 'Выводы:\n' + result.findings, 'Дальнейшие действия:\n' + result.next_actions]
+        )
+        return {
+            'title': f'Совместный разбор: {case.title}'[:255],
+            'clinical_summary': text,
+            'conclusion_id': str(result.id),
+            'conclusion_version': result.number,
+            'source_ids': [str(value) for value in result.source_ids],
+            'published_record_id': str(case.published_record_id) if case.published_record_id else None,
+        }
+
+    def publish(
+        self, case_id: UUID, actor: AuthenticatedUserDTO, event_date: date, creator: CreateMedicalRecordUseCase
+    ) -> dict[str, object]:
+        """Идемпотентно создать независимую медицинскую запись существующим сценарием.
+
+        Args:
+            case_id: Идентификатор случая.
+            actor: Актуальная учётная запись.
+            event_date: Параметр операции.
+            creator: Параметр операции.
+
+        Returns:
+            Результат сценария в контексте текущего пользователя.
+        """
+        case = self.load(case_id, actor.id, lock=True)
+        self.require_context(case, actor.id)
+        case.require_coordinator(actor.id)
+        self.validate_materials(case, case.record_ids)
+        preview = self.publication_preview(case.id, actor.id)
+        if case.published_record_id:
+            return {'record_id': case.published_record_id, 'created': False}
+        record = creator.execute(
+            CreateMedicalRecordDTO(
+                actor_user_id=actor.id,
+                actor_role=actor.role,
+                actor_fio=actor.fio,
+                actor_email=actor.email,
+                actor_phone=actor.phone,
+                patient_passport_id=case.patient_id,
+                author_practitioner_passport_id=None,
+                author_practitioner_full_name=None,
+                author_practitioner_specialty=None,
+                author_practitioner_organization=None,
+                author_practitioner_position=None,
+                author_practitioner_email=None,
+                author_practitioner_phone=None,
+                record_type='consultation_result',
+                event_date=event_date,
+                title=str(preview['title']),
+                appointment_location=None,
+                clinical_summary=str(preview['clinical_summary']),
+                payload_json={
+                    'case_provenance': {
+                        'case_id': str(case.id),
+                        'conclusion_id': preview['conclusion_id'],
+                        'conclusion_version': preview['conclusion_version'],
+                        'source_record_ids': preview['source_ids'],
+                        'participation_is_not_endorsement': True,
+                    }
+                },
+            )
+        )
+        case.published_record_id = record.id
+        case.version += 1
+        self.changed(case, actor.id, 'published', record.id)
+        return {'record_id': record.id, 'created': True}

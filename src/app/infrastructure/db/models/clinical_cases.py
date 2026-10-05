@@ -94,3 +94,19 @@ class CaseEventRow(Base):
     subject_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
     recipients: Mapped[list[str]] = mapped_column(JSON().with_variant(JSONB(), 'postgresql'))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CaseConclusionRow(Base):
+    """Версии итога разбора; обновление создаёт новую строку."""
+
+    __tablename__ = 'case_conclusions'
+    __table_args__ = (UniqueConstraint('case_id', 'number', name='uq_case_conclusion_version'),)
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    case_id: Mapped[UUID] = mapped_column(ForeignKey('clinical_cases.id'), index=True)
+    number: Mapped[int] = mapped_column(Integer)
+    author_id: Mapped[UUID] = mapped_column(ForeignKey('users.id'))
+    summary: Mapped[str] = mapped_column(Text)
+    findings: Mapped[str] = mapped_column(Text)
+    next_actions: Mapped[str] = mapped_column(Text)
+    source_ids: Mapped[list[str]] = mapped_column(JSON().with_variant(JSONB(), 'postgresql'))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -3,7 +3,7 @@
 from typing import Protocol
 from uuid import UUID
 
-from app.domain.clinical_cases import CaseMessage, ClinicalCase, OpinionRequest
+from app.domain.clinical_cases import CaseConclusion, CaseMessage, ClinicalCase, OpinionRequest
 
 
 class CaseRepositoryPort(Protocol):
@@ -190,5 +190,39 @@ class CaseRepositoryPort(Protocol):
             case_id: Идентификатор случая.
             offset: Число пропускаемых элементов.
             limit: Размер страницы.
+        """
+        ...
+
+    def conclusions(self, case_id: UUID, offset: int, limit: int) -> tuple[list[CaseConclusion], int]:
+        """Выбрать страницу версий итога, начиная с последней.
+
+        Args:
+            case_id: Идентификатор случая.
+            offset: Число пропускаемых элементов.
+            limit: Размер страницы.
+        """
+        ...
+
+    def add_conclusion(self, conclusion: CaseConclusion) -> CaseConclusion:
+        """Добавить неизменяемую версию.
+
+        Args:
+            conclusion: Параметр операции.
+        """
+        ...
+
+    def open_opinions(self, case_id: UUID) -> int:
+        """Посчитать незавершённые адресные запросы.
+
+        Args:
+            case_id: Идентификатор случая.
+        """
+        ...
+
+    def cancel_open_opinions(self, case_id: UUID) -> None:
+        """Отменить открытые запросы при явно подтверждённом закрытии.
+
+        Args:
+            case_id: Идентификатор случая.
         """
         ...

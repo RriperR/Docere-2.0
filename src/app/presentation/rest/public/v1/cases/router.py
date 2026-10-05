@@ -8,17 +8,22 @@ from sqlalchemy.orm import Session
 
 from app.application.use_cases.auth.common.dtos import AuthenticatedUserDTO
 from app.application.use_cases.clinical_cases import CaseView, ClinicalCasesUseCase
-from app.domain.clinical_cases import CaseMessage, OpinionRequest
+from app.application.use_cases.medical_records.create_medical_record.use_case import CreateMedicalRecordUseCase
+from app.domain.clinical_cases import CaseConclusion, CaseMessage, OpinionRequest
 from app.presentation.rest.public.v1.cases.dependencies import case_transaction, cases_dependency
 from app.presentation.rest.public.v1.cases.schemas import (
     CaseCreateSchema,
+    CloseSchema,
+    ConclusionSchema,
     DraftSchema,
     InviteSchema,
     MaterialsSchema,
     MessageSchema,
     OpinionSchema,
+    PublishSchema,
 )
 from app.presentation.rest.public.v1.records.dependencies import (
+    create_medical_record_use_case_dependency,
     current_authenticated_user_dependency,
     db_session_dependency,
 )
@@ -458,3 +463,155 @@ def get_activity(
     """
     with case_transaction(session):
         return uc.activity(case_id, actor.id, offset, limit)
+
+
+@router.get('/{case_id}/conclusions')
+def conclusions(
+    case_id: UUID,
+    offset: int = offset_query,
+    limit: int = limit_query,
+    actor: AuthenticatedUserDTO = current_authenticated_user_dependency,
+    uc: ClinicalCasesUseCase = cases_dependency,
+    session: Session = db_session_dependency,
+) -> dict[str, object]:
+    """Получить версии итога с пагинацией.
+
+    Args:
+        case_id: Идентификатор случая.
+        offset: Число пропускаемых элементов.
+        limit: Размер страницы.
+        actor: Актуальная учётная запись.
+        uc: Прикладной сценарий.
+        session: Текущая транзакционная сессия.
+
+    Returns:
+        Результат сценария в контексте текущего пользователя.
+    """
+    with case_transaction(session):
+        return uc.list_conclusions(case_id, actor.id, offset, limit)
+
+
+@router.post('/{case_id}/conclusions', status_code=201)
+def save_conclusion(
+    case_id: UUID,
+    payload: ConclusionSchema,
+    actor: AuthenticatedUserDTO = current_authenticated_user_dependency,
+    uc: ClinicalCasesUseCase = cases_dependency,
+    session: Session = db_session_dependency,
+) -> CaseConclusion:
+    """Сохранить новую неизменяемую версию итога.
+
+    Args:
+        case_id: Идентификатор случая.
+        payload: Проверенный HTTP payload.
+        actor: Актуальная учётная запись.
+        uc: Прикладной сценарий.
+        session: Текущая транзакционная сессия.
+
+    Returns:
+        Результат сценария в контексте текущего пользователя.
+    """
+    with case_transaction(session):
+        return uc.save_conclusion(
+            case_id,
+            actor.id,
+            payload.version,
+            payload.summary,
+            payload.findings,
+            payload.next_actions,
+            payload.source_ids,
+        )
+
+
+@router.get('/{case_id}/closure-preview')
+def closure_preview(
+    case_id: UUID,
+    actor: AuthenticatedUserDTO = current_authenticated_user_dependency,
+    uc: ClinicalCasesUseCase = cases_dependency,
+    session: Session = db_session_dependency,
+) -> dict[str, object]:
+    """Проверить открытые запросы перед завершением.
+
+    Args:
+        case_id: Идентификатор случая.
+        actor: Актуальная учётная запись.
+        uc: Прикладной сценарий.
+        session: Текущая транзакционная сессия.
+
+    Returns:
+        Результат сценария в контексте текущего пользователя.
+    """
+    with case_transaction(session):
+        return uc.closure_preview(case_id, actor.id)
+
+
+@router.post('/{case_id}/close')
+def close_case(
+    case_id: UUID,
+    payload: CloseSchema,
+    actor: AuthenticatedUserDTO = current_authenticated_user_dependency,
+    uc: ClinicalCasesUseCase = cases_dependency,
+    session: Session = db_session_dependency,
+) -> CaseView:
+    """Завершить разбор, сохранив участникам доступ для чтения.
+
+    Args:
+        case_id: Идентификатор случая.
+        payload: Проверенный HTTP payload.
+        actor: Актуальная учётная запись.
+        uc: Прикладной сценарий.
+        session: Текущая транзакционная сессия.
+
+    Returns:
+        Результат сценария в контексте текущего пользователя.
+    """
+    with case_transaction(session):
+        return uc.close(case_id, actor.id, payload.version, payload.cancel_open_requests)
+
+
+@router.get('/{case_id}/publication-preview')
+def publication_preview(
+    case_id: UUID,
+    actor: AuthenticatedUserDTO = current_authenticated_user_dependency,
+    uc: ClinicalCasesUseCase = cases_dependency,
+    session: Session = db_session_dependency,
+) -> dict[str, object]:
+    """Показать предпросмотр самостоятельной медицинской записи.
+
+    Args:
+        case_id: Идентификатор случая.
+        actor: Актуальная учётная запись.
+        uc: Прикладной сценарий.
+        session: Текущая транзакционная сессия.
+
+    Returns:
+        Результат сценария в контексте текущего пользователя.
+    """
+    with case_transaction(session):
+        return uc.publication_preview(case_id, actor.id)
+
+
+@router.post('/{case_id}/publish')
+def publish(
+    case_id: UUID,
+    payload: PublishSchema,
+    actor: AuthenticatedUserDTO = current_authenticated_user_dependency,
+    uc: ClinicalCasesUseCase = cases_dependency,
+    session: Session = db_session_dependency,
+    creator: CreateMedicalRecordUseCase = create_medical_record_use_case_dependency,
+) -> dict[str, object]:
+    """Опубликовать итог с датой события через существующий сценарий записи.
+
+    Args:
+        case_id: Идентификатор случая.
+        payload: Проверенный HTTP payload.
+        actor: Актуальная учётная запись.
+        uc: Прикладной сценарий.
+        session: Текущая транзакционная сессия.
+        creator: Параметр операции.
+
+    Returns:
+        Результат сценария в контексте текущего пользователя.
+    """
+    with case_transaction(session):
+        return uc.publish(case_id, actor, payload.event_date, creator)
