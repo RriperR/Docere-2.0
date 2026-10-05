@@ -179,6 +179,14 @@ docker compose exec api alembic check
 
 ## Проверки
 
+Для локальной backend-разработки используйте Python 3.12 или 3.13 и `uv`; Docker и CI используют 3.13.
+Диапазон поддерживаемых версий задан в `pyproject.toml`: зафиксированный `psycopg-binary==3.2.9`
+не имеет колёс для Python 3.14, поэтому он пока не входит в поддерживаемый runtime.
+
+```bash
+uv sync --all-groups
+```
+
 ```bash
 make project-check
 ```

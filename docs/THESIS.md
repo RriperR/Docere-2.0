@@ -183,7 +183,7 @@ API разделён на REST-интерфейс, идентификацию и
 
 ## Реализованный стек
 
-- Python 3.12+, FastAPI, Pydantic и SQLAlchemy;
+- Python 3.12–3.13, FastAPI, Pydantic и SQLAlchemy;
 - PostgreSQL и Alembic;
 - Celery и Redis;
 - S3-compatible storage и MinIO;

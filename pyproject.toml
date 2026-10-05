@@ -3,7 +3,7 @@ name = 'docere-service'
 version = '0.1.0'
 description = 'FastAPI service with DDD + Clean Architecture'
 readme = 'README.md'
-requires-python = '>=3.12'
+requires-python = '>=3.12,<3.14'
 dependencies = [
   'fastapi==0.141.1',
   'uvicorn==0.35.0',
