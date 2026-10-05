@@ -190,10 +190,10 @@ const PatientListPage: React.FC = () => {
               <div key={i} className="flex items-center gap-4 animate-pulse">
                 <div className="h-10 w-10 rounded-full bg-gray-200" />
                 <div className="flex-1 space-y-2">
-                  <div className="h-4 w-48 rounded bg-gray-200" />
-                  <div className="h-3 w-32 rounded bg-gray-200" />
+                  <div className="h-4 w-48 rounded-sm bg-gray-200" />
+                  <div className="h-3 w-32 rounded-sm bg-gray-200" />
                 </div>
-                <div className="h-3 w-24 rounded bg-gray-200" />
+                <div className="h-3 w-24 rounded-sm bg-gray-200" />
               </div>
             ))}
           </div>
@@ -304,7 +304,7 @@ const PatientListPage: React.FC = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 p-4 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 p-4 backdrop-blur-xs"
           >
             <motion.div
               initial={{ opacity: 0, scale: 0.96, y: 10 }}

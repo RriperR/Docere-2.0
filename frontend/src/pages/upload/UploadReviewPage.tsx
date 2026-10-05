@@ -216,7 +216,7 @@ const UploadReviewPage: React.FC = () => {
 
       {(formError || error || patientsError || reviewDraftError) && (
         <div className="flex items-start rounded-md border border-error-200 bg-error-50 p-3">
-          <AlertTriangle className="mr-2 mt-0.5 h-5 w-5 flex-shrink-0 text-error-500" />
+          <AlertTriangle className="mr-2 mt-0.5 h-5 w-5 shrink-0 text-error-500" />
           <p className="text-sm text-error-700">{formError || error || patientsError || reviewDraftError}</p>
         </div>
       )}
@@ -239,7 +239,7 @@ const UploadReviewPage: React.FC = () => {
       </Card>
 
       {patientCandidates.length > 0 && (
-        <div className="sticky top-0 z-10 rounded-md border border-gray-100 bg-white/95 p-3 shadow-sm backdrop-blur">
+        <div className="sticky top-0 z-10 rounded-md border border-gray-100 bg-white/95 p-3 shadow-xs backdrop-blur-sm">
           <div className="flex flex-wrap gap-2">
             {patientCandidates.map((patient) => {
               const decision = decisions.find((item) => item.candidate_id === patient.candidate_id)
@@ -248,7 +248,7 @@ const UploadReviewPage: React.FC = () => {
                 <a
                   key={patient.candidate_id}
                   href={`#${patient.candidate_id}`}
-                  className="rounded border border-gray-200 px-3 py-2 text-sm hover:border-primary-300"
+                  className="rounded-sm border border-gray-200 px-3 py-2 text-sm hover:border-primary-300"
                 >
                   <span className="font-medium text-gray-900">{patient.fio ?? 'Пациент не распознан'}</span>
                   <span className="ml-2 text-xs text-gray-500">
@@ -335,7 +335,7 @@ const UploadReviewPage: React.FC = () => {
                       <button
                         type="button"
                         key={match.id}
-                        className="flex w-full items-center gap-3 rounded border border-gray-200 bg-white px-3 py-2 text-left text-sm hover:border-primary-300"
+                        className="flex w-full items-center gap-3 rounded-sm border border-gray-200 bg-white px-3 py-2 text-left text-sm hover:border-primary-300"
                         onClick={() => updatePatient(patientIndex, { patient_passport_id: match.id })}
                       >
                         <UserCheck className="h-4 w-4 text-primary-600" />
@@ -531,7 +531,7 @@ const UploadReviewPage: React.FC = () => {
                                     key={`${group.group_id}-${candidate}`}
                                     disabled={decision.action === 'skip' || group.action === 'skip'}
                                     className={[
-                                      'rounded border px-2 py-1 text-xs transition-colors',
+                                      'rounded-sm border px-2 py-1 text-xs transition-colors',
                                       selected
                                         ? 'border-primary-500 bg-primary-50 text-primary-700'
                                         : 'border-gray-200 bg-white text-gray-600 hover:border-primary-300',
@@ -565,7 +565,7 @@ const UploadReviewPage: React.FC = () => {
                             {sourceGroup.files.map((file) => {
                               const hasWarning = warningAffectsFile(warnings, file.path, file.filename)
                               return (
-                                <div key={file.path} className="rounded border border-gray-100 bg-gray-50 px-3 py-2 text-xs">
+                                <div key={file.path} className="rounded-sm border border-gray-100 bg-gray-50 px-3 py-2 text-xs">
                                   <div className="flex items-center justify-between gap-2">
                                     <span className="truncate font-medium text-gray-800">{file.filename}</span>
                                     <span className="shrink-0 text-gray-500">{formatFileSize(file.size_bytes)}</span>
@@ -596,12 +596,12 @@ const UploadReviewPage: React.FC = () => {
             {warningViews.map((view) => {
               return (
                 <div key={view.label} className="space-y-2">
-                  <span className={`rounded border px-2 py-0.5 text-xs font-medium ${view.tone}`}>
+                  <span className={`rounded-sm border px-2 py-0.5 text-xs font-medium ${view.tone}`}>
                     {view.label}: {view.warnings.length}
                   </span>
                   <ul className="space-y-1 text-gray-700">
                     {view.warnings.map((warning, index) => (
-                      <li key={`${warning}-${index}`} className="break-words">{warning}</li>
+                      <li key={`${warning}-${index}`} className="wrap-break-word">{warning}</li>
                     ))}
                   </ul>
                 </div>

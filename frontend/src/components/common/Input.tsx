@@ -11,7 +11,7 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
 export const Input = forwardRef<HTMLInputElement, InputProps>(
   ({ label, error, icon, className, fullWidth = true, ...props }, ref) => {
     return (
-      <div className={`${fullWidth ? 'w-full' : ''} mb-0 last:mb-0`}>
+      <div className={fullWidth ? 'w-full' : undefined}>
         {label && (
           <label
             htmlFor={props.id}
@@ -29,7 +29,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           <input
             ref={ref}
             className={twMerge(
-              'block rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm placeholder-gray-400 transition-colors focus:border-primary-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-200',
+              'block rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm placeholder-gray-400 transition-colors focus:border-primary-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-primary-200',
               icon ? 'pl-9' : 'pl-4',
               error
                 ? 'border-error-300 bg-error-50 focus:border-error-400 focus:ring-error-200'

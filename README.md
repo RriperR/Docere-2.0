@@ -171,6 +171,7 @@ docker compose exec api alembic check
 - S3-compatible storage на MinIO для архивов и вложений;
 - Celery + Redis и dispatcher для разбора архивов и доставки уведомлений из PostgreSQL outbox;
 - React, TypeScript, Vite и Zustand на frontend;
+- Tailwind CSS 4 и `tailwind-merge` 3 для оформления интерфейса;
 - JWT access/refresh tokens, PBKDF2, RBAC и аудит;
 - структурированные логи, `request_id`, health checks и graceful shutdown;
 - архитектурные тесты, запрещающие зависимость внутренних слоёв от infrastructure.

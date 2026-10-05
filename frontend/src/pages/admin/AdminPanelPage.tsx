@@ -394,7 +394,7 @@ const AdminPanelPage = () => {
               </p>
             </div>
             <div>
-              <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
+              <nav className="relative z-0 inline-flex rounded-md shadow-xs -space-x-px">
                 <button
                   onClick={() => handlePageChange(currentPage - 1)}
                   disabled={currentPage === 1}
@@ -468,7 +468,7 @@ const AdminPanelPage = () => {
             key={log.id}
             className="flex items-start space-x-3 p-4 border rounded-lg hover:bg-gray-50 transition-colors duration-200"
           >
-            <div className="flex-shrink-0">
+            <div className="shrink-0">
               <div className="h-8 w-8 rounded-full bg-gray-100 flex items-center justify-center">
                 <AlertCircle className="h-4 w-4 text-gray-500" />
               </div>
@@ -485,7 +485,7 @@ const AdminPanelPage = () => {
                 {formatMetadata(log.metadata_json)}
               </p>
             </div>
-            <div className="flex-shrink-0 text-sm text-gray-500">
+            <div className="shrink-0 text-sm text-gray-500">
               {formatAuditDate(log.created_at)}
             </div>
           </div>

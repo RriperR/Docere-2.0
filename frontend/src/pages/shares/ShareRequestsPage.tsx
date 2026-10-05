@@ -91,7 +91,7 @@ const ShareRequestsPage = () => {
           onClick={() => setTab('inbox')}
           className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all ${
             tab === 'inbox'
-              ? 'bg-primary-600 text-white shadow-sm'
+              ? 'bg-primary-600 text-white shadow-xs'
               : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
           }`}
         >
@@ -111,7 +111,7 @@ const ShareRequestsPage = () => {
           onClick={() => setTab('outbox')}
           className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all ${
             tab === 'outbox'
-              ? 'bg-primary-600 text-white shadow-sm'
+              ? 'bg-primary-600 text-white shadow-xs'
               : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
           }`}
         >
@@ -132,14 +132,14 @@ const ShareRequestsPage = () => {
           <input
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
-            className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-3 text-sm focus:border-primary-400 focus:outline-none"
+            className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-3 text-sm focus:border-primary-400 focus:outline-hidden"
             placeholder="Поиск по ФИО, email, пациенту или записи"
           />
         </label>
         <select
           value={statusFilter}
           onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
-          className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-primary-400 focus:outline-none"
+          className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-primary-400 focus:outline-hidden"
         >
           <option value="all">Все статусы</option>
           {Object.entries(statusConfig).map(([value, config]) => (
@@ -161,8 +161,8 @@ const ShareRequestsPage = () => {
               <div className="flex items-center gap-3 mb-4">
                 <div className="h-10 w-10 rounded-full bg-gray-200" />
                 <div className="flex-1 space-y-2">
-                  <div className="h-4 w-48 rounded bg-gray-200" />
-                  <div className="h-3 w-32 rounded bg-gray-200" />
+                  <div className="h-4 w-48 rounded-sm bg-gray-200" />
+                  <div className="h-3 w-32 rounded-sm bg-gray-200" />
                 </div>
               </div>
               <div className="h-12 rounded-lg bg-gray-100" />

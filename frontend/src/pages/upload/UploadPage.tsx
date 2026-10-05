@@ -135,14 +135,14 @@ const UploadPage = () => {
         <Card>
           {error && (
             <div className="mb-4 p-3 bg-error-50 border border-error-200 rounded-md flex items-start">
-              <AlertCircle className="h-5 w-5 text-error-500 mr-2 flex-shrink-0 mt-0.5" />
+              <AlertCircle className="h-5 w-5 text-error-500 mr-2 shrink-0 mt-0.5" />
               <p className="text-sm text-error-700">{error}</p>
             </div>
           )}
 
           {uploadError && (
             <div className="mb-4 p-3 bg-error-50 border border-error-200 rounded-md flex items-start">
-              <AlertCircle className="h-5 w-5 text-error-500 mr-2 flex-shrink-0 mt-0.5" />
+              <AlertCircle className="h-5 w-5 text-error-500 mr-2 shrink-0 mt-0.5" />
               <p className="text-sm text-error-700">{uploadError}</p>
             </div>
           )}
@@ -310,7 +310,7 @@ const UploadPage = () => {
                       <p className="truncate text-sm font-medium text-gray-900">
                         {job.original_filename ?? 'archive.zip'}
                       </p>
-                      <span className={`rounded border px-2 py-0.5 text-xs font-medium ${statusTone(job.status)}`}>
+                      <span className={`rounded-sm border px-2 py-0.5 text-xs font-medium ${statusTone(job.status)}`}>
                         {statusLabel[job.status]}
                       </span>
                     </div>
@@ -323,7 +323,7 @@ const UploadPage = () => {
                     {getWarnings(job).length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-2">
                         {groupedWarnings(getWarnings(job)).map((group) => (
-                          <span key={group.label} className={`rounded border px-2 py-0.5 text-xs font-medium ${group.tone}`}>
+                          <span key={group.label} className={`rounded-sm border px-2 py-0.5 text-xs font-medium ${group.tone}`}>
                             {group.label}: {group.warnings.length}
                           </span>
                         ))}

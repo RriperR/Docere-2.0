@@ -13,6 +13,14 @@ const login = async (page: Page) => {
 
 test('doctor can authenticate with the keyboard-accessible form', async ({ page }) => {
   await page.goto('/auth/login')
+  // Проверяем готовую CSS-сборку: общие поля не должны подавлять отступы формы.
+  const email = page.getByLabel('Email')
+  await expect(page.getByRole('button', { name: 'Войти' })).toHaveCSS('background-color', 'rgb(26, 111, 179)')
+  const emailBox = await email.boundingBox()
+  const passwordLabelBox = await page.locator('label[for="password"]').boundingBox()
+  expect(emailBox).not.toBeNull()
+  expect(passwordLabelBox).not.toBeNull()
+  expect(passwordLabelBox!.y - emailBox!.y - emailBox!.height).toBeGreaterThanOrEqual(12)
   await page.getByLabel('Email').fill(doctorEmail)
   await page.getByLabel('Email').press('Tab')
   await expect(page.getByLabel('Пароль')).toBeFocused()

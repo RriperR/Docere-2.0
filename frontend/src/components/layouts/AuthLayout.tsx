@@ -39,7 +39,7 @@ export const AuthLayout = () => {
 
         <div className="relative">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/20 backdrop-blur-xs">
               <ActivitySquare className="h-6 w-6 text-white" />
             </div>
             <span className="text-xl font-bold text-white">Docere</span>

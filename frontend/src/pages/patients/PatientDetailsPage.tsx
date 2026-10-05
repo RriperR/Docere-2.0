@@ -353,8 +353,8 @@ const PatientDetailsPage: React.FC = () => {
   if (isLoading && !currentPatient) {
     return (
       <div className="space-y-4 animate-pulse">
-        <div className="h-6 w-40 rounded bg-gray-200" />
-        <div className="h-10 w-80 rounded bg-gray-200" />
+        <div className="h-6 w-40 rounded-sm bg-gray-200" />
+        <div className="h-10 w-80 rounded-sm bg-gray-200" />
         <div className="grid grid-cols-3 gap-4">
           {[1, 2, 3].map((i) => <div key={i} className="h-32 rounded-xl bg-gray-200" />)}
         </div>
@@ -590,7 +590,7 @@ const PatientDetailsPage: React.FC = () => {
                   type="text"
                   value={recordSearch}
                   onChange={(event) => setRecordSearch(event.target.value)}
-                  className="w-full rounded-md border border-gray-200 py-2 pl-9 pr-3 text-sm focus:border-primary-300 focus:outline-none focus:ring-2 focus:ring-primary-100"
+                  className="w-full rounded-md border border-gray-200 py-2 pl-9 pr-3 text-sm focus:border-primary-300 focus:outline-hidden focus:ring-2 focus:ring-primary-100"
                   placeholder="Название, врач, место..."
                 />
               </div>
@@ -600,7 +600,7 @@ const PatientDetailsPage: React.FC = () => {
               <select
                 value={recordTypeFilter}
                 onChange={(event) => setRecordTypeFilter(event.target.value)}
-                className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-primary-300 focus:outline-none focus:ring-2 focus:ring-primary-100"
+                className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-primary-300 focus:outline-hidden focus:ring-2 focus:ring-primary-100"
               >
                 <option value="all">Все типы</option>
                 {Object.entries(typeLabel).map(([value, label]) => (
@@ -613,7 +613,7 @@ const PatientDetailsPage: React.FC = () => {
               <select
                 value={recordStatusFilter}
                 onChange={(event) => setRecordStatusFilter(event.target.value)}
-                className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-primary-300 focus:outline-none focus:ring-2 focus:ring-primary-100"
+                className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-primary-300 focus:outline-hidden focus:ring-2 focus:ring-primary-100"
               >
                 <option value="all">Все статусы</option>
                 <option value="confirmed">Подтверждённые</option>
@@ -691,7 +691,7 @@ const PatientDetailsPage: React.FC = () => {
                       onChange={() => setSelectedShareRecordIds((c) =>
                         c.includes(record.id) ? c.filter((x) => x !== record.id) : [...c, record.id]
                       )}
-                      className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                      className="h-4 w-4 rounded-sm border-gray-300 text-primary-600 focus:ring-primary-500"
                     />
                   </label>
 
@@ -887,7 +887,7 @@ const PatientDetailsPage: React.FC = () => {
                                         value={commentBody}
                                         onChange={(e) => setCommentBody(e.target.value)}
                                         rows={2}
-                                        className="flex-1 resize-none rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm placeholder-gray-400 focus:border-primary-300 focus:outline-none focus:ring-2 focus:ring-primary-200"
+                                        className="flex-1 resize-none rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm placeholder-gray-400 focus:border-primary-300 focus:outline-hidden focus:ring-2 focus:ring-primary-200"
                                         placeholder="Добавить комментарий к записи..."
                                       />
                                       <button
@@ -917,7 +917,7 @@ const PatientDetailsPage: React.FC = () => {
                             </div>
                           ) : (
                             <div className="space-y-2 animate-pulse">
-                              <div className="h-4 w-40 rounded bg-gray-200" />
+                              <div className="h-4 w-40 rounded-sm bg-gray-200" />
                               <div className="h-20 w-full rounded-xl bg-gray-200" />
                             </div>
                           )}
@@ -992,7 +992,7 @@ function ShareRecordsModal({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 p-4 backdrop-blur-xs"
     >
       <motion.form
         initial={{ opacity: 0, scale: 0.96, y: 10 }}
@@ -1050,7 +1050,7 @@ function ShareRecordsModal({
               type="text"
               value={email}
               onChange={(e) => onEmailChange(e.target.value)}
-              className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-200"
+              className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary-400 focus:outline-hidden focus:ring-2 focus:ring-primary-200"
               placeholder="email или ФИО получателя"
             />
             {recipients.length > 0 && (
@@ -1080,7 +1080,7 @@ function ShareRecordsModal({
               value={message}
               onChange={(e) => onMessageChange(e.target.value)}
               rows={3}
-              className="mt-1.5 w-full resize-none rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-200"
+              className="mt-1.5 w-full resize-none rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary-400 focus:outline-hidden focus:ring-2 focus:ring-primary-200"
               placeholder="Контекст для получателя..."
             />
           </div>
@@ -1089,7 +1089,7 @@ function ShareRecordsModal({
             <DateInput
               value={expiresAt}
               onChange={(value) => onExpiresAtChange(value ?? '')}
-              className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-200"
+              className="mt-1.5 w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm focus:border-primary-400 focus:outline-hidden focus:ring-2 focus:ring-primary-200"
             />
             <p className="mt-1 text-xs text-gray-400">Пусто — доступ без срока. В выбранный день доступ действует до конца дня.</p>
           </div>

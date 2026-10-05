@@ -498,6 +498,12 @@ Rollback переключает image tag. Миграции поэтому до�
 
 Frontend построен на React + TypeScript + Vite. Состояния auth, пациентов, sharing, заявок врачей и import jobs разделены по Zustand stores. Axios interceptor добавляет access token, а React Router ограничивает маршруты по аутентификации и роли.
 
+Стили собираются Tailwind CSS 4 через `@tailwindcss/postcss`; цвета, анимации и тени темы заданы
+в `frontend/src/index.css` через `@theme`, источники классов ограничены `src` и `index.html`.
+Отдельный `tailwind.config.js` не используется. `tailwind-merge` 3 разрешает конфликты классов
+общих компонентов. Минимальные версии браузеров для этой CSS-сборки: Safari 16.4, Chrome 111,
+Firefox 128 ([требования Tailwind](https://tailwindcss.com/docs/upgrade-guide#browser-requirements)).
+
 UI следует тем же workflow, что backend:
 
 - статусы import job отображаются как отдельные экраны upload/status/review;

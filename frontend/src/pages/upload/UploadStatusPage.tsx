@@ -126,12 +126,12 @@ const UploadStatusPage: React.FC = () => {
           <div className="space-y-3 text-sm">
             {warningViews.map((view) => (
               <div key={view.label} className="space-y-2">
-                <span className={`rounded border px-2 py-0.5 text-xs font-medium ${view.tone}`}>
+                <span className={`rounded-sm border px-2 py-0.5 text-xs font-medium ${view.tone}`}>
                   {view.label}: {view.warnings.length}
                 </span>
                 <ul className="space-y-1 text-gray-700">
                   {view.warnings.map((warning, index) => (
-                    <li key={`${warning}-${index}`} className="break-words">{warning}</li>
+                    <li key={`${warning}-${index}`} className="wrap-break-word">{warning}</li>
                   ))}
                 </ul>
               </div>
@@ -174,7 +174,7 @@ function countFiles(patients: Array<{ record_groups?: unknown }>) {
 
 function Info({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded bg-gray-100 px-3 py-2">
+    <div className="rounded-sm bg-gray-100 px-3 py-2">
       <p className="text-gray-500">{label}</p>
       <p className="font-medium">{value}</p>
     </div>

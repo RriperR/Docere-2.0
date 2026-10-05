@@ -142,7 +142,7 @@ const DoctorRequestPage: React.FC = () => {
                 value={specialty}
                 onChange={(event) => setSpecialty(event.target.value)}
                 placeholder="Например, Кардиология"
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-hidden focus:ring-2 focus:ring-primary-200"
               />
               <datalist id="doctor-specialties">
                 {specialties.map((value) => <option key={value} value={value} />)}
@@ -182,7 +182,7 @@ const DoctorRequestPage: React.FC = () => {
                           type="checkbox"
                           checked={selected}
                           onChange={() => toggleReviewer(reviewer)}
-                          className="mt-1 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                          className="mt-1 h-4 w-4 rounded-sm border-gray-300 text-primary-600 focus:ring-primary-500"
                         />
                         <span className="min-w-0 flex-1">
                           <span className="block text-sm font-medium text-gray-900">{reviewer.fio}</span>

@@ -18,11 +18,11 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     ref,
   ) => {
     const variantClasses: Record<ButtonVariant, string> = {
-      primary: 'bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-500 shadow-sm',
-      secondary: 'bg-secondary-600 text-white hover:bg-secondary-700 focus:ring-secondary-500 shadow-sm',
-      outline: 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-200 focus:ring-primary-500 shadow-sm',
+      primary: 'bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-500 shadow-xs',
+      secondary: 'bg-secondary-600 text-white hover:bg-secondary-700 focus:ring-secondary-500 shadow-xs',
+      outline: 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-200 focus:ring-primary-500 shadow-xs',
       ghost: 'bg-transparent text-gray-600 hover:bg-gray-100 focus:ring-gray-500',
-      danger: 'bg-error-600 text-white hover:bg-error-700 focus:ring-error-500 shadow-sm',
+      danger: 'bg-error-600 text-white hover:bg-error-700 focus:ring-error-500 shadow-xs',
     }
 
     const sizeClasses: Record<ButtonSize, string> = {
@@ -35,7 +35,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       <button
         ref={ref}
         className={twMerge(
-          'font-medium focus:outline-none focus:ring-2 focus:ring-offset-1 transition-all duration-150 ease-in-out flex items-center justify-center gap-1.5',
+          'font-medium focus:outline-hidden focus:ring-2 focus:ring-offset-1 transition-all duration-150 ease-in-out flex items-center justify-center gap-1.5',
           variantClasses[variant],
           sizeClasses[size],
           fullWidth && 'w-full',

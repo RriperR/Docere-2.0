@@ -182,7 +182,7 @@ const ReviewRequestsPage: React.FC = () => {
                     maxLength={2000}
                     rows={4}
                     placeholder="Основание решения (необязательно)"
-                    className="w-full resize-none rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-200"
+                    className="w-full resize-none rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-hidden focus:ring-2 focus:ring-primary-200"
                   />
                 </label>
 

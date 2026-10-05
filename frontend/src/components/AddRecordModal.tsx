@@ -75,7 +75,7 @@ export const AddRecordModal: React.FC<Props> = ({ patientId, onClose }) => {
   const totalSteps = requiresPractitionerFields ? 3 : 2
 
   const inputClass =
-    'w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm placeholder-gray-400 focus:border-primary-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-200 transition-colors'
+    'w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm placeholder-gray-400 focus:border-primary-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-primary-200 transition-colors'
 
   const labelClass = 'mb-1.5 block text-sm font-medium text-gray-700'
 
@@ -142,7 +142,7 @@ export const AddRecordModal: React.FC<Props> = ({ patientId, onClose }) => {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 p-4 backdrop-blur-xs"
     >
       <motion.div
         initial={{ opacity: 0, scale: 0.96, y: 10 }}
@@ -179,7 +179,7 @@ export const AddRecordModal: React.FC<Props> = ({ patientId, onClose }) => {
                     {s.title}
                   </span>
                 </div>
-                {i < totalSteps - 1 && <ChevronRight className="h-3.5 w-3.5 text-gray-300 flex-shrink-0" />}
+                {i < totalSteps - 1 && <ChevronRight className="h-3.5 w-3.5 text-gray-300 shrink-0" />}
               </React.Fragment>
             ))}
           </div>
@@ -344,7 +344,7 @@ export const AddRecordModal: React.FC<Props> = ({ patientId, onClose }) => {
                   value={payloadText}
                   onChange={(e) => setPayloadText(e.target.value)}
                   rows={10}
-                  className="w-full resize-none rounded-xl border border-gray-200 bg-gray-50 p-4 font-mono text-xs text-gray-800 focus:border-primary-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-200"
+                  className="w-full resize-none rounded-xl border border-gray-200 bg-gray-50 p-4 font-mono text-xs text-gray-800 focus:border-primary-400 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-primary-200"
                 />
               </motion.div>
             )}
