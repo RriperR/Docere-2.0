@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import api from '../../api/api'
 import type { ClinicalCase } from '../../api/cases'
@@ -12,7 +12,8 @@ it('keeps the latest search result when an earlier request completes afterwards'
   const material = (title: string) => ({ id: title, title, clinical_summary: '', event_date: '2026-01-01', record_type: 'other', status: 'unconfirmed' })
   vi.spyOn(api, 'get').mockImplementation(async (url, config) => {
     if (String(url).endsWith('/messages')) return { data: { items: [], total: 0 } }
-    const query = config?.params?.query
+    const params = config?.params
+    const query = params && typeof params === 'object' && 'query' in params ? params.query : undefined
     if (query === 'old') return old
     return { data: { items: query === 'new' ? [material('Latest result')] : [], total: query === 'new' ? 1 : 0 } }
   })
@@ -22,7 +23,10 @@ it('keeps the latest search result when an earlier request completes afterwards'
   fireEvent.change(screen.getByLabelText('Поиск в материалах и обсуждении'), { target: { value: 'old' } })
   fireEvent.change(screen.getByLabelText('Поиск в материалах и обсуждении'), { target: { value: 'new' } })
   await screen.findByText(/Latest result/)
-  resolveOld({ data: { items: [material('Stale result')], total: 1 } })
+  await act(async () => {
+    resolveOld({ data: { items: [material('Stale result')], total: 1 } })
+    await old
+  })
   await waitFor(() => expect(screen.queryByText(/Stale result/)).not.toBeInTheDocument())
   expect(screen.getByText(/Latest result/)).toBeInTheDocument()
 })
