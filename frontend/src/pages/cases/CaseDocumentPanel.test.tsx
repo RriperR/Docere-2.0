@@ -42,3 +42,16 @@ it('does not display an attachment response that arrives after selecting another
   resolveFirst({ data: new Blob(['old']), headers: { 'content-type': 'application/pdf' } })
   await waitFor(() => expect(screen.queryByTitle('Просмотр PDF')).not.toBeInTheDocument())
 })
+
+it('rejects a record from a different patient before loading any file', async () => {
+  const { default: DocumentViewer } = await import('../../components/records/DocumentViewer')
+  const lost = vi.fn(async () => undefined)
+  const get = vi.spyOn(api, 'get').mockResolvedValue({ data: { id: 'record-1', patient_passport_id: 'other-patient',
+    title: 'Other patient record', event_date: '2026-01-01', clinical_summary: 'Private text',
+    attachments: [{ id: 'file-1', filename: 'scan.pdf', mime_type: 'application/pdf', size_bytes: 42 }], comments: [] } })
+  render(<DocumentViewer patientId="patient-1" recordId="record-1" attachmentId="file-1" onClose={vi.fn()} onAccessLost={lost} />)
+  await waitFor(() => expect(lost).toHaveBeenCalled())
+  expect(get).toHaveBeenCalledTimes(1)
+  expect(get.mock.calls[0][0]).toBe('/records/record-1')
+  expect(screen.queryByText('Private text')).not.toBeInTheDocument()
+})

@@ -51,6 +51,7 @@ class SqlAlchemyInboxRepository:
                 .correlate(CaseMemberRow)
                 .scalar_subquery()
                 .label('created_at'),
+                literal(None).label('description'),
             )
             .join(ClinicalCaseRow, ClinicalCaseRow.id == CaseMemberRow.case_id)
             .join(UserRow, UserRow.id == ClinicalCaseRow.coordinator_id)
@@ -65,6 +66,7 @@ class SqlAlchemyInboxRepository:
                 OpinionRequestRow.case_id,
                 UserRow.fio,
                 OpinionRequestRow.created_at,
+                literal(None),
             )
             .join(UserRow, UserRow.id == OpinionRequestRow.requester_id)
             .join(ClinicalCaseRow, ClinicalCaseRow.id == OpinionRequestRow.case_id)
@@ -81,6 +83,7 @@ class SqlAlchemyInboxRepository:
                 literal(None),
                 UserRow.fio,
                 RecordShareRequestRow.created_at,
+                literal(None),
             )
             .join(UserRow, UserRow.id == RecordShareRequestRow.from_user_id)
             .where(
@@ -91,7 +94,12 @@ class SqlAlchemyInboxRepository:
             )
         )
         imports = select(
-            literal('import_review'), ImportJobRow.id, literal(None), literal(None), ImportJobRow.created_at
+            literal('import_review'),
+            ImportJobRow.id,
+            literal(None),
+            literal(None),
+            ImportJobRow.created_at,
+            ImportJobRow.original_filename,
         ).where(ImportJobRow.uploaded_by_user_id == user_id, ImportJobRow.status == 'needs_review')
         tasks = union_all(invites, opinions, shares, imports).subquery()
         query = select(tasks)
@@ -100,4 +108,7 @@ class SqlAlchemyInboxRepository:
         rows = self.session.execute(
             query.order_by(tasks.c.created_at.desc(), tasks.c.kind, tasks.c.id).offset(offset).limit(limit)
         )
-        return [TaskCandidate(row.kind, row.id, row.case_id, row.actor_name, row.created_at) for row in rows]
+        return [
+            TaskCandidate(row.kind, row.id, row.case_id, row.actor_name, row.created_at, row.description)
+            for row in rows
+        ]

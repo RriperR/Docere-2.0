@@ -5,7 +5,7 @@ import { caseError, type Page } from '../../api/cases'
 import { useNotificationsStore } from '../../stores/notificationsStore'
 import InboxTasks from './InboxTasks'
 import { taskLabels, type TaskKind } from '../../api/inbox'
-import { buttonClass, cardClass } from './styles'
+import { buttonClass, cardClass, secondaryButtonClass } from './styles'
 
 interface Notification { id: string; case_id: string | null; subject_id: string | null; event_type: string; available: boolean; created_at: string; read_at: string | null }
 const labels: Record<string, string> = {
@@ -24,9 +24,9 @@ export default function NotificationsPage() {
   const kind = (params.get('kind') ?? '') in taskLabels ? params.get('kind')! : 'all'
   const unreadOnly = params.get('unread') === 'true'
   const offset = Math.max(0, parseInt(params.get('offset') ?? '0', 10) || 0)
-  const update = (key: string, value: string) => setParams(previous => { const next = new URLSearchParams(previous); next.set(key, value); if (key !== 'offset') next.delete('offset'); return next })
+  const update = (key: string, value: string) => setParams(previous => { setTaskTotal(null); const next = new URLSearchParams(previous); next.set(key, value); if (key !== 'offset') next.delete('offset'); return next })
   const setOffset = (value: number) => update('offset', String(value))
-  const [taskTotal, setTaskTotal] = useState(0)
+  const [taskTotal, setTaskTotal] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [total, setTotal] = useState(0)
   const [error, setError] = useState('')
@@ -49,12 +49,12 @@ export default function NotificationsPage() {
   }
   return <div className="space-y-5">
     <h1 className="text-2xl font-bold">Входящие</h1>
-    <nav aria-label="Разделы входящих" className="flex gap-3"><button aria-pressed={tab === 'tasks'} className={buttonClass} onClick={() => update('tab', 'tasks')}>Требует действия</button><button aria-pressed={tab === 'events'} className={buttonClass} onClick={() => update('tab', 'events')}>События</button></nav>
-    {tab === 'tasks' ? <><label>Тип задачи<select className="ml-3 rounded-lg border p-2" value={kind} onChange={e => update('kind', e.target.value)}><option value="all">Все задачи</option>{Object.entries(taskLabels).map(([key, title]) => <option key={key} value={key as TaskKind}>{title}</option>)}</select></label><InboxTasks offset={offset} kind={kind} onTotal={setTaskTotal} /><div className="flex gap-4"><button disabled={!offset} onClick={() => setOffset(offset - 20)}>Назад</button><span>{taskTotal} задач</span><button disabled={offset + 20 >= taskTotal} onClick={() => setOffset(offset + 20)}>Далее</button></div></> : <>
+    <nav aria-label="Разделы входящих" className="flex gap-3"><button aria-pressed={tab === 'tasks'} className={tab === 'tasks' ? buttonClass : secondaryButtonClass} onClick={() => update('tab', 'tasks')}>Требует действия</button><button aria-pressed={tab === 'events'} className={tab === 'events' ? buttonClass : secondaryButtonClass} onClick={() => update('tab', 'events')}>События</button></nav>
+    {tab === 'tasks' ? <><label>Тип задачи<select className="ml-3 rounded-lg border p-2" value={kind} onChange={e => update('kind', e.target.value)}><option value="all">Все задачи</option>{Object.entries(taskLabels).map(([key, title]) => <option key={key} value={key as TaskKind}>{title}</option>)}</select></label><InboxTasks offset={offset} kind={kind} onTotal={setTaskTotal} />{taskTotal !== null && <div className="flex gap-4"><button disabled={!offset} onClick={() => setOffset(offset - 20)}>Назад</button><span>{taskTotal} задач</span><button disabled={taskTotal === null || offset + 20 >= taskTotal} onClick={() => setOffset(offset + 20)}>Далее</button></div>}</> : <>
     <label><input type="checkbox" checked={unreadOnly} onChange={e => update('unread', String(e.target.checked))} /> Только непрочитанные</label>
     <p>Прочтение уведомления не означает принятия приглашения или выполнения запроса.</p>
     <button className={buttonClass} disabled={!unread} onClick={() => void read('read-all')}>Прочитать все ({unread})</button>
-    {error && <p role="alert" className="text-red-700">{error}</p>}
+    {error && <p role="alert" className="text-red-700">{error} <button className="underline" onClick={() => void load()}>Повторить</button></p>}
     {loading && <p role="status">Загружаем события…</p>}
     {!loading && !error && !items.length && <p>Событий пока нет.</p>}
     {!loading && items.map(n => <article key={n.id} className={cardClass}>
@@ -63,7 +63,7 @@ export default function NotificationsPage() {
       {n.available && n.case_id && <Link className="text-primary-700 underline" to={`/cases/${n.case_id}`}>Открыть случай</Link>}
       {!n.read_at && <button className="ml-4" onClick={() => void read(`${n.id}/read`)}>Отметить прочитанным</button>}
     </article>)}
-    <div className="flex gap-4"><button disabled={!offset} onClick={() => setOffset(offset - 20)}>Назад</button><span>{total} уведомлений</span>
-      <button disabled={offset + 20 >= total} onClick={() => setOffset(offset + 20)}>Далее</button></div></>}
+    {!loading && !error && <div className="flex gap-4"><button disabled={!offset} onClick={() => setOffset(offset - 20)}>Назад</button><span>{total} уведомлений</span>
+      <button disabled={offset + 20 >= total} onClick={() => setOffset(offset + 20)}>Далее</button></div>}</>}
   </div>
 }

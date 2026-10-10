@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import api from '../../api/api'
 import { caseError } from '../../api/cases'
 import { inputClass, recordTypeLabel, recordStatusLabel } from '../../pages/cases/styles'
@@ -21,6 +21,12 @@ export default function DocumentViewer({ caseId, patientId, recordId, attachment
   const base = caseId ? `/cases/${caseId}/materials/${recordId}` : `/records/${recordId}`
   const [revision, setRevision] = useState(0)
   const [expanded, setExpanded] = useState(false)
+  const expandButton = useRef<HTMLButtonElement>(null)
+  const wasExpanded = useRef(false)
+  useEffect(() => {
+    if (wasExpanded.current && !expanded) expandButton.current?.focus()
+    wasExpanded.current = expanded
+  }, [expanded])
   const [zoom, setZoom] = useState(1)
   useEffect(() => {
     const recheck = () => { setRecord(null); setUrl(''); setRevision(value => value + 1) }
@@ -72,8 +78,8 @@ export default function DocumentViewer({ caseId, patientId, recordId, attachment
     } catch (e) { await fail(e) }
   }
   const content = <aside aria-label="Материал случая" className="flex min-w-0 flex-col rounded-2xl border border-primary-200 bg-white p-5 shadow-card">
-    <div className="flex justify-between"><h2 className="text-xl font-semibold">{record?.title ?? 'Материал случая'}</h2>
-      <div className="flex gap-3"><button onClick={() => setExpanded(value => !value)}>{expanded ? 'Вернуть в панель' : 'На весь экран'}</button><button aria-label="Закрыть просмотр" onClick={onClose}>✕</button></div></div>
+    <div className="flex flex-wrap justify-between gap-3"><h2 className="min-w-0 break-words text-xl font-semibold">{record?.title ?? 'Материал случая'}</h2>
+      <div className="flex gap-3"><button ref={expandButton} onClick={() => setExpanded(value => !value)}>{expanded ? 'Вернуть в панель' : 'На весь экран'}</button><button aria-label="Закрыть просмотр" onClick={onClose}>✕</button></div></div>
     {!record && !error && <p role="status" className="py-4 text-sm text-gray-500">Загружаем материал…</p>}
     {error && <p role="alert" className="text-red-700">{error} <button className="underline" onClick={() => setRevision(value => value + 1)}>Повторить</button></p>}
     <div className="mt-4 flex-1 overflow-auto space-y-3">

@@ -41,11 +41,16 @@ def test_inbox_combines_four_tasks_and_reading_does_not_complete_them(record_cli
     )
     assert share.status_code == 201, share.text
     with get_session_factory()() as session:
-        session.add(ImportJobRow(uploaded_by_user_id=ids[1], status=ImportJobStatus.NEEDS_REVIEW))
+        session.add(
+            ImportJobRow(
+                uploaded_by_user_id=ids[1], status=ImportJobStatus.NEEDS_REVIEW, original_filename='case-archive.zip'
+            )
+        )
         session.commit()
     tasks = client.get('/api/inbox/tasks', headers=headers[1]).json()
     assert tasks['total'] == 3
     assert {item['kind'] for item in tasks['items']} == {'opinion_requested', 'share_request', 'import_review'}
+    assert next(item for item in tasks['items'] if item['kind'] == 'import_review')['context'] == 'case-archive.zip'
     counts = client.get('/api/inbox/counts', headers=headers[1])
     assert counts.status_code == 200, counts.text
     assert counts.json()['tasks'] == 3

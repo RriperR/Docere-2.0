@@ -17,6 +17,7 @@ class TaskCandidate:
     case_id: UUID | None
     actor_name: str | None
     created_at: datetime
+    description: str | None
 
 
 @dataclass(frozen=True)

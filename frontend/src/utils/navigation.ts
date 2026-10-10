@@ -6,7 +6,7 @@ export function getBreadcrumbs(pathname: string): Breadcrumb[] {
   const [, section, detail, resource] = pathname.split('/')
   if (!section || section === 'dashboard') return [home]
   const labels: Record<string, string> = {
-    patients: 'Пациенты', cases: 'Клинические случаи', notifications: 'Уведомления',
+    patients: 'Пациенты', cases: 'Клинические случаи', notifications: 'Входящие',
     'share-requests': 'Доступ к записям', 'doctor-role-request': 'Заявка на роль врача',
     'doctor-role-reviews': 'Проверка заявок врачей', upload: 'Импорт архива',
     admin: 'Управление системой', settings: 'Настройки аккаунта',

@@ -496,9 +496,12 @@ def test_outbox_survives_broker_outage_and_deduplicates_notifications(record_cli
     assert client.get('/api/notifications/count', headers=headers[1]).json()['unread'] == 1
     notifications = client.get('/api/notifications', headers=headers[1])
     assert 'Secret' not in notifications.text and notifications.json()['total'] == 1
+    assert client.get('/api/notifications?unread_only=true', headers=headers[1]).json()['total'] == 1
     notification_id = notifications.json()['items'][0]['id']
     assert client.post(f'/api/notifications/{notification_id}/read', headers=headers[2]).status_code == 404
     assert client.post('/api/notifications/read-all', headers=headers[1]).status_code == 200
+    assert client.get('/api/notifications?unread_only=true', headers=headers[1]).json()['total'] == 0
+    assert client.get('/api/notifications', headers=headers[1]).json()['total'] == 1
     assert client.get(f'/api/cases/{case["id"]}', headers=headers[1]).json()['membership_status'] == 'pending'
     assert client.get('/api/notifications/attention', headers=headers[1]).json()['total'] == 1
 

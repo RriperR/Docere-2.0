@@ -44,7 +44,7 @@ class InboxUseCase:
         while batch := self.repository.candidates(user_id, kind, cursor, 100):
             cursor += len(batch)
             for task in batch:
-                context = None
+                context = task.description
                 if task.case_id:
                     try:
                         case = self.cases.load(task.case_id, user_id)
@@ -58,7 +58,7 @@ class InboxUseCase:
                                 or not self.cases.repository.is_doctor(case.coordinator_id)
                             ):
                                 continue
-                            context = f'{len(case.record_ids)} материалов'
+                            context = f'Материалов: {len(case.record_ids)}'
                         else:
                             self.cases.require_context(case, user_id)
                             context = case.title

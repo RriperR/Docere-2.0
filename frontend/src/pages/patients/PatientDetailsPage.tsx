@@ -8,7 +8,6 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
-  Download,
   FileText,
   MessageSquare,
   Paperclip,
@@ -831,7 +830,7 @@ const PatientDetailsPage: React.FC = () => {
                                             {Math.ceil(a.size_bytes / 1024)} КБ
                                           </p>
                                         </div>
-                                        <Download className="h-4 w-4 shrink-0 text-primary-600" />
+                                        <FileText className="h-4 w-4 shrink-0 text-primary-600" />
                                       </button>
                                     ))}
                                   </div>
@@ -871,7 +870,7 @@ const PatientDetailsPage: React.FC = () => {
                                                 <Paperclip className="h-3.5 w-3.5 shrink-0 text-gray-400" />
                                                 <span className="flex-1 truncate">{att.filename ?? 'Файл'}</span>
                                                 <span className="text-gray-400">{Math.ceil(att.size_bytes / 1024)} КБ</span>
-                                                <Download className="h-3.5 w-3.5 shrink-0 text-primary-600" />
+                                                <FileText className="h-3.5 w-3.5 shrink-0 text-primary-600" />
                                               </button>
                                             ))}
                                           </div>

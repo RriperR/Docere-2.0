@@ -438,16 +438,16 @@ export const DashboardLayout = () => {
                     className="absolute right-0 mt-1 w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-lg border border-gray-100 bg-white shadow-lg"
                   >
                     <div className="border-b border-gray-100 px-4 py-3">
-                      <h3 className="text-sm font-semibold text-gray-900">Уведомления</h3>
+                      <h3 className="text-sm font-semibold text-gray-900">{user?.role === 'doctor' ? 'Входящие' : 'Уведомления'}</h3>
                     </div>
                     <div className="max-h-64 overflow-y-auto scrollbar-thin">
-                      {notifications.length === 0 && clinicalUnread === 0 && (
+                      {user?.role !== 'doctor' && notifications.length === 0 && clinicalUnread === 0 && (
                         <p className="px-4 py-6 text-center text-sm text-gray-500">Новых уведомлений нет</p>
                       )}
                       {user?.role === 'doctor' && <p className="px-4 py-2 text-sm">Требует действия: {inboxCounts?.tasks ?? '—'}<br />Непрочитанных событий: {inboxCounts?.unread_events ?? '—'}{inboxError && <span role="status" className="block text-warning-700">Не удалось обновить счётчики <button className="underline" onClick={() => void refreshInbox()}>Повторить</button></span>}</p>}
                       {user?.role === 'doctor' && <Link to="/notifications" onClick={() => setIsNotificationsOpen(false)}
                         className="block border-b border-gray-100 bg-primary-50 px-4 py-3 text-sm font-semibold text-primary-700">
-                        Клинические случаи · непрочитанных: {clinicalUnread}
+                        Открыть все входящие
                       </Link>}
                       {notifications.filter(notification => user?.role !== 'doctor' || !notification.id.startsWith('share-')).map((notification) => (
                         <Link
