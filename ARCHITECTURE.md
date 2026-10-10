@@ -500,6 +500,10 @@ Frontend построен на React + TypeScript + Vite. Состояния aut
 
 Стили собираются Tailwind CSS 4 через `@tailwindcss/postcss`; цвета, анимации и тени темы заданы
 в `frontend/src/index.css` через `@theme`, источники классов ограничены `src` и `index.html`.
+Шрифты используют системный стек без внешних запросов. `MotionConfig` и CSS учитывают
+`prefers-reduced-motion`; интерактивные элементы имеют видимый `focus-visible`.
+`PageErrorBoundary` даёт явное восстановление при ошибке рендера или загрузки JS-чанка,
+без автоматической перезагрузки; пользователь предупреждён о возможной потере несохранённого текста.
 Отдельный `tailwind.config.js` не используется. `tailwind-merge` 3 разрешает конфликты классов
 общих компонентов. Минимальные версии браузеров для этой CSS-сборки: Safari 16.4, Chrome 111,
 Firefox 128 ([требования Tailwind](https://tailwindcss.com/docs/upgrade-guide#browser-requirements)).

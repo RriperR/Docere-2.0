@@ -4,7 +4,7 @@ const password = 'DemoPass123'
 async function login(page: Page, email: string) {
   await page.goto('/auth/login')
   await page.getByLabel('Email').fill(email)
-  await page.getByLabel('Пароль').fill(password)
+  await page.getByLabel('Пароль', { exact: true }).fill(password)
   await page.getByRole('button', { name: 'Войти', exact: true }).click()
   await expect(page).toHaveURL(/\/dashboard\/doctor$/)
 }
@@ -64,7 +64,7 @@ test('two doctors complete a clinical case and revocation closes an open documen
     await owner.getByLabel('Найти врача').fill('dr.kim@docere.demo')
     await owner.getByRole('button', { name: 'Найти врача', exact: true }).click()
     await owner.getByRole('button', { name: /Пригласить:.*dr.kim/ }).click()
-    await expect(owner.getByText(/pending/)).toBeVisible()
+    await expect(owner.getByText(/Приглашён/)).toBeVisible()
 
     await login(peer, 'dr.kim@docere.demo')
     await peer.goto('/notifications')

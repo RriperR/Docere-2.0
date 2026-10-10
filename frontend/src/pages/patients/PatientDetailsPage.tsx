@@ -47,7 +47,7 @@ const getErrorMessage = (error: unknown, fallback: string): string => {
 }
 
 const accessContextLabel = (ctx: string) =>
-  ctx === 'shared' ? 'Sharing' : ctx === 'created' ? 'Локальная карточка' : 'Моя карточка'
+  ctx === 'shared' ? 'Общий доступ' : ctx === 'created' ? 'Локальная карточка' : 'Моя карточка'
 
 const accessContextClasses = (ctx: string) =>
   ctx === 'shared'
@@ -474,7 +474,7 @@ const PatientDetailsPage: React.FC = () => {
         <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-card">
           <div className="mb-3 flex items-center gap-2 text-primary-600">
             <Share2 className="h-4 w-4" />
-            <span className="text-sm font-semibold">Sharing</span>
+            <span className="text-sm font-semibold">Общий доступ</span>
           </div>
           <p className="text-sm text-gray-500">
             Отметьте нужные записи галочкой и нажмите «Поделиться» — получатель получит доступ
@@ -1014,7 +1014,7 @@ function ShareRecordsModal({
         {result && (
           <div className="mb-4 rounded-xl bg-success-50 px-4 py-3 text-sm text-success-800">
             {result.request
-              ? `Sharing-запрос создан: отправлено ${result.request.shares.length} записей.`
+              ? `Приглашение к записям создано: отправлено ${result.request.shares.length} записей.`
               : 'Новые записи не добавлены: у получателя уже есть доступ или активный запрос.'}
             {result.skipped_record_ids.length > 0 && (
               <p className="mt-1 text-xs">Пропущено: {result.skipped_record_ids.length}</p>

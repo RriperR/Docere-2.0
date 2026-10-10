@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap') layer(base);
-
 @import 'tailwindcss' source(none);
 
 @source './';
@@ -90,7 +88,7 @@
   --color-gray-900: #111827;
   --color-gray-950: #030712;
 
-  --font-sans: Inter, sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
   --animate-fade-in: fade-in 0.3s ease-in-out;
   --animate-slide-in: slide-in 0.3s ease-in-out;
@@ -175,13 +173,14 @@
 
 @layer base {
   html {
-    font-family: 'Inter', sans-serif;
+    font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
   body {
     @apply bg-gray-50 text-gray-900;
+    overflow-wrap: anywhere;
   }
 
   /* Сохраняем границы, подсказки и курсор прежней темы при переходе на Tailwind 4. */
@@ -198,8 +197,26 @@
     @apply text-gray-400;
   }
 
+  :where(a, button, input, select, textarea, summary):focus-visible {
+    outline: 3px solid var(--color-primary-500);
+    outline-offset: 3px;
+  }
+
+  button:disabled { cursor: not-allowed; }
+  section[id] { scroll-margin-top: 8rem; }
+  ::selection { background: var(--color-primary-100); }
+
   button:not(:disabled),
   [role='button']:not(:disabled) {
     cursor: pointer;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

@@ -23,7 +23,7 @@ const buildFio = (lastName: string, firstName: string, middleName: string): stri
     .join(' ')
 
 const accessContextLabel = (ctx: string): string =>
-  ctx === 'shared' ? 'Sharing' : ctx === 'created' ? 'Локальная' : 'Моя'
+  ctx === 'shared' ? 'Общий доступ' : ctx === 'created' ? 'Локальная' : 'Моя'
 
 const accessContextClasses = (ctx: string): string =>
   ctx === 'shared'

@@ -19,10 +19,10 @@ const NotFoundPage = () => {
           404
         </h1>
         <h2 className="text-2xl font-bold text-gray-900 mb-4">
-          Page Not Found
+          Страница не найдена
         </h2>
         <p className="text-gray-500 mb-8">
-          The page you're looking for doesn't exist or has been moved.
+          Проверьте адрес или вернитесь в рабочее пространство.
         </p>
         <div className="flex justify-center space-x-4">
           <Button
@@ -30,11 +30,11 @@ const NotFoundPage = () => {
             onClick={() => window.history.back()}
             icon={<ArrowLeft className="h-5 w-5" />}
           >
-            Go Back
+            Назад
           </Button>
           <Link to="/dashboard">
             <Button variant="primary">
-              Return to Dashboard
+              На главную
             </Button>
           </Link>
         </div>

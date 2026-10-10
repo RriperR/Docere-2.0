@@ -4,7 +4,7 @@ import CaseMaterialPicker from './CaseMaterialPicker'
 import api from '../../api/api'
 import { requestId } from '../../utils/requestId'
 import { caseError, type ClinicalCase, type Page } from '../../api/cases'
-import { buttonClass, cardClass, inputClass } from './styles'
+import { buttonClass, cardClass, inputClass, opinionLabel } from './styles'
 
 export interface Message {
   id: string; author_id: string; author_name: string; body: string; created_at: string; sequence: number
@@ -38,13 +38,14 @@ export default function CaseDiscussion({ c, userId, onChange, onOpen, reference 
   const [actOffset, setActOffset] = useState(0)
   const [actTotal, setActTotal] = useState(0)
   const [body, setBody] = useState('')
+  const messageInput = useRef<HTMLTextAreaElement>(null)
   const [parent, setParent] = useState<Message | null>(null)
   const [replyOpinion, setReplyOpinion] = useState<Opinion | null>(null)
   const [record, setRecord] = useState('')
   const [attachment, setAttachment] = useState<string | null>(null)
   const [parentContext, setParentContext] = useState<Message | null>(null)
   useEffect(() => {
-    if (reference) { setRecord(reference.recordId); setAttachment(reference.attachmentId) }
+    if (reference) { setRecord(reference.recordId); setAttachment(reference.attachmentId); messageInput.current?.focus() }
   }, [reference])
   const [question, setQuestion] = useState('')
   const [assignee, setAssignee] = useState('')
@@ -90,7 +91,7 @@ export default function CaseDiscussion({ c, userId, onChange, onOpen, reference 
   }
   return <>
     {error && <p role="alert" className="text-red-700">{error}</p>}
-    <section className={cardClass}><h2 className="text-lg font-semibold">Обсуждение</h2>
+    <section id="discussion" className={cardClass}><h2 className="text-lg font-semibold">Обсуждение</h2>
       {[...messages].reverse().map(m => <article key={m.id} className={`rounded-lg bg-gray-50 p-3 ${m.parent_id ? 'ml-6' : ''}`}>
         <p className="text-sm text-gray-500">{m.author_name} · {new Date(m.created_at).toLocaleString('ru-RU')}</p>
         {m.parent_id && <button className="text-xs text-primary-700" onClick={async () => {
@@ -101,7 +102,7 @@ export default function CaseDiscussion({ c, userId, onChange, onOpen, reference 
         {m.record_id && <button className="text-primary-700 underline"
           onClick={() => onOpen?.(m.record_id!, m.attachment_id)}>Открыть связанный материал</button>}
         {writable && !m.parent_id && <button className="ml-4 text-primary-700" onClick={() => {
-          setParent(m); setReplyOpinion(null)
+          setParent(m); setReplyOpinion(null); messageInput.current?.focus()
         }}>Ответить</button>}
       </article>)}
       <div className="flex gap-4"><button disabled={!offset} onClick={() => setOffset(offset - 20)}>Новые сообщения</button>
@@ -111,7 +112,7 @@ export default function CaseDiscussion({ c, userId, onChange, onOpen, reference 
       {writable && <div className="space-y-2">
         {parent && <p>Ответ: {parent.body} <button onClick={() => setParent(null)}>Отмена</button></p>}
         {replyOpinion && <p>Ответ на запрос: {replyOpinion.question} <button onClick={() => setReplyOpinion(null)}>Отмена</button></p>}
-        <label className="block">Сообщение<textarea className={inputClass} maxLength={10000} value={body} onChange={e => setBody(e.target.value)} /></label>
+        <label className="block">Сообщение<textarea ref={messageInput} rows={3} className={inputClass} maxLength={10000} value={body} onChange={e => setBody(e.target.value)} /></label>
         <CaseMaterialPicker caseId={c.id} sequence={c.sequence} selected={record ? [record] : []}
           onAccessLost={onChange} onChange={ids => { setRecord(ids[0] ?? ''); setAttachment(null) }} />
         {attachment && <p>Ссылка на вложение: {reference?.label} <button onClick={() => setAttachment(null)}>Убрать вложение</button></p>}
@@ -121,11 +122,11 @@ export default function CaseDiscussion({ c, userId, onChange, onOpen, reference 
     </section>
     <section id="opinions" className={cardClass}><h2 className="text-lg font-semibold">Запросы мнения</h2>
       {opinions.map(o => <article key={o.id} className="rounded-lg bg-gray-50 p-3 space-y-2">
-        <p>{name(o.requester_id)} → {name(o.assignee_id)} · {o.status}</p><p>{o.question}</p>
+        <p>{name(o.requester_id)} → {name(o.assignee_id)} · {opinionLabel[o.status] ?? 'Запрос мнения'}</p><p>{o.question}</p>
         {o.reason && <p className="text-sm">Причина отмены: {o.reason === 'assignee_left' ? 'Адресат вышел из случая' : o.reason}</p>}
         {o.record_id && <button onClick={() => onOpen?.(o.record_id!, null)}>Открыть материал</button>}
         {writable && o.status === 'open' && o.assignee_id === userId && <button className="text-primary-700" onClick={() => {
-          setReplyOpinion(o); setParent(null); setRecord(o.record_id ?? ''); setAttachment(null)
+          setReplyOpinion(o); setParent(null); setRecord(o.record_id ?? ''); setAttachment(null); messageInput.current?.focus()
         }}>Ответить на запрос</button>}
         {writable && o.status === 'open' && [o.requester_id, c.coordinator_id].includes(userId) && <button className="ml-4" disabled={busy}
           onClick={() => void mutate(`opinions/${o.id}/cancel`)}>Отменить запрос</button>}

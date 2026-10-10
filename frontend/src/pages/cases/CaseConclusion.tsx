@@ -42,7 +42,7 @@ export default function CaseConclusion({ c, owner, onChange, onOpen }: {
     catch (e) { setError(caseError(e)); await onChange(); return false }
     finally { setBusy(false) }
   }
-  return <section className={cardClass}>
+  return <section id="conclusion" className={cardClass}>
     <h2 className="text-lg font-semibold">Итог разбора</h2>
     <p className="text-sm text-gray-500">Автор итога — координатор. Участие коллег не обозначает согласия с выводами.</p>
     {error && <p role="alert" className="text-red-700">{error}</p>}
@@ -86,7 +86,7 @@ export default function CaseConclusion({ c, owner, onChange, onOpen }: {
       </div>}
     </>}
     {owner && c.status === 'closed' && <>
-      {c.published_record_id ? <div><p>Итог опубликован как самостоятельная запись. Доступ коллегам передаётся обычным sharing.</p>
+      {c.published_record_id ? <div><p>Итог опубликован как самостоятельная запись. Доступ коллегам передаётся через раздел «Доступ к записям».</p>
         <Link className="text-primary-700 underline" to={`/patients/${c.patient_id}`}>Открыть историю пациента</Link></div> :
         <button className={buttonClass} onClick={async () => {
           try { setPreview((await api.get<Preview>(`/cases/${c.id}/publication-preview`)).data) }

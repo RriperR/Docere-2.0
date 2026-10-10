@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import api from '../../api/api'
 import { caseApi, caseError, type ClinicalCase, type Material, type Page } from '../../api/cases'
-import { buttonClass, cardClass, inputClass } from './styles'
+import { buttonClass, cardClass, inputClass, recordTypeLabel, recordStatusLabel } from './styles'
 import type { Message } from './CaseDiscussion'
 
 export default function CaseMaterials({ c, owner, onChange, onOpen }: {
@@ -63,7 +63,7 @@ export default function CaseMaterials({ c, owner, onChange, onOpen }: {
       setAdding(false); setEditing(false); setConfirm(false); setSelection([]); await onChange()
     } catch (e) { setError(caseError(e)); await onChange() } finally { setBusy(false) }
   }
-  return <section className={cardClass}>
+  return <section id="materials" className={cardClass}>
     <h2 className="text-lg font-semibold">Материалы пациента</h2>
     <p className="text-sm text-gray-500">Хронология выбранных записей. Остальная история пациента не открывается участникам.</p>
     {error && <p role="alert" className="text-red-700">{error}</p>}
@@ -80,7 +80,7 @@ export default function CaseMaterials({ c, owner, onChange, onOpen }: {
     </div>
     {items.map(m => <button key={m.id} className="block w-full rounded-lg border p-3 text-left space-y-1" onClick={() => onOpen(m.id, null)}>
       <p className="font-medium">{m.event_date} · {m.title ?? 'Медицинская запись'}</p>
-      <p className="text-sm text-gray-500">{m.record_type} · {m.status}</p><p>{m.clinical_summary}</p>
+      <p className="text-sm text-gray-500">{recordTypeLabel[m.record_type] ?? 'Медицинская запись'} · {recordStatusLabel[m.status] ?? 'Статус неизвестен'}</p><p>{m.clinical_summary}</p>
     </button>)}
     {!items.length && <p>Материалов по выбранным условиям нет.</p>}
     <div className="flex gap-4"><button disabled={!offset} onClick={() => setOffset(offset - 20)}>Назад</button><span>{total} материалов</span>

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
@@ -9,12 +9,15 @@ import {
   FileText,
   Inbox,
   Share2,
-  TrendingUp,
+  UploadCloud,
+  Plus,
+  ArrowRight,
   Users,
 } from 'lucide-react'
 
 import Attention from '../cases/Attention'
-import { Button } from '../../components/common/Button'
+import RecentCases from './RecentCases'
+import { secondaryButtonClass } from '../cases/styles'
 import { useAuthStore } from '../../stores/authStore'
 import { usePatientsStore } from '../../stores/patientsStore'
 import { useShareRequestsStore } from '../../stores/shareRequestsStore'
@@ -27,7 +30,6 @@ function KpiCard({
   description,
   icon,
   color,
-  trend,
   delay = 0,
 }: {
   title: string
@@ -35,7 +37,6 @@ function KpiCard({
   description: string
   icon: React.ReactNode
   color: string
-  trend?: string
   delay?: number
 }) {
   return (
@@ -45,20 +46,14 @@ function KpiCard({
       transition={{ delay, duration: 0.4 }}
       className="rounded-xl border border-gray-100 bg-white p-5 shadow-card"
     >
-      <div className="flex items-start justify-between">
+      <div className="flex items-center justify-between gap-4">
         <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${color}`}>
           {icon}
         </div>
-        {trend && (
-          <span className="flex items-center gap-1 rounded-full bg-success-50 px-2 py-0.5 text-xs font-medium text-success-700">
-            <TrendingUp className="h-3 w-3" />
-            {trend}
-          </span>
-        )}
+        <p className="text-3xl font-bold text-gray-900">{value}</p>
       </div>
-      <p className="mt-4 text-3xl font-bold text-gray-900">{value}</p>
-      <p className="text-sm font-medium text-gray-700">{title}</p>
-      <p className="mt-1 text-xs text-gray-400">{description}</p>
+      <p className="mt-3 text-sm font-medium text-gray-700">{title}</p>
+      <p className="mt-1 text-xs text-gray-500">{description}</p>
     </motion.div>
   )
 }
@@ -75,14 +70,17 @@ const avatarColors = [
 
 const DoctorDashboard: React.FC = () => {
   const { user } = useAuthStore()
-  const { patients, fetchPatients } = usePatientsStore()
-  const { jobs, listJobs } = useUploadStore()
-  const { inbox, fetchInbox } = useShareRequestsStore()
+  const { patients, fetchPatients, error: patientsError } = usePatientsStore()
+  const { jobs, listJobs, error: importsError } = useUploadStore()
+  const { inbox, fetchInbox, error: sharesError } = useShareRequestsStore()
 
+  const [loading, setLoading] = useState(true)
   useEffect(() => {
-    void fetchPatients()
-    void listJobs()
-    void fetchInbox()
+    let cancelled = false
+    void Promise.all([fetchPatients(), listJobs(), fetchInbox()]).finally(() => {
+      if (!cancelled) setLoading(false)
+    })
+    return () => { cancelled = true }
   }, [fetchPatients, listJobs, fetchInbox])
 
   const totalRecords = useMemo(
@@ -106,11 +104,11 @@ const DoctorDashboard: React.FC = () => {
       }))
 
     const shareTasks = inbox
-      .filter((request) => request.status === 'pending')
+      .filter((request) => request.status === 'pending' && (!request.expires_at || new Date(request.expires_at).getTime() > Date.now()))
       .slice(0, 5)
       .map((request) => ({
         id: `share-${request.id}`,
-        title: 'Новый sharing-запрос',
+        title: 'Приглашение к записям',
         description: `${request.from_user.fio} · ${request.shares.length} записей`,
         meta: new Date(request.created_at).toLocaleString('ru-RU'),
         timestamp: new Date(request.created_at).getTime(),
@@ -144,31 +142,32 @@ const DoctorDashboard: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <Attention />
-      <motion.div
-        initial={{ opacity: 0, y: -10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-        className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between"
-      >
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">
-            Добро пожаловать,{' '}
-            {user ? `${user.first_name} ${user.last_name}` : 'Доктор'}
-          </h1>
-          <p className="mt-0.5 text-sm capitalize text-gray-500">{today}</p>
+      <section className="relative overflow-hidden rounded-3xl bg-primary-950 p-6 text-white sm:p-8">
+        <div aria-hidden="true" className="pointer-events-none absolute -right-20 -top-32 h-96 w-96 rounded-full border-[50px] border-secondary-400/10" />
+        <div className="relative flex flex-wrap items-center justify-between gap-3 text-xs font-medium text-primary-200">
+          <span className="uppercase tracking-[0.18em]">Рабочее пространство врача</span><span className="capitalize">{today}</span>
         </div>
-        <Link to="/patients">
-          <Button icon={<Users className="h-4 w-4" />} size="sm">
-            Все пациенты
-          </Button>
-        </Link>
-      </motion.div>
+        <div className="relative mt-6 max-w-2xl">
+          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Здравствуйте, {user?.first_name || 'доктор'}.</h1>
+          <p className="mt-3 max-w-xl text-sm leading-relaxed text-primary-100 sm:text-base">Соберите клинический контекст, обсудите его с коллегами и сохраните итог в истории пациента.</p>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Link to="/cases/new" className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-primary-950 shadow-xs hover:bg-primary-50">
+              <Plus size={18} aria-hidden="true" />Новый клинический случай</Link>
+            <Link to="/upload" className="inline-flex items-center gap-2 rounded-xl border border-white/25 px-4 py-3 text-sm font-medium text-white hover:bg-white/10">
+              <UploadCloud size={18} aria-hidden="true" />Импортировать материалы</Link>
+          </div>
+        </div>
+      </section>
+
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
+        <RecentCases />
+        <Attention />
+      </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <KpiCard
-          title="Пациентов в работе"
-          value={patients.length}
+          title="Доступных пациентов"
+          value={loading || patientsError ? '—' : patients.length}
           description="Доступные карточки пациентов"
           icon={<Users className="h-5 w-5 text-primary-600" />}
           color="bg-primary-50"
@@ -176,17 +175,17 @@ const DoctorDashboard: React.FC = () => {
         />
         <KpiCard
           title="Всего записей"
-          value={totalRecords}
-          description="Суммарно по всем пациентам"
+          value={loading || patientsError ? '—' : totalRecords}
+          description="Доступные вам медицинские записи"
           icon={<FileText className="h-5 w-5 text-accent-600" />}
           color="bg-accent-50"
           delay={0.1}
         />
         <KpiCard
-          title="Среднее записей"
-          value={patients.length > 0 ? (totalRecords / patients.length).toFixed(1) : '—'}
-          description="Записей на одного пациента"
-          icon={<TrendingUp className="h-5 w-5 text-secondary-600" />}
+          title="Архивов на проверке"
+          value={loading || importsError ? '—' : jobs.filter(job => job.status === 'needs_review').length}
+          description="Ожидают вашего решения перед импортом"
+          icon={<Inbox className="h-5 w-5 text-secondary-600" />}
           color="bg-secondary-50"
           delay={0.15}
         />
@@ -205,21 +204,19 @@ const DoctorDashboard: React.FC = () => {
           </div>
           <div className="flex flex-wrap gap-2 text-xs">
             <span className="rounded-full bg-warning-50 px-2.5 py-1 font-medium text-warning-700">
-              Архивы: {jobs.filter((job) => job.status === 'needs_review').length}
+              Архивы: {loading || importsError ? '—' : jobs.filter((job) => job.status === 'needs_review').length}
             </span>
             <span className="rounded-full bg-primary-50 px-2.5 py-1 font-medium text-primary-700">
-              Sharing: {inbox.filter((request) => request.status === 'pending').length}
+              Доступы: {loading || sharesError ? '—' : inbox.filter((request) => request.status === 'pending' && (!request.expires_at || new Date(request.expires_at).getTime() > Date.now())).length}
             </span>
           </div>
         </div>
 
-        {reviewTasks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-center">
-            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-success-50">
-              <Clock className="h-5 w-5 text-success-600" />
-            </div>
-            <p className="mt-3 text-sm font-medium text-gray-900">Очередь пуста</p>
-            <p className="mt-1 text-xs text-gray-500">Новых импортов и sharing-запросов сейчас нет</p>
+        {loading ? <p role="status" className="p-6 text-sm text-gray-500">Загружаем рабочую очередь…</p> : importsError || sharesError ?
+          <p role="alert" className="p-6 text-sm text-error-700">Не удалось загрузить всю очередь. <button className="underline" onClick={() => { void listJobs(); void fetchInbox() }}>Повторить</button></p> : reviewTasks.length === 0 ? (
+          <div className="flex items-center gap-3 px-6 py-5">
+            <Clock className="h-5 w-5 shrink-0 text-secondary-600" aria-hidden="true" />
+            <p className="text-sm text-gray-500">Все входящие разобраны. Новых импортов и приглашений к записям нет.</p>
           </div>
         ) : (
           <div className="divide-y divide-gray-50">
@@ -238,7 +235,7 @@ const DoctorDashboard: React.FC = () => {
                   </p>
                   <p className="mt-0.5 truncate text-xs text-gray-500">{task.description}</p>
                 </div>
-                <div className="hidden text-xs text-gray-400 sm:block">{task.meta}</div>
+                <div className="hidden text-xs text-gray-500 sm:block">{task.meta}</div>
                 <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-primary-400 transition-colors" />
               </Link>
             ))}
@@ -260,13 +257,15 @@ const DoctorDashboard: React.FC = () => {
           </Link>
         </div>
 
-        {recentPatients.length === 0 ? (
+        {loading ? <p role="status" className="p-6 text-sm text-gray-500">Загружаем пациентов…</p> : patientsError ?
+          <p role="alert" className="p-6 text-sm text-error-700">{patientsError} <button className="underline" onClick={() => void fetchPatients()}>Повторить</button></p> : recentPatients.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gray-100">
               <Users className="h-6 w-6 text-gray-400" />
             </div>
             <p className="mt-3 text-sm font-medium text-gray-900">Пациентов пока нет</p>
-            <p className="mt-1 text-xs text-gray-500">Карточки появятся после первой записи</p>
+            <p className="mt-1 text-xs text-gray-500">Добавьте пациента, чтобы вести историю и начать совместный разбор</p>
+            <Link className={`${secondaryButtonClass} mt-4`} to="/patients">К пациентам <ArrowRight size={16} /></Link>
           </div>
         ) : (
           <div className="divide-y divide-gray-50">
@@ -286,7 +285,7 @@ const DoctorDashboard: React.FC = () => {
                   <div className="mt-0.5 flex flex-wrap items-center gap-3 text-xs text-gray-500">
                     <span className="flex items-center gap-1">
                       <FileText className="h-3.5 w-3.5" />
-                      {patient.recordCount} записей
+                      Записей: {patient.recordCount}
                     </span>
                     {patient.lastVisit && (
                       <span className="flex items-center gap-1">

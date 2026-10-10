@@ -147,9 +147,13 @@ const formatValidationDetailItem = (item: ValidationDetailItem): string | null =
 
 const normalizeApiErrorMessage = (error: unknown, fallback: string): string => {
   const maybeError = error as {
-    response?: { data?: { detail?: unknown } };
+    response?: { status?: number; data?: { detail?: unknown } };
     message?: unknown;
   };
+
+  if (maybeError?.response?.status === 429) {
+    return 'Слишком много попыток. Подождите минуту и попробуйте снова.';
+  }
 
   const detail = maybeError?.response?.data?.detail;
 

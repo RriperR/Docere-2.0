@@ -1,116 +1,38 @@
 import { Outlet } from 'react-router-dom'
-import { motion } from 'framer-motion'
-import { ActivitySquare, Heart, Shield, Users } from 'lucide-react'
+import { ActivitySquare, ArrowRight, Check, Files, MessageSquare, ShieldCheck, Users } from 'lucide-react'
 
-const features = [
-  {
-    icon: <Shield className="h-5 w-5" />,
-    title: 'Защита данных',
-    description: 'Медицинские записи под надёжной защитой с ролевым доступом.',
-  },
-  {
-    icon: <Users className="h-5 w-5" />,
-    title: 'Совместная работа',
-    description: 'Безопасный обмен записями между врачами и пациентами.',
-  },
-  {
-    icon: <Heart className="h-5 w-5" />,
-    title: 'История наблюдений',
-    description: 'Полная хронология медицинских событий в одном месте.',
-  },
-]
-
-export const AuthLayout = () => {
-  return (
-    <div className="flex min-h-screen">
-      {/* Left panel — branding */}
-      <motion.div
-        className="relative hidden flex-col justify-between overflow-hidden bg-primary-700 px-12 py-10 lg:flex lg:w-1/2"
-        initial={{ opacity: 0, x: -20 }}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{ duration: 0.6 }}
-      >
-        {/* Background pattern */}
-        <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          <div className="absolute -right-20 -top-20 h-80 w-80 rounded-full bg-primary-600/40 blur-3xl" />
-          <div className="absolute -bottom-20 -left-20 h-80 w-80 rounded-full bg-accent-500/20 blur-3xl" />
-          <div className="absolute left-1/2 top-1/2 h-60 w-60 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary-500/30 blur-3xl" />
-        </div>
-
-        <div className="relative">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/20 backdrop-blur-xs">
-              <ActivitySquare className="h-6 w-6 text-white" />
-            </div>
-            <span className="text-xl font-bold text-white">Docere</span>
-          </div>
-        </div>
-
-        <div className="relative space-y-8">
-          <div>
-            <h1 className="text-4xl font-bold leading-tight text-white">
-              Медицинские записи
-              <br />
-              <span className="text-primary-200">нового поколения</span>
-            </h1>
-            <p className="mt-4 text-base leading-relaxed text-primary-100">
-              Управляйте историей болезни пациентов, делитесь записями с коллегами и ведите
-              медицинскую документацию в единой защищённой системе.
-            </p>
-          </div>
-
-          <div className="space-y-4">
-            {features.map((feature) => (
-              <div key={feature.title} className="flex items-start gap-3">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/15 text-white">
-                  {feature.icon}
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-white">{feature.title}</p>
-                  <p className="text-xs text-primary-200">{feature.description}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="relative">
-          <p className="text-xs text-primary-300">
-            © {new Date().getFullYear()} Docere — Medical Records Management System
-          </p>
-        </div>
-      </motion.div>
-
-      {/* Right panel — form */}
-      <div className="flex flex-1 flex-col items-center justify-center bg-gray-50 px-4 py-12 sm:px-8">
-        {/* Mobile logo */}
-        <motion.div
-          className="mb-8 flex items-center gap-2 lg:hidden"
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4 }}
-        >
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-600">
-            <ActivitySquare className="h-5 w-5 text-white" />
-          </div>
-          <span className="text-xl font-bold text-gray-900">Docere</span>
-        </motion.div>
-
-        <motion.div
-          className="w-full max-w-md"
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1, duration: 0.5 }}
-        >
-          <div className="rounded-2xl border border-gray-200 bg-white p-8 shadow-card">
-            <Outlet />
-          </div>
-        </motion.div>
-
-        <p className="mt-6 text-center text-xs text-gray-400">
-          Ваши данные надёжно защищены и не передаются третьим лицам.
-        </p>
+export const AuthLayout = () => <div className="flex min-h-screen bg-gray-50">
+  <aside className="relative hidden w-1/2 flex-col justify-between overflow-hidden bg-primary-950 p-10 text-white lg:flex xl:p-14">
+    <div aria-hidden="true" className="pointer-events-none absolute -bottom-32 -right-32 h-[600px] w-[600px] rounded-full border-[80px] border-secondary-400/10" />
+    <div className="relative flex items-center gap-3">
+      <ActivitySquare size={32} className="text-secondary-300" aria-hidden="true" />
+      <span className="text-2xl font-semibold tracking-tight">Docere</span>
+      <span className="ml-auto text-xs text-primary-200">Для совместной работы врачей</span>
+    </div>
+    <div className="relative my-12 max-w-lg">
+      <p className="mb-5 text-xs font-semibold uppercase tracking-[0.2em] text-secondary-300">Клинический контекст объединяет</p>
+      <h1 className="text-4xl font-semibold leading-tight tracking-tight xl:text-5xl">Второе мнение.<br /><span className="text-primary-200">Общий контекст.</span></h1>
+      <p className="mt-6 text-base leading-relaxed text-primary-100">Материалы пациента, обсуждение с коллегами и итог разбора — в одном рабочем пространстве.</p>
+      <div className="mt-9 rounded-2xl border border-white/15 bg-white/5 p-6">
+        <p className="mb-5 text-xs font-medium uppercase tracking-widest text-primary-200">От вопроса к общему результату</p>
+        <ol className="space-y-5">
+          {[
+            { icon: Files, title: 'Выберите материалы', text: 'Только нужные записи одного пациента.' },
+            { icon: MessageSquare, title: 'Обсудите с коллегами', text: 'Приглашения, вопросы и ссылки на документы.' },
+            { icon: Check, title: 'Зафиксируйте итог', text: 'Сохраните выводы и дальнейшие действия.' },
+          ].map(({ icon: Icon, title, text }) => <li key={title} className="flex items-start gap-4">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-secondary-200"><Icon size={20} aria-hidden="true" /></div>
+            <div><p className="text-sm font-semibold">{title}</p><p className="mt-1 text-sm text-primary-200">{text}</p></div>
+          </li>)}
+        </ol>
       </div>
     </div>
-  )
-}
+    <div className="relative flex items-center gap-2 text-xs text-primary-200"><ShieldCheck size={16} aria-hidden="true" />Доступ к материалам — по приглашению и с возможностью отзыва.</div>
+  </aside>
+  <main className="flex min-w-0 flex-1 flex-col items-center justify-center px-5 py-10 sm:px-10">
+    <div className="mb-8 flex items-center gap-2 lg:hidden"><ActivitySquare size={28} className="text-primary-600" aria-hidden="true" /><span className="text-2xl font-semibold text-gray-900">Docere</span></div>
+    <div className="mb-6 flex items-center gap-2 text-xs font-medium uppercase tracking-widest text-gray-500"><Users size={16} aria-hidden="true" />Рабочее пространство врача</div>
+    <div className="w-full max-w-md rounded-3xl border border-gray-200 bg-white p-6 shadow-card sm:p-8"><Outlet /></div>
+    <p className="mt-6 flex max-w-sm items-center gap-2 text-center text-xs leading-relaxed text-gray-500"><ArrowRight size={14} className="shrink-0" aria-hidden="true" />История пациента и совместные разборы в одном месте.</p>
+  </main>
+</div>

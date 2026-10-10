@@ -55,6 +55,7 @@ const LoginPage = () => {
       <AnimatePresence>
         {(error || hasError) && (
           <motion.div
+            role="alert"
             initial={{ opacity: 0, y: -4, height: 0 }}
             animate={{ opacity: 1, y: 0, height: 'auto' }}
             exit={{ opacity: 0, y: -4, height: 0 }}
@@ -92,23 +93,11 @@ const LoginPage = () => {
             type="button"
             onClick={() => setShowPassword((s) => !s)}
             className="absolute right-3 top-[34px] text-gray-400 hover:text-gray-600"
-            tabIndex={-1}
+            aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
+            aria-pressed={showPassword}
           >
             {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
           </button>
-        </div>
-
-        <div className="flex items-center justify-between text-sm">
-          <label className="flex cursor-pointer items-center gap-2 text-gray-600">
-            <input
-              type="checkbox"
-              className="h-4 w-4 rounded-sm border-gray-300 text-primary-600 focus:ring-primary-500"
-            />
-            Запомнить меня
-          </label>
-          <a href="#" className="font-medium text-primary-600 hover:text-primary-700">
-            Забыли пароль?
-          </a>
         </div>
 
         <Button type="submit" fullWidth isLoading={isLoading} size="lg">

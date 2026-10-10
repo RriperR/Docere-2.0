@@ -7,7 +7,7 @@ import CaseDocumentPanel, { type MaterialReference } from './CaseDocumentPanel'
 import CaseConclusion from './CaseConclusion'
 import CaseDiscussion from './CaseDiscussion'
 import { useAuthStore } from '../../stores/authStore'
-import { buttonClass, cardClass, inputClass, stateLabel } from './styles'
+import { buttonClass, cardClass, inputClass, stateLabel, stateTone, memberLabel } from './styles'
 
 export default function CasePage() {
   const { id = '' } = useParams()
@@ -57,6 +57,7 @@ function CaseWorkspace({ id }: { id: string }) {
   return <div className="space-y-5">
     <Link to="/cases">← Клинические случаи</Link>
     {error && <p role="alert" className="text-red-700">{error} <button onClick={() => void load()}>Обновить данные</button></p>}
+    {!view && !error && <p role="status" className="text-sm text-gray-500">Загружаем клинический случай…</p>}
     {view && !c && <section className={cardClass}>
       <h1 className="text-xl font-bold">{view.membership_status === 'pending' ? 'Приглашение в разбор' : 'Клинический контекст недоступен'}</h1>
       <p>Координатор: {view.coordinator_name} · {view.material_count} материалов</p>
@@ -64,7 +65,7 @@ function CaseWorkspace({ id }: { id: string }) {
         <button className={buttonClass} disabled={busy} onClick={() => void action('invitations/accept')}>Принять приглашение</button>
         <button disabled={busy} onClick={() => void action('invitations/decline')}>Отклонить</button></>}
       {owner && view.management_members.map(m => ['pending', 'accepted'].includes(m.status) && <div key={m.user_id}>
-        <span>{m.name} · {m.status}</span> <button disabled={busy}
+        <span>{m.name} · {memberLabel[m.status] ?? 'Участник'}</span> <button disabled={busy}
           onClick={() => void action(`members/${m.user_id}/${m.status === 'pending' ? 'cancel' : 'remove'}`)}>
           {m.status === 'pending' ? 'Отозвать приглашение' : 'Исключить'}</button>
       </div>)}
@@ -72,15 +73,25 @@ function CaseWorkspace({ id }: { id: string }) {
     </section>}
     {c && <>
       <section className={cardClass}>
-        <h1 className="text-2xl font-bold">{c.title}</h1><p>Пациент: {view.patient_name}</p><p>{c.question}</p>
-        <p>{stateLabel[c.status]} · Координатор: {view.coordinator_name} · версия {c.version}</p>
-        <p>Участие врача не означает согласия с выводами.</p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span className={`rounded-full px-3 py-1 text-xs font-semibold ${stateTone[c.status]}`}>{stateLabel[c.status]}</span>
+          <span className="text-sm text-gray-500">Координатор: {view.coordinator_name}</span>
+        </div>
+        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{c.title}</h1>
+        <p className="text-sm text-gray-500">Пациент: {view.patient_name}</p>
+        <div className="rounded-xl border-l-4 border-primary-500 bg-primary-50/60 p-4">
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-primary-700">Вопрос для коллег</p><p className="whitespace-pre-wrap leading-relaxed">{c.question}</p>
+        </div>
         {c.previous_case_id && <Link to={`/cases/${c.previous_case_id}`}>Предыдущий случай (доступ проверяется отдельно)</Link>}
         {c.status === 'closed' && <Link to={`/cases/new?patient=${c.patient_id}&previous=${c.id}`}>Создать продолжение</Link>}
       </section>
-      <section className={cardClass}><h2 className="font-semibold">Участники</h2>
+      <nav aria-label="Разделы клинического случая" className="sticky top-14 z-10 flex flex-wrap gap-2 rounded-xl border border-gray-200 bg-white/95 p-2 shadow-xs backdrop-blur-sm">
+        {[['materials', 'Материалы'], ['discussion', 'Обсуждение'], ['opinions', 'Запросы мнения'], ['conclusion', 'Итог'], ['members', 'Участники']].map(([anchor, label]) =>
+          <a key={anchor} href={`#${anchor}`} className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 hover:bg-primary-50 hover:text-primary-700">{label}</a>)}
+      </nav>
+      <section id="members" className={cardClass}><h2 className="text-lg font-semibold">Участники</h2>
         {c.members.map(m => <div key={m.user_id} className="flex gap-4">
-          <span>{m.name} · {m.status}</span>
+          <span>{m.name} · {memberLabel[m.status] ?? 'Участник'}</span>
           {owner && ['pending', 'accepted'].includes(m.status) && <button disabled={busy}
             onClick={() => void action(`members/${m.user_id}/${m.status === 'pending' ? 'cancel' : 'remove'}`)}>
             {m.status === 'pending' ? 'Отозвать приглашение' : 'Исключить'}</button>}

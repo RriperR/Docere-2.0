@@ -78,7 +78,7 @@ const ShareRequestsPage = () => {
         className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between"
       >
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Sharing записей</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Доступ к записям</h1>
           <p className="mt-0.5 text-sm text-gray-500">
             Управляйте входящими запросами и доступами, которые вы выдали другим пользователям.
           </p>

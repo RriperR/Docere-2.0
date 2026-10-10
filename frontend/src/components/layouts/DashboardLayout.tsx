@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
   LayoutDashboard,
+  MessagesSquare,
   LogOut,
   Menu,
   Settings,
@@ -19,6 +20,7 @@ import {
   X,
 } from 'lucide-react'
 
+import { getBreadcrumbs } from '../../utils/navigation'
 import { useNotificationsStore } from '../../stores/notificationsStore'
 import { watchChanges } from '../../api/caseUpdates'
 import { useAuthStore } from '../../stores/authStore'
@@ -78,6 +80,28 @@ export const DashboardLayout = () => {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
   const [isProfileOpen, setIsProfileOpen] = useState(false)
 
+  const popovers = useRef<HTMLDivElement>(null)
+  const notificationButton = useRef<HTMLButtonElement>(null)
+  const profileButton = useRef<HTMLButtonElement>(null)
+  const mobileMenuButton = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    const dismiss = (event: PointerEvent) => {
+      if (!popovers.current?.contains(event.target as Node)) {
+        setIsNotificationsOpen(false); setIsProfileOpen(false)
+      }
+    }
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (isMobileMenuOpen) mobileMenuButton.current?.focus()
+      else if (isNotificationsOpen) notificationButton.current?.focus()
+      else if (isProfileOpen) profileButton.current?.focus()
+      setIsMobileMenuOpen(false); setIsNotificationsOpen(false); setIsProfileOpen(false)
+    }
+    document.addEventListener('pointerdown', dismiss)
+    document.addEventListener('keydown', escape)
+    return () => { document.removeEventListener('pointerdown', dismiss); document.removeEventListener('keydown', escape) }
+  }, [isMobileMenuOpen, isNotificationsOpen, isProfileOpen])
+
   const pendingShareRequests = inbox.filter(
     (request) => request.status === 'pending' && !isExpired(request.expires_at),
   )
@@ -122,13 +146,13 @@ export const DashboardLayout = () => {
     const commonLinks = [
       {
         path: '/dashboard',
-        label: 'Dashboard',
+        label: 'Рабочий стол',
         icon: <LayoutDashboard className="h-5 w-5" />,
         badge: 0,
       },
       {
         path: '/share-requests',
-        label: 'Sharing',
+        label: 'Доступ к записям',
         icon: <Share2 className="h-5 w-5" />,
         badge: pendingShareCount,
       },
@@ -136,11 +160,11 @@ export const DashboardLayout = () => {
 
     const roleLinks: Record<string, Array<{ path: string; label: string; icon: ReactNode; badge: number }>> = {
       doctor: [
-        { path: '/notifications', label: 'Уведомления', icon: <Bell className="h-5 w-5" />, badge: clinicalUnread },
-        { path: '/cases', label: 'Клинические случаи', icon: <Users className="h-5 w-5" />, badge: 0 },
-        { path: '/doctor-role-reviews', label: 'Заявки врачей', icon: <UserCheck className="h-5 w-5" />, badge: pendingRoleApplicationCount },
-        { path: '/upload', label: 'Импорт архива', icon: <UploadCloud className="h-5 w-5" />, badge: 0 },
+        { path: '/cases', label: 'Клинические случаи', icon: <MessagesSquare className="h-5 w-5" />, badge: 0 },
         { path: '/patients', label: 'Пациенты', icon: <Users className="h-5 w-5" />, badge: 0 },
+        { path: '/upload', label: 'Импорт архива', icon: <UploadCloud className="h-5 w-5" />, badge: 0 },
+        { path: '/notifications', label: 'Уведомления', icon: <Bell className="h-5 w-5" />, badge: clinicalUnread },
+        { path: '/doctor-role-reviews', label: 'Заявки врачей', icon: <UserCheck className="h-5 w-5" />, badge: pendingRoleApplicationCount },
       ],
       admin: [
         { path: '/doctor-role-reviews', label: 'Заявки врачей', icon: <UserCheck className="h-5 w-5" />, badge: pendingRoleApplicationCount },
@@ -154,7 +178,7 @@ export const DashboardLayout = () => {
       ],
     }
 
-    return [...commonLinks, ...(user?.role ? roleLinks[user.role] ?? [] : [])]
+    return [commonLinks[0], ...(user?.role ? roleLinks[user.role] ?? [] : []), commonLinks[1]]
   }
 
   const breadcrumbs = getBreadcrumbs(location.pathname)
@@ -216,7 +240,9 @@ export const DashboardLayout = () => {
         </div>
       )}
 
-      <nav className="mt-4 flex-1 space-y-0.5 overflow-y-auto px-3 scrollbar-thin">
+      <nav aria-label="Основная навигация" onClick={event => {
+        if ((event.target as HTMLElement).closest('a')) setIsMobileMenuOpen(false)
+      }} className="mt-4 flex-1 space-y-0.5 overflow-y-auto px-3 scrollbar-thin">
         <p className={`mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-gray-400 ${collapsed ? 'text-center' : ''}`}>
           {!collapsed && 'Меню'}
         </p>
@@ -224,6 +250,8 @@ export const DashboardLayout = () => {
           <Link
             key={link.path}
             to={link.path}
+            aria-label={link.label}
+            aria-current={isActive(link.path) ? 'page' : undefined}
             className={`group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150 ${
               isActive(link.path)
                 ? 'bg-primary-50 text-primary-700'
@@ -276,6 +304,7 @@ export const DashboardLayout = () => {
 
   return (
     <div className="flex min-h-screen bg-gray-50">
+      <a href="#main-content" className="sr-only z-50 rounded-xl bg-white p-3 text-primary-700 focus:not-sr-only focus:fixed focus:left-4 focus:top-4">Перейти к содержимому</a>
       {/* Desktop Sidebar */}
       <aside
         className={`fixed inset-y-0 left-0 z-30 hidden border-r border-gray-200 bg-white shadow-sidebar transition-all duration-300 lg:flex lg:flex-col ${
@@ -284,6 +313,7 @@ export const DashboardLayout = () => {
       >
         <SidebarContent collapsed={isCollapsed} />
         <button
+          aria-label={isCollapsed ? 'Развернуть меню' : 'Свернуть меню'}
           onClick={() => setIsCollapsed((c) => !c)}
           className="absolute -right-3 top-20 flex h-6 w-6 items-center justify-center rounded-full border border-gray-200 bg-white shadow-xs transition-colors hover:bg-gray-50"
         >
@@ -315,6 +345,7 @@ export const DashboardLayout = () => {
               className="relative flex h-full w-72 flex-col bg-white shadow-xl"
             >
               <button
+                aria-label="Закрыть меню"
                 onClick={() => setIsMobileMenuOpen(false)}
                 className="absolute right-4 top-4 rounded-md p-1 text-gray-400 hover:bg-gray-100"
               >
@@ -327,11 +358,14 @@ export const DashboardLayout = () => {
       </AnimatePresence>
 
       {/* Main content */}
-      <div className={`flex flex-1 flex-col transition-all duration-300 ${isCollapsed ? 'lg:pl-16' : 'lg:pl-64'}`}>
+      <div className={`flex min-w-0 flex-1 flex-col transition-all duration-300 ${isCollapsed ? 'lg:pl-16' : 'lg:pl-64'}`}>
         {/* Top Header */}
         <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-gray-200 bg-white px-4 shadow-xs sm:px-6">
           <div className="flex items-center gap-4">
             <button
+              ref={mobileMenuButton}
+              aria-label="Открыть меню"
+              aria-expanded={isMobileMenuOpen}
               onClick={() => setIsMobileMenuOpen(true)}
               className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 lg:hidden"
             >
@@ -339,7 +373,7 @@ export const DashboardLayout = () => {
             </button>
 
             {/* Breadcrumbs */}
-            <nav className="hidden items-center gap-1.5 text-sm sm:flex">
+            <nav aria-label="Путь к странице" className="hidden items-center gap-1.5 text-sm sm:flex">
               {breadcrumbs.map((crumb, i) => (
                 <span key={crumb.path} className="flex items-center gap-1.5">
                   {i > 0 && <span className="text-gray-300">/</span>}
@@ -355,12 +389,14 @@ export const DashboardLayout = () => {
             </nav>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div ref={popovers} className="flex items-center gap-2">
             {/* Notifications */}
             <div className="relative">
               <button
                 type="button"
-                aria-label={notifications.length > 0 ? `Уведомления: ${notifications.length}` : 'Уведомления'}
+                ref={notificationButton}
+                aria-expanded={isNotificationsOpen}
+                aria-label={notifications.length + clinicalUnread > 0 ? `Уведомления: ${notifications.length + clinicalUnread}` : 'Уведомления'}
                 onClick={() => {
                   setIsNotificationsOpen((o) => !o)
                   setIsProfileOpen(false)
@@ -368,7 +404,7 @@ export const DashboardLayout = () => {
                 className="relative rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
               >
                 <Bell className="h-5 w-5" />
-                {notifications.length > 0 && (
+                {notifications.length + clinicalUnread > 0 && (
                   <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-error-500 ring-2 ring-white" />
                 )}
               </button>
@@ -385,9 +421,13 @@ export const DashboardLayout = () => {
                       <h3 className="text-sm font-semibold text-gray-900">Уведомления</h3>
                     </div>
                     <div className="max-h-64 overflow-y-auto scrollbar-thin">
-                      {notifications.length === 0 && (
+                      {notifications.length === 0 && clinicalUnread === 0 && (
                         <p className="px-4 py-6 text-center text-sm text-gray-500">Новых уведомлений нет</p>
                       )}
+                      {user?.role === 'doctor' && <Link to="/notifications" onClick={() => setIsNotificationsOpen(false)}
+                        className="block border-b border-gray-100 bg-primary-50 px-4 py-3 text-sm font-semibold text-primary-700">
+                        Клинические случаи · непрочитанных: {clinicalUnread}
+                      </Link>}
                       {notifications.map((notification) => (
                         <Link
                           key={notification.id}
@@ -414,6 +454,9 @@ export const DashboardLayout = () => {
             {/* Profile */}
             <div className="relative">
               <button
+                ref={profileButton}
+                aria-label="Меню аккаунта"
+                aria-expanded={isProfileOpen}
                 onClick={() => {
                   setIsProfileOpen((o) => !o)
                   setIsNotificationsOpen(false)
@@ -464,7 +507,7 @@ export const DashboardLayout = () => {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 overflow-auto">
+        <main id="main-content" tabIndex={-1} className="flex-1">
           <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
             <Outlet />
           </div>
@@ -474,40 +517,6 @@ export const DashboardLayout = () => {
   )
 }
 
-function getBreadcrumbs(pathname: string): Array<{ label: string; path: string }> {
-  const map: Record<string, string> = {
-    '/dashboard': 'Dashboard',
-    '/dashboard/doctor': 'Кабинет врача',
-    '/dashboard/patient': 'Личный кабинет',
-    '/dashboard/admin': 'Панель администратора',
-    '/patients': 'Пациенты',
-    '/share-requests': 'Sharing записей',
-    '/doctor-role-request': 'Заявка на роль врача',
-    '/doctor-role-reviews': 'Проверка заявок врачей',
-    '/upload': 'Импорт архива',
-    '/admin': 'Управление системой',
-    '/settings': 'Настройки аккаунта',
-  }
-
-  const crumbs: Array<{ label: string; path: string }> = [
-    { label: 'Главная', path: '/dashboard' },
-  ]
-
-  const parts = pathname.split('/').filter(Boolean)
-  let current = ''
-  for (const part of parts) {
-    current += '/' + part
-    const label = map[current]
-    if (label && current !== '/dashboard') {
-      crumbs.push({ label, path: current })
-    } else if (!label && current !== '/dashboard') {
-      crumbs.push({ label: part, path: current })
-    }
-  }
-
-  if (crumbs.length === 1) return crumbs
-  return crumbs
-}
 
 function isExpired(expiresAt: string | null): boolean {
   return Boolean(expiresAt && new Date(expiresAt).getTime() <= Date.now())

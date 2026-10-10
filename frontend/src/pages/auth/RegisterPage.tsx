@@ -205,7 +205,7 @@ const RegisterPage = () => {
             type="button"
             onClick={() => setShowPassword((s) => !s)}
             className="absolute right-3 top-[34px] text-gray-400 hover:text-gray-600"
-            tabIndex={-1}
+            aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
           >
             {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
           </button>
@@ -226,7 +226,7 @@ const RegisterPage = () => {
             type="button"
             onClick={() => setShowConfirm((s) => !s)}
             className="absolute right-3 top-[34px] text-gray-400 hover:text-gray-600"
-            tabIndex={-1}
+            aria-label={showConfirm ? 'Скрыть повтор пароля' : 'Показать повтор пароля'}
           >
             {showConfirm ? <EyeOff size={15} /> : <Eye size={15} />}
           </button>
@@ -237,10 +237,8 @@ const RegisterPage = () => {
         </Button>
       </form>
 
-      <p className="mt-4 text-center text-xs text-gray-400">
-        Регистрируясь, вы соглашаетесь с{' '}
-        <a href="#" className="text-primary-600 hover:underline">правилами</a> и{' '}
-        <a href="#" className="text-primary-600 hover:underline">политикой конфиденциальности</a>.
+      <p className="mt-4 text-center text-xs leading-relaxed text-gray-500">
+        После регистрации вы сможете подать заявку на роль врача. Для совместных разборов потребуется её подтверждение.
       </p>
     </div>
   )
