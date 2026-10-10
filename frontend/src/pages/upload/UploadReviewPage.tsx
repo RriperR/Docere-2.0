@@ -1,3 +1,4 @@
+import axios from 'axios'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
@@ -70,6 +71,7 @@ const UploadReviewPage: React.FC = () => {
   } = usePatientsStore()
   const [decisions, setDecisions] = useState<PatientDecisionState[]>([])
   const [formError, setFormError] = useState('')
+  const [serverDuplicates, setServerDuplicates] = useState<string[]>([])
   const [selectedGroupsByPatient, setSelectedGroupsByPatient] = useState<Record<string, string[]>>({})
   const [bulkPatchByPatient, setBulkPatchByPatient] = useState<Record<string, BulkPatchState>>({})
   const [initializedJobId, setInitializedJobId] = useState<string | null>(null)
@@ -161,7 +163,10 @@ const UploadReviewPage: React.FC = () => {
       || (decision.action === 'create' && !decision.fio.trim())
     return {
       ready: totals.ready + summary.ready,
-      unresolved: totals.unresolved + summary.needsDate + summary.needsDuplicate + (hasPatientIssue ? 1 : 0),
+      unresolved: totals.unresolved + summary.needsDate + summary.needsDuplicate + (hasPatientIssue ? 1 : 0)
+        + (decision?.record_groups.filter(group => serverDuplicates.includes(group.group_id)
+          && group.action === 'create' && !group.allow_possible_duplicate
+          && !getRelevantDuplicateCandidates(patient.record_groups.find(source => source.group_id === group.group_id), decision).length).length ?? 0),
       skipped: totals.skipped + summary.skipped,
     }
   }, { ready: 0, unresolved: 0, skipped: 0 })
@@ -174,6 +179,11 @@ const UploadReviewPage: React.FC = () => {
       setFormError(validationError)
       return
     }
+    if (decisions.some(patient => patient.action !== 'skip' && patient.record_groups.some(group =>
+      serverDuplicates.includes(group.group_id) && group.action === 'create' && !group.allow_possible_duplicate))) {
+      setFormError('Решите, импортировать найденный сервером дубль или пропустить запись.')
+      return
+    }
     const selectedPatients = decisions.filter((decision) => decision.action !== 'skip').length
     const selectedRecords = decisions.reduce(
       (count, decision) => count + decision.record_groups.filter((group) => group.action === 'create').length,
@@ -181,8 +191,20 @@ const UploadReviewPage: React.FC = () => {
     )
     if (!window.confirm(`Подтвердить импорт: пациентов — ${selectedPatients}, записей — ${selectedRecords}?`)) return
     setFormError('')
-    await resolveJob(jobId, decisions.map(toPayload))
-    navigate(`/upload/status/${jobId}`)
+    try {
+      await resolveJob(jobId, decisions.map(toPayload))
+      navigate(`/upload/status/${jobId}`)
+    } catch (cause: unknown) {
+      const detail: unknown = axios.isAxiosError(cause) ? cause.response?.data?.detail : null
+      if (detail && typeof detail === 'object' && 'code' in detail && detail.code === 'duplicate_confirmation_required'
+        && 'group_id' in detail && typeof detail.group_id === 'string') {
+        const groupId = detail.group_id
+        setServerDuplicates(current => [...new Set([...current, groupId])])
+        setFormError('Сервер нашёл похожую запись после изменения данных. Проверьте отмеченную группу.')
+        document.getElementById(`review-group-${groupId}`)?.scrollIntoView?.({ block: 'center' })
+      }
+      // Store показывает остальные ошибки. Решения и текст формы остаются на месте.
+    }
   }
 
   return (
@@ -408,7 +430,7 @@ const UploadReviewPage: React.FC = () => {
                   const sourceGroup = patientCandidate.record_groups.find((item) => item.group_id === group.group_id)
                   const needsDate = group.action === 'create' && !group.event_date
                   const duplicateCandidates = getRelevantDuplicateCandidates(sourceGroup, decision)
-                  const hasDuplicates = duplicateCandidates.length > 0
+                  const hasDuplicates = duplicateCandidates.length > 0 || serverDuplicates.includes(group.group_id)
                   const needsDuplicateConfirmation = hasDuplicates && group.action === 'create' && !group.allow_possible_duplicate
                   const isSelected = getSelectedGroupIds(decision.candidate_id).includes(group.group_id)
                   return (
@@ -451,9 +473,11 @@ const UploadReviewPage: React.FC = () => {
                         </div>
                       </div>
 
-                      {duplicateCandidates.length > 0 && (
+                      {hasDuplicates && (
                         <div className="mb-3 rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-800">
                           <p className="font-medium">Похожие записи уже есть у пациента</p>
+                          {serverDuplicates.includes(group.group_id) && <p className="mt-2">Сервер обнаружил дубль при окончательной проверке. Сравните запись с историей перед подтверждением.</p>}
+                          {serverDuplicates.includes(group.group_id) && decision.patient_passport_id && <Link className="font-medium underline" to={`/patients/${decision.patient_passport_id}`} target="_blank" rel="noopener noreferrer">Проверить историю пациента в новой вкладке</Link>}
                           <div className="mt-2 space-y-1">
                             {duplicateCandidates.map((candidate) => (
                               <div key={candidate.record_id} className="flex flex-wrap items-center gap-2 text-xs">
