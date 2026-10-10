@@ -6,7 +6,7 @@ from typing import cast, Protocol
 from uuid import UUID
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.application.use_cases.clinical_cases.context import CaseContext
 from app.application.use_cases.clinical_cases.management import ClinicalCasesUseCase
@@ -17,7 +17,7 @@ from app.infrastructure.adapters.repositories.medical_records.sqlalchemy_medical
 )
 from app.infrastructure.db.models._time import utc_now
 from app.infrastructure.db.models.auth.user import UserRole, UserRow, UserStatus
-from app.infrastructure.db.models.clinical_cases import CaseEventRow, CaseNotificationRow
+from app.infrastructure.db.models.clinical_cases import CaseEventRow, CaseNotificationRow, CaseWorkDraftRow
 from app.infrastructure.db.session import get_session_factory
 
 logger = structlog.get_logger(__name__)
@@ -102,8 +102,9 @@ def enqueue_case_events(*, limit: int = 100) -> int:
 
 
 def cleanup_invalid_participants() -> None:
-    """Восстановить инвариант участия после смены роли вне обычного сценария блокировки."""
+    """Отозвать неактуальное участие и удалить просроченные личные черновики."""
     with get_session_factory()() as session:
+        session.execute(delete(CaseWorkDraftRow).where(CaseWorkDraftRow.expires_at <= utc_now()))
         repository = SqlAlchemyCaseRepository(session)
         uc = ClinicalCasesUseCase(CaseContext(repository, SqlAlchemyMedicalRecordRepositoryAdapter(session)))
         for user_id in repository.inactive_users(50):

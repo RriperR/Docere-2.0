@@ -110,6 +110,7 @@ class CaseDiscussionUseCase:
             subject_id=message.id,
             recipients=recipients,
         )
+        self.context.repository.consume_work_draft(case.id, user_id, 'message')
         return message
 
     def request_opinion(
@@ -140,6 +141,7 @@ class CaseDiscussionUseCase:
         opinion = OpinionRequest(uuid4(), case.id, user_id, assignee_id, question, record_id=record_id)
         self.context.repository.save_opinion(opinion)
         self.context.changed(case, user_id, 'opinion_requested', opinion.id, [assignee_id])
+        self.context.repository.consume_work_draft(case.id, user_id, 'opinion')
         return opinion
 
     def cancel_opinion(self, case_id: UUID, user_id: UUID, opinion_id: UUID) -> OpinionRequest:

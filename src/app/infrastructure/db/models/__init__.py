@@ -11,6 +11,7 @@ from app.infrastructure.db.models.clinical_cases import (
     CaseMemberRow,
     CaseMessageRow,
     CaseNotificationRow,
+    CaseWorkDraftRow,
     ClinicalCaseRow,
     OpinionRequestRow,
 )
@@ -26,6 +27,7 @@ from app.infrastructure.db.models.medical_records.user_record_link import UserRe
 __all__ = [
     'CaseNotificationRow',
     'CaseDiscussionReadRow',
+    'CaseWorkDraftRow',
     'CaseConclusionRow',
     'CaseMessageRow',
     'OpinionRequestRow',

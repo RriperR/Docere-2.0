@@ -83,6 +83,7 @@ class CaseConclusionsUseCase:
         )
         case.version += 1
         self.context.changed(case, user_id, 'conclusion_updated', result.id, self.context.participants(case))
+        self.context.repository.consume_work_draft(case.id, user_id, 'conclusion')
         return result
 
     def closure_preview(self, case_id: UUID, user_id: UUID) -> ClosurePreview:

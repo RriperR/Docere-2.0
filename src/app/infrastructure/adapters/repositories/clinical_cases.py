@@ -12,6 +12,7 @@ from app.application.use_cases.clinical_cases.dtos import (
     MaterialSummary,
     PageDTO,
 )
+from app.domain.case_drafts import DraftKind
 from app.domain.clinical_cases import CaseConclusion, CaseError, CaseMember, CaseMessage, ClinicalCase, OpinionRequest
 from app.domain.entities.medical_record import MedicalRecordStatus, MedicalRecordType
 from app.infrastructure.adapters.repositories.share_requests.sqlalchemy_share_request_repository import (
@@ -25,6 +26,7 @@ from app.infrastructure.db.models.clinical_cases import (
     CaseMaterialRow,
     CaseMemberRow,
     CaseMessageRow,
+    CaseWorkDraftRow,
     ClinicalCaseRow,
     OpinionRequestRow,
 )
@@ -49,6 +51,20 @@ class SqlAlchemyCaseRepository:
             session: SQLAlchemy-сессия текущей транзакции.
         """
         self.session = session
+
+    def consume_work_draft(self, case_id: UUID, user_id: UUID, kind: DraftKind) -> None:
+        """Очистить отправленный текст, сохранив версию для защиты другой вкладки.
+
+        Args:
+            case_id: Случай под блокировкой.
+            user_id: Автор опубликованного текста.
+            kind: Вид личной формы.
+        """
+        row = self.session.get(CaseWorkDraftRow, (case_id, user_id, kind))
+        if row is not None:
+            row.content = {}
+            row.version += 1
+            self.session.flush()
 
     def get(self, case_id: UUID, *, lock: bool = False) -> ClinicalCase | None:
         """Прочитать агрегат с блокировкой строки для сериализации изменений.

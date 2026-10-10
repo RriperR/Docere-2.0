@@ -12,7 +12,9 @@ from app.application.use_cases.clinical_cases.context import CaseContext
 from app.application.use_cases.clinical_cases.discussion import CaseDiscussionUseCase
 from app.application.use_cases.clinical_cases.management import ClinicalCasesUseCase
 from app.application.use_cases.clinical_cases.materials import CaseMaterialsUseCase
+from app.application.use_cases.clinical_cases.work_drafts import CaseWorkDraftsUseCase
 from app.domain.clinical_cases import CaseError
+from app.infrastructure.adapters.repositories.case_drafts import SqlAlchemyCaseDraftRepository
 from app.infrastructure.adapters.repositories.clinical_cases import SqlAlchemyCaseRepository
 from app.infrastructure.adapters.repositories.medical_records.sqlalchemy_medical_record_repository import (
     SqlAlchemyMedicalRecordRepositoryAdapter,
@@ -78,6 +80,21 @@ def get_materials_use_case(session: Session = db_session_dependency) -> CaseMate
         Сценарии материалов с полной проверкой контекста случая.
     """
     return CaseMaterialsUseCase(get_case_context(session))
+
+
+def get_work_drafts(session: Session = db_session_dependency) -> CaseWorkDraftsUseCase:
+    """Собрать сценарий формы в текущей транзакции.
+
+    Args:
+        session: Сессия HTTP-запроса.
+
+    Returns:
+        Сценарий с общей политикой случая и личным хранилищем.
+    """
+    return CaseWorkDraftsUseCase(get_case_context(session), SqlAlchemyCaseDraftRepository(session))
+
+
+drafts_dependency = Depends(get_work_drafts)
 
 
 cases_dependency = Depends(get_cases_use_case)

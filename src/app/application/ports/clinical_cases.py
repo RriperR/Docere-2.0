@@ -10,11 +10,22 @@ from app.application.use_cases.clinical_cases.dtos import (
     MaterialSummary,
     PageDTO,
 )
+from app.domain.case_drafts import DraftKind
 from app.domain.clinical_cases import CaseConclusion, CaseMessage, ClinicalCase, OpinionRequest
 
 
 class CaseRepositoryPort(Protocol):
     """Транзакционное хранилище клинических случаев."""
+
+    def consume_work_draft(self, case_id: UUID, user_id: UUID, kind: DraftKind) -> None:
+        """Очистить отправленную личную форму в той же транзакции.
+
+        Args:
+            case_id: Клинический случай под блокировкой.
+            user_id: Автор успешно опубликованного текста.
+            kind: Вид формы: сообщение, запрос мнения или итог.
+        """
+        ...
 
     def get(self, case_id: UUID, *, lock: bool = False) -> ClinicalCase | None:
         """Получить агрегат из хранилища.

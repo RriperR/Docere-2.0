@@ -143,3 +143,16 @@ class CaseDiscussionReadRow(Base):
     case_id: Mapped[UUID] = mapped_column(ForeignKey('clinical_cases.id'), primary_key=True)
     user_id: Mapped[UUID] = mapped_column(ForeignKey('users.id'), primary_key=True)
     sequence: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class CaseWorkDraftRow(Base):
+    """Личные формы с ограниченным сроком хранения и собственной версией."""
+
+    __tablename__ = 'case_work_drafts'
+    case_id: Mapped[UUID] = mapped_column(ForeignKey('clinical_cases.id'), primary_key=True)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey('users.id'), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16), primary_key=True)
+    version: Mapped[int] = mapped_column(Integer)
+    content: Mapped[dict[str, object]] = mapped_column(JSON().with_variant(JSONB(), 'postgresql'))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)

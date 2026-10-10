@@ -28,6 +28,7 @@ from app.presentation.rest.public.v1.cases.schemas import (
     InviteSchema,
     MaterialsSchema,
 )
+from app.presentation.rest.public.v1.cases.work_drafts import router as work_drafts_router
 from app.presentation.rest.public.v1.records.dependencies import (
     current_authenticated_user_dependency,
     db_session_dependency,
@@ -279,6 +280,7 @@ def leave(
         return uc.membership(case_id, actor.id, 'leave')
 
 
+router.include_router(work_drafts_router)
 router.include_router(materials_router)
 router.include_router(discussion_router)
 router.include_router(conclusions_router)
