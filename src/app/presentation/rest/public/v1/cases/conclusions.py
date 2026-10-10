@@ -10,6 +10,7 @@ from app.application.use_cases.clinical_cases.conclusions import CaseConclusions
 from app.application.use_cases.clinical_cases.dtos import (
     CaseView,
     ClosurePreview,
+    ConclusionView,
     PageDTO,
     PublicationPreview,
     PublicationResult,
@@ -50,7 +51,7 @@ def conclusions(
     actor: AuthenticatedUserDTO = current_authenticated_user_dependency,
     uc: CaseConclusionsUseCase = conclusions_dependency,
     session: Session = db_session_dependency,
-) -> PageDTO[CaseConclusion]:
+) -> PageDTO[ConclusionView]:
     """Получить версии итога с пагинацией.
 
     Args:

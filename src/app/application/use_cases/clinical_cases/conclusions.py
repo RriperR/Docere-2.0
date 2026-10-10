@@ -1,5 +1,6 @@
 """Версии итога, закрытие и явная публикация в медицинской истории."""
 
+from dataclasses import asdict
 from datetime import date
 from uuid import UUID, uuid4
 
@@ -8,6 +9,8 @@ from app.application.use_cases.clinical_cases.context import CaseContext
 from app.application.use_cases.clinical_cases.dtos import (
     CaseView,
     ClosurePreview,
+    ConclusionView,
+    MaterialSummary,
     PageDTO,
     PublicationPreview,
     PublicationResult,
@@ -28,7 +31,7 @@ class CaseConclusionsUseCase:
         """
         self.context = context
 
-    def list_conclusions(self, case_id: UUID, user_id: UUID, offset: int, limit: int) -> PageDTO[CaseConclusion]:
+    def list_conclusions(self, case_id: UUID, user_id: UUID, offset: int, limit: int) -> PageDTO[ConclusionView]:
         """Прочитать версии только при полном доступе к клиническому контексту.
 
         Args:
@@ -39,10 +42,31 @@ class CaseConclusionsUseCase:
 
         Returns:
             Страница версий итога доступного случая, начиная с последней.
+
+        Raises:
+            CaseError: При утрате доступа к источнику или контексту случая.
         """
         self.context.require_context(self.context.load(case_id, user_id), user_id)
         items, total = self.context.repository.conclusions(case_id, offset, limit)
-        return PageDTO(items, total)
+        views = []
+        for item in items:
+            sources = []
+            for record_id in item.source_ids:
+                record = self.context.records.get_accessible_record(record_id, user_id)
+                if record is None:
+                    raise CaseError('Источник недоступен', 403)
+                sources.append(
+                    MaterialSummary(
+                        record.record.id,
+                        record.record.title,
+                        None,
+                        record.record.event_date,
+                        str(record.record.record_type),
+                        str(record.record.status),
+                    )
+                )
+            views.append(ConclusionView(**asdict(item), sources=sources))
+        return PageDTO(views, total)
 
     def save_conclusion(
         self,

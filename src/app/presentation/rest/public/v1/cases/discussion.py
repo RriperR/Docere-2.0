@@ -241,3 +241,27 @@ def message(
     """
     with case_transaction(session):
         return uc.get_message(case_id, actor.id, message_id)
+
+
+@router.get('/{case_id}/opinions/{opinion_id}', response_model=OpinionResponse)
+def opinion(
+    case_id: UUID,
+    opinion_id: UUID,
+    actor: AuthenticatedUserDTO = current_authenticated_user_dependency,
+    uc: CaseDiscussionUseCase = discussion_dependency,
+    session: Session = db_session_dependency,
+) -> OpinionRequest:
+    """Открыть запрос по защищённой прямой ссылке.
+
+    Args:
+        case_id: Случай, которому принадлежит запрос.
+        opinion_id: Целевой запрос.
+        actor: Аутентифицированный пользователь.
+        uc: Прикладной сценарий обсуждения.
+        session: Текущая транзакция.
+
+    Returns:
+        Запрос после проверки полного доступа.
+    """
+    with case_transaction(session):
+        return uc.get_opinion(case_id, actor.id, opinion_id)

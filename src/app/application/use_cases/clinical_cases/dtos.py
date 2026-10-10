@@ -1,10 +1,10 @@
 """Типизированные результаты сценариев и запросов клинического разбора."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from uuid import UUID
 
-from app.domain.clinical_cases import CaseMember, CaseMessage, ClinicalCase
+from app.domain.clinical_cases import CaseConclusion, CaseMember, CaseMessage, ClinicalCase
 
 
 @dataclass(frozen=True)
@@ -111,3 +111,10 @@ class MaterialFilters:
     status: str | None = None
     date_from: date | None = None
     date_to: date | None = None
+
+
+@dataclass(frozen=True)
+class ConclusionView(CaseConclusion):
+    """Версия итога с защищёнными отображаемыми сведениями об источниках."""
+
+    sources: list[MaterialSummary] = field(default_factory=list)

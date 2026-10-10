@@ -23,6 +23,7 @@ function CaseWorkspace({ id }: { id: string }) {
   const section = ['review', 'conclusion', 'members'].includes(params.get('tab') ?? '') ? params.get('tab')! : 'review'
   const setSection = (value: string) => setParams(previous => { const next = new URLSearchParams(previous); next.set('tab', value); return next })
   const [mobilePane, setMobilePane] = useState('materials')
+  useEffect(() => { if (params.get('opinion')) setMobilePane('discussion') }, [params])
   const [query, setQuery] = useState('')
   const recordId = params.get('record')
   const document = recordId ? { recordId, attachmentId: params.get('attachment') } : null

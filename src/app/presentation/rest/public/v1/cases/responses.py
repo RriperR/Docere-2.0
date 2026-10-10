@@ -145,6 +145,7 @@ class ConclusionResponse(ResponseSchema):
     findings: str
     next_actions: str
     source_ids: list[UUID]
+    sources: list[MaterialResponse] = []
     created_at: datetime | None
 
 

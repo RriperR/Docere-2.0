@@ -236,3 +236,23 @@ class CaseDiscussionUseCase:
         case = self.context.load(case_id, user_id, lock=True)
         self.context.require_context(case, user_id)
         self.context.repository.mark_discussion_read(case.id, user_id, min(sequence, case.sequence))
+
+    def get_opinion(self, case_id: UUID, user_id: UUID, opinion_id: UUID) -> OpinionRequest:
+        """Получить адресный запрос вне зависимости от страницы списка.
+
+        Args:
+            case_id: Разбор, которому должен принадлежать запрос.
+            user_id: Действующий участник.
+            opinion_id: Идентификатор запроса.
+
+        Returns:
+            Запрос доступного случая.
+
+        Raises:
+            CaseError: При недоступном контексте или запросе другого случая.
+        """
+        self.context.require_context(self.context.load(case_id, user_id), user_id)
+        opinion = self.context.repository.opinion(opinion_id)
+        if opinion is None or opinion.case_id != case_id:
+            raise CaseError('Запрос не найден', 404)
+        return opinion

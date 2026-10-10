@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import type { MaterialReference } from './CaseDocumentPanel'
 import CaseMaterialPicker from './CaseMaterialPicker'
 import api from '../../api/api'
@@ -30,6 +31,21 @@ export default function CaseDiscussion({ c, userId, onChange, onOpen, reference 
   reference?: MaterialReference | null
   onOpen?: (recordId: string, attachmentId: string | null) => void
 }) {
+  const [params] = useSearchParams()
+  const targetOpinion = params.get('opinion')
+  const [linkedOpinion, setLinkedOpinion] = useState<Opinion | null>(null)
+  useEffect(() => {
+    setLinkedOpinion(null)
+    if (!targetOpinion) return
+    const controller = new AbortController()
+    void api.get<Opinion>(`/cases/${c.id}/opinions/${targetOpinion}`, { signal: controller.signal }).then(({ data }) => {
+      if (!controller.signal.aborted) setLinkedOpinion(data)
+    }).catch(e => { if (!controller.signal.aborted) setError(caseError(e)) })
+    return () => controller.abort()
+  }, [c.id, c.sequence, targetOpinion])
+  useEffect(() => {
+    if (linkedOpinion) document.getElementById(`opinion-${linkedOpinion.id}`)?.scrollIntoView({ block: 'center' })
+  }, [linkedOpinion])
   const formId = useId()
   const [messages, setMessages] = useState<Message[]>([])
   const [opinions, setOpinions] = useState<Opinion[]>([])
@@ -154,7 +170,7 @@ export default function CaseDiscussion({ c, userId, onChange, onOpen, reference 
       </div>}
     </section>
     <section id="opinions" className={cardClass}><h2 className="text-lg font-semibold">Запросы мнения</h2>
-      {opinions.map(o => <article key={o.id} className="rounded-lg bg-gray-50 p-3 space-y-2">
+      {[...(linkedOpinion && !opinions.some(item => item.id === linkedOpinion.id) ? [linkedOpinion] : []), ...opinions].map(o => <article id={`opinion-${o.id}`} key={o.id} className={`rounded-lg bg-gray-50 p-3 space-y-2 ${o.id === targetOpinion ? 'ring-2 ring-primary-300' : ''}`}>
         <p>{name(o.requester_id)} → {name(o.assignee_id)} · {opinionLabel[o.status] ?? 'Запрос мнения'}</p><p>{o.question}</p>
         {o.reason && <p className="text-sm">Причина отмены: {o.reason === 'assignee_left' ? 'Адресат вышел из случая' : o.reason}</p>}
         {o.record_id && <button onClick={() => onOpen?.(o.record_id!, null)}>Открыть материал</button>}
