@@ -29,6 +29,7 @@ limit_query = Query(default=20, ge=1, le=100)
 
 @router.get('', response_model=PageResponse[NotificationResponse])
 def notifications(
+    unread_only: bool = False,
     offset: int = offset_query,
     limit: int = limit_query,
     actor: AuthenticatedUserDTO = current_authenticated_user_dependency,
@@ -38,6 +39,7 @@ def notifications(
     """Получить только собственные уведомления с актуальным доступом к цели.
 
     Args:
+        unread_only: Вернуть только непрочитанные события.
         offset: Число элементов, пропускаемых перед страницей.
         limit: Максимальное число элементов страницы.
         actor: Аутентифицированный пользователь, выполняющий действие.
@@ -48,7 +50,7 @@ def notifications(
         Страница собственных уведомлений с повторно проверенным доступом к цели.
     """
     with case_transaction(session):
-        return uc.list_notifications(actor.id, offset, limit)
+        return uc.list_notifications(actor.id, offset, limit, unread_only)
 
 
 @router.get('/count', response_model=NotificationCountResponse)

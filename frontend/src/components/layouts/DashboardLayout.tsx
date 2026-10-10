@@ -20,6 +20,8 @@ import {
   X,
 } from 'lucide-react'
 
+import api from '../../api/api'
+import { useInboxStore } from '../../stores/inboxStore'
 import { getBreadcrumbs } from '../../utils/navigation'
 import { useNotificationsStore } from '../../stores/notificationsStore'
 import { watchChanges } from '../../api/caseUpdates'
@@ -62,6 +64,24 @@ export const DashboardLayout = () => {
   const { inbox, fetchInbox: fetchShareInbox } = useShareRequestsStore()
   const roleApplicationInbox = useDoctorRoleApplicationsStore((state) => state.inbox)
   const fetchRoleApplicationInbox = useDoctorRoleApplicationsStore((state) => state.fetchInbox)
+  const inboxCounts = useInboxStore(state => state.counts)
+  const inboxError = useInboxStore(state => state.error)
+  const refreshInbox = useInboxStore(state => state.refresh)
+  const resetInbox = useInboxStore(state => state.reset)
+  useEffect(() => {
+    resetInbox()
+    if (user?.role !== 'doctor') return
+    const refresh = () => { if (document.visibilityState === 'visible') void refreshInbox() }
+    refresh()
+    const timer = window.setInterval(refresh, 30_000)
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    const interceptor = api.interceptors.response.use(response => {
+      if (['post', 'put', 'delete', 'patch'].includes(response.config.method ?? '') && !response.config.url?.includes('work-drafts')) refresh()
+      return response
+    })
+    return () => { clearInterval(timer); window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); api.interceptors.response.eject(interceptor); resetInbox() }
+  }, [user?.id, user?.role, refreshInbox, resetInbox])
   const clinicalUnread = useNotificationsStore(s => s.unread)
   const refreshNotifications = useNotificationsStore(s => s.refresh)
   const resetNotifications = useNotificationsStore(s => s.reset)
@@ -69,9 +89,9 @@ export const DashboardLayout = () => {
     resetNotifications()
     if (user?.role !== 'doctor') return
     const controller = new AbortController()
-    void watchChanges('/notifications/events', controller.signal, refreshNotifications, async () => { resetNotifications(); await refreshUser() })
+    void watchChanges('/notifications/events', controller.signal, async () => { await Promise.all([refreshNotifications(), refreshInbox()]) }, async () => { resetNotifications(); await refreshUser() })
     return () => controller.abort()
-  }, [user?.id, user?.role, refreshNotifications, resetNotifications, refreshUser])
+  }, [user?.id, user?.role, refreshNotifications, resetNotifications, refreshUser, refreshInbox])
   const location = useLocation()
   const navigate = useNavigate()
 
@@ -163,7 +183,7 @@ export const DashboardLayout = () => {
         { path: '/cases', label: 'Клинические случаи', icon: <MessagesSquare className="h-5 w-5" />, badge: 0 },
         { path: '/patients', label: 'Пациенты', icon: <Users className="h-5 w-5" />, badge: 0 },
         { path: '/upload', label: 'Импорт архива', icon: <UploadCloud className="h-5 w-5" />, badge: 0 },
-        { path: '/notifications', label: 'Уведомления', icon: <Bell className="h-5 w-5" />, badge: clinicalUnread },
+        { path: '/notifications', label: 'Входящие', icon: <Bell className="h-5 w-5" />, badge: clinicalUnread },
         { path: '/doctor-role-reviews', label: 'Заявки врачей', icon: <UserCheck className="h-5 w-5" />, badge: pendingRoleApplicationCount },
       ],
       admin: [
@@ -396,7 +416,7 @@ export const DashboardLayout = () => {
                 type="button"
                 ref={notificationButton}
                 aria-expanded={isNotificationsOpen}
-                aria-label={notifications.length + clinicalUnread > 0 ? `Уведомления: ${notifications.length + clinicalUnread}` : 'Уведомления'}
+                aria-label={user?.role === 'doctor' ? `Входящие: ${inboxCounts?.tasks ?? '—'} задач, ${inboxCounts?.unread_events ?? '—'} непрочитанных событий` : 'Уведомления'}
                 onClick={() => {
                   setIsNotificationsOpen((o) => !o)
                   setIsProfileOpen(false)
@@ -404,7 +424,7 @@ export const DashboardLayout = () => {
                 className="relative rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
               >
                 <Bell className="h-5 w-5" />
-                {notifications.length + clinicalUnread > 0 && (
+                {(notifications.length + clinicalUnread > 0 || !!inboxCounts?.tasks) && (
                   <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-error-500 ring-2 ring-white" />
                 )}
               </button>
@@ -424,11 +444,12 @@ export const DashboardLayout = () => {
                       {notifications.length === 0 && clinicalUnread === 0 && (
                         <p className="px-4 py-6 text-center text-sm text-gray-500">Новых уведомлений нет</p>
                       )}
+                      {user?.role === 'doctor' && <p className="px-4 py-2 text-sm">Требует действия: {inboxCounts?.tasks ?? '—'}<br />Непрочитанных событий: {inboxCounts?.unread_events ?? '—'}{inboxError && <span role="status" className="block text-warning-700">Не удалось обновить счётчики <button className="underline" onClick={() => void refreshInbox()}>Повторить</button></span>}</p>}
                       {user?.role === 'doctor' && <Link to="/notifications" onClick={() => setIsNotificationsOpen(false)}
                         className="block border-b border-gray-100 bg-primary-50 px-4 py-3 text-sm font-semibold text-primary-700">
                         Клинические случаи · непрочитанных: {clinicalUnread}
                       </Link>}
-                      {notifications.map((notification) => (
+                      {notifications.filter(notification => user?.role !== 'doctor' || !notification.id.startsWith('share-')).map((notification) => (
                         <Link
                           key={notification.id}
                           to={notification.path}

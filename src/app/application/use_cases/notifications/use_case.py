@@ -55,19 +55,22 @@ class NotificationsUseCase:
             available,
         )
 
-    def list_notifications(self, user_id: UUID, offset: int, limit: int) -> PageDTO[NotificationView]:
+    def list_notifications(
+        self, user_id: UUID, offset: int, limit: int, unread_only: bool = False
+    ) -> PageDTO[NotificationView]:
         """Прочитать страницу без копирования вопроса, пациента или документов.
 
         Args:
             user_id: Пользователь, для которого выполняется операция.
             offset: Число элементов, пропускаемых перед страницей.
             limit: Максимальное число элементов страницы.
+            unread_only: Вернуть только непрочитанные события.
 
         Returns:
             Страница собственных уведомлений и их общее число.
         """
         self.cases.require_doctor(user_id)
-        items, total = self.repository.list_notifications(user_id, offset, limit)
+        items, total = self.repository.list_notifications(user_id, offset, limit, unread_only)
         return PageDTO([self.projection(item, user_id) for item in items], total)
 
     def count(self, user_id: UUID) -> NotificationCounts:

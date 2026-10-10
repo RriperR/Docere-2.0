@@ -27,13 +27,16 @@ class SqlAlchemyNotificationRepository:
         """
         self.session = session
 
-    def list_notifications(self, user_id: UUID, offset: int, limit: int) -> tuple[list[Notification], int]:
+    def list_notifications(
+        self, user_id: UUID, offset: int, limit: int, unread_only: bool = False
+    ) -> tuple[list[Notification], int]:
         """Выбрать только уведомления адресата.
 
         Args:
             user_id: Пользователь, для которого выполняется операция.
             offset: Число элементов, пропускаемых перед страницей.
             limit: Максимальное число элементов страницы.
+            unread_only: Вернуть только непрочитанные события.
 
         Returns:
             Страница собственных уведомлений и их общее число.
@@ -43,6 +46,8 @@ class SqlAlchemyNotificationRepository:
             .join(CaseEventRow, CaseEventRow.id == CaseNotificationRow.event_id)
             .where(CaseNotificationRow.recipient_id == user_id)
         )
+        if unread_only:
+            statement = statement.where(CaseNotificationRow.read_at.is_(None))
         total = self.session.scalar(select(func.count()).select_from(statement.subquery())) or 0
         rows = self.session.execute(
             statement.order_by(CaseNotificationRow.created_at.desc(), CaseNotificationRow.id)

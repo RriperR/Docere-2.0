@@ -9,13 +9,16 @@ from app.application.use_cases.notifications.dtos import AttentionTask, Notifica
 class NotificationRepositoryPort(Protocol):
     """Персистентность входящих без бизнес-правил в HTTP routers."""
 
-    def list_notifications(self, user_id: UUID, offset: int, limit: int) -> tuple[list[Notification], int]:
+    def list_notifications(
+        self, user_id: UUID, offset: int, limit: int, unread_only: bool = False
+    ) -> tuple[list[Notification], int]:
         """Получить страницу собственных уведомлений.
 
         Args:
             user_id: Пользователь, для которого выполняется операция.
             offset: Число элементов, пропускаемых перед страницей.
             limit: Максимальное число элементов страницы.
+            unread_only: Вернуть только непрочитанные события.
 
         Returns:
             Страница собственных уведомлений и их общее число.

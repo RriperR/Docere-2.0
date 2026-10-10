@@ -8,6 +8,7 @@ from app.presentation.rest.public.v1.auth.router import router as auth_router
 from app.presentation.rest.public.v1.cases.events import router as case_events_router
 from app.presentation.rest.public.v1.cases.router import router as cases_router
 from app.presentation.rest.public.v1.doctor_role_applications.router import router as doctor_role_applications_router
+from app.presentation.rest.public.v1.inbox.router import router as inbox_router
 from app.presentation.rest.public.v1.notifications.router import router as notifications_router
 from app.presentation.rest.public.v1.patients.router import router as patients_router
 from app.presentation.rest.public.v1.records.router import router as records_router
@@ -26,3 +27,5 @@ router.include_router(cases_router)
 
 router.include_router(notifications_router)
 router.include_router(case_events_router)
+
+router.include_router(inbox_router)

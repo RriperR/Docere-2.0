@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { format } from 'date-fns'
 import {
@@ -52,6 +52,8 @@ const ShareRequestsPage = () => {
     cancelRequest,
     revokeRequest,
   } = useShareRequestsStore()
+  const [params] = useSearchParams()
+  const target = params.get('request')
   const [tab, setTab] = useState<Tab>('inbox')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [searchQuery, setSearchQuery] = useState('')
@@ -197,7 +199,7 @@ const ShareRequestsPage = () => {
             transition={{ duration: 0.2 }}
             className="space-y-4"
           >
-            {requests.map((request) => (
+            {requests.filter(request => !target || request.id === target).map((request) => (
               <ShareRequestCard
                 key={request.id}
                 request={request}
