@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import api from '../../api/api'
 import { caseError } from '../../api/cases'
-import { inputClass } from './styles'
+import { inputClass, recordTypeLabel, recordStatusLabel } from './styles'
 
 interface Attachment { id: string; filename: string | null; mime_type: string; size_bytes: number }
 interface RecordDetail {
@@ -52,12 +52,13 @@ export default function CaseDocumentPanel({ caseId, recordId, attachmentId, onCl
       a.click(); URL.revokeObjectURL(objectUrl)
     } catch (e) { setError(caseError(e)); await onAccessLost() }
   }
-  return <aside role="dialog" aria-label="Материал случая" className="fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l bg-white p-5 shadow-xl md:w-3/5">
+  return <aside role="dialog" aria-label="Материал случая" className="flex min-w-0 flex-col rounded-2xl border border-primary-200 bg-white p-5 shadow-card">
     <div className="flex justify-between"><h2 className="text-xl font-semibold">{record?.title ?? 'Материал случая'}</h2>
       <button aria-label="Закрыть просмотр" onClick={onClose}>✕</button></div>
+    {!record && !error && <p role="status" className="py-4 text-sm text-gray-500">Загружаем материал…</p>}
     {error && <p role="alert" className="text-red-700">{error}</p>}
     <div className="mt-4 flex-1 overflow-auto space-y-3">
-      {record && <><p>{record.event_date} · {record.record_type} · {record.status}</p><p className="whitespace-pre-wrap">{record.clinical_summary}</p>
+      {record && <><p className="text-xs text-gray-500">{record.event_date} · {recordTypeLabel[record.record_type] ?? 'Медицинская запись'} · {recordStatusLabel[record.status] ?? 'Статус неизвестен'}</p><p className="whitespace-pre-wrap">{record.clinical_summary}</p>
         <button className="text-primary-700 underline" onClick={() => onReference({ recordId, attachmentId: null,
           label: record.title ?? 'Медицинская запись' })}>Сослаться на запись в сообщении</button>
         <label className="block">Вложение<select aria-label="Вложение" className={inputClass} value={selected} onChange={e => setSelected(e.target.value)}>
@@ -66,8 +67,8 @@ export default function CaseDocumentPanel({ caseId, recordId, attachmentId, onCl
           <button className="text-primary-700 underline" onClick={() => onReference({ recordId, attachmentId: selected,
             label: record.attachments.find(f => f.id === selected)?.filename ?? 'Документ' })}>Сослаться на вложение в сообщении</button></div>}
       </>}
-      {url && mime === 'application/pdf' && <iframe title="Просмотр PDF" src={url} referrerPolicy="no-referrer" className="h-[65vh] w-full" />}
-      {url && ['image/png', 'image/jpeg'].includes(mime) && <img src={url} alt="Вложение медицинской записи" className="max-w-full" />}
+      {url && mime === 'application/pdf' && <iframe title="Просмотр PDF" src={url} referrerPolicy="no-referrer" className="h-[55vh] min-h-80 w-full rounded-lg border" />}
+      {url && ['image/png', 'image/jpeg'].includes(mime) && <img src={url} alt="Вложение медицинской записи" className="max-h-[60vh] max-w-full object-contain" />}
       {mime === 'unsupported' && <p>Этот формат доступен для скачивания. Полноценный DICOM-viewer здесь не используется.</p>}
     </div>
   </aside>

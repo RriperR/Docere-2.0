@@ -18,7 +18,7 @@ export interface Material {
   event_date: string; status: string
 }
 export interface Doctor { id: string; name: string; email: string }
-export interface PatientOption { id: string; fio: string }
+export interface PatientOption { id: string; fio: string; date_of_birth?: string | null }
 
 export function caseError(error: unknown): string {
   if (axios.isAxiosError(error)) {

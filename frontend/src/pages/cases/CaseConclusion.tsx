@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import CaseMaterialPicker from './CaseMaterialPicker'
+import DraftStatus from './DraftStatus'
+import { emptyWorkDraft, useCaseWorkDraft } from '../../hooks/useCaseWorkDraft'
 import api from '../../api/api'
 import { caseError, type ClinicalCase, type Page } from '../../api/cases'
 import { buttonClass, cardClass, inputClass } from './styles'
@@ -11,6 +13,7 @@ interface Preview { title: string; clinical_summary: string; conclusion_version:
 export default function CaseConclusion({ c, owner, onChange, onOpen }: {
   c: ClinicalCase; owner: boolean; onChange: () => Promise<void>; onOpen?: (id: string) => void
 }) {
+  const formId = useId()
   const [items, setItems] = useState<Conclusion[]>([])
   const [offset, setOffset] = useState(0)
   const [total, setTotal] = useState(0)
@@ -25,6 +28,12 @@ export default function CaseConclusion({ c, owner, onChange, onOpen }: {
   const [eventDate, setEventDate] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const draft = useCaseWorkDraft(c.id, 'conclusion', owner && c.status !== 'closed', {
+    ...emptyWorkDraft, text: summary, findings, next_actions: actions, record_ids: sources,
+  }, value => {
+    setSummary(value.text); setFindings(value.findings); setActions(value.next_actions); setSources(value.record_ids)
+    if (value.text || value.findings || value.next_actions) setEdit(true)
+  }, busy)
   const activeRead = useRef<AbortController | null>(null)
   const load = useCallback(async () => {
     activeRead.current?.abort()
@@ -57,20 +66,23 @@ export default function CaseConclusion({ c, owner, onChange, onOpen }: {
     <div className="flex gap-4"><button disabled={!offset} onClick={() => setOffset(offset - 10)}>Новые версии</button>
       <span>{total} версий</span><button disabled={offset + 10 >= total} onClick={() => setOffset(offset + 10)}>Ранее</button></div>
     {owner && c.status !== 'closed' && <>
-      <button className={buttonClass} onClick={() => {
+      <button className={buttonClass} disabled={!draft.ready} onClick={() => {
+        if (summary || findings || actions) { setEdit(true); return }
         const current = offset === 0 ? items[0] : undefined
         setSummary(current?.summary ?? ''); setFindings(current?.findings ?? ''); setActions(current?.next_actions ?? '')
         setSources(current?.source_ids ?? []); setEdit(true)
       }}>Составить новую версию итога</button>
       {edit && <div className="space-y-3">
-        <label>Краткое резюме<textarea className={inputClass} maxLength={10000} value={summary} onChange={e => setSummary(e.target.value)} /></label>
-        <label>Выводы<textarea className={inputClass} maxLength={10000} value={findings} onChange={e => setFindings(e.target.value)} /></label>
-        <label>Дальнейшие действия<textarea className={inputClass} maxLength={10000} value={actions} onChange={e => setActions(e.target.value)} /></label>
+        <label htmlFor={`${formId}-summary`}>Краткое резюме</label><textarea id={`${formId}-summary`} className={inputClass} maxLength={10000} value={summary} onChange={e => setSummary(e.target.value)} />
+        <label htmlFor={`${formId}-findings`}>Выводы</label><textarea id={`${formId}-findings`} className={inputClass} maxLength={10000} value={findings} onChange={e => setFindings(e.target.value)} />
+        <label htmlFor={`${formId}-actions`}>Дальнейшие действия</label><textarea id={`${formId}-actions`} className={inputClass} maxLength={10000} value={actions} onChange={e => setActions(e.target.value)} />
         <CaseMaterialPicker caseId={c.id} sequence={c.sequence} selected={sources} multiple
           onChange={setSources} onAccessLost={onChange} />
-        <button className={buttonClass} disabled={busy || !summary.trim()} onClick={async () => {
-          if (await mutate('conclusions', { version: c.version, summary, findings, next_actions: actions, source_ids: sources })) setEdit(false)
-        }}>Сохранить версию итога</button><button onClick={() => setEdit(false)}>Отмена</button>
+        <button className={buttonClass} disabled={busy || !summary.trim() || !draft.ready || draft.conflict} onClick={async () => {
+          if (!await draft.flush()) return
+          if (await mutate('conclusions', { version: c.version, summary, findings, next_actions: actions, source_ids: sources })) { await draft.refresh(); setEdit(false) }
+        }}>Сохранить версию итога</button><button onClick={() => setEdit(false)}>Свернуть редактор</button>
+        <DraftStatus draft={draft} />
       </div>}
       <button className="ml-4 text-primary-700" disabled={busy || total === 0} onClick={async () => {
         try { const result = (await api.get<{ open_requests: number }>(`/cases/${c.id}/closure-preview`)).data

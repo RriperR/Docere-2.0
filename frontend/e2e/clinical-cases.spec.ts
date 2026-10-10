@@ -53,14 +53,17 @@ test('two doctors complete a clinical case and revocation closes an open documen
     await owner.getByLabel('Найти пациента').fill(`Тестовый пациент ${suffix}`)
     await owner.getByRole('button', { name: 'Найти', exact: true }).click()
     await owner.getByRole('button', { name: new RegExp(`Тестовый пациент ${suffix}`) }).click()
+    await owner.getByRole('button', { name: 'Перейти к материалам' }).click()
+    await owner.getByRole('checkbox', { name: /Выбранный материал/ }).check()
+    await owner.getByRole('button', { name: 'Сформулировать вопрос' }).click()
     await owner.getByLabel('Название', { exact: true }).fill('Совместный тестовый разбор')
     await owner.getByLabel('Вопрос для обсуждения').fill('Секретный клинический вопрос')
-    await owner.getByRole('checkbox', { name: /Выбранный материал/ }).check()
     await owner.getByRole('button', { name: 'Создать черновик' }).click()
     await expect(owner).toHaveURL(/\/cases\/[\da-f-]+$/)
     const caseId = owner.url().split('/').at(-1)!
     const caseUrl = `/api/cases/${caseId}`
     owner.setDefaultTimeout(15_000); peer.setDefaultTimeout(15_000); outsider.setDefaultTimeout(15_000)
+    await owner.getByRole('button', { name: 'Участники', exact: true }).click()
     await owner.getByLabel('Найти врача').fill('dr.kim@docere.demo')
     await owner.getByRole('button', { name: 'Найти врача', exact: true }).click()
     await owner.getByRole('button', { name: /Пригласить:.*dr.kim/ }).click()
@@ -78,6 +81,7 @@ test('two doctors complete a clinical case and revocation closes an open documen
     await expect(peer.getByText('Не включённый материал')).toHaveCount(0)
     expect([403, 404]).toContain((await request.get(`/api/records/${recordIds[1]}`, { headers: peerHeaders })).status())
 
+    await owner.getByRole('button', { name: 'Совместный разбор', exact: true }).click()
     await owner.getByRole('button', { name: 'Добавить материалы', exact: true }).click()
     await owner.getByRole('checkbox', { name: /Не включённый материал/ }).check()
     await owner.getByRole('button', { name: 'Продолжить добавление' }).click()
@@ -92,6 +96,19 @@ test('two doctors complete a clinical case and revocation closes an open documen
       `/materials/${recordIds[0]}/attachments/${file.id}`]) {
       expect((await request.get(caseUrl + path, { headers: outsiderHeaders })).status()).toBe(404)
     }
+    const savedDraft = owner.waitForResponse(response => response.url().endsWith('/work-drafts/message')
+      && response.request().method() === 'PUT' && response.ok()
+      && response.request().postDataJSON()?.content?.text === 'Личный текст до отправки.')
+    await owner.getByLabel('Сообщение', { exact: true }).fill('Личный текст до отправки.')
+    await savedDraft
+    await expect(owner.getByText('Черновик сохранён · только для вас').first()).toBeVisible()
+    await owner.getByRole('button', { name: 'Итог', exact: true }).click()
+    await owner.getByRole('button', { name: 'Совместный разбор', exact: true }).click()
+    await expect(owner.getByLabel('Сообщение', { exact: true })).toHaveValue('Личный текст до отправки.')
+    await owner.reload()
+    await expect(owner.getByLabel('Сообщение', { exact: true })).toHaveValue('Личный текст до отправки.')
+    await expect(peer.getByText('Личный текст до отправки.')).toHaveCount(0)
+    await owner.getByLabel('Сообщение', { exact: true }).fill('')
     await owner.getByLabel('Адресат').selectOption({ label: 'Ким Анна Сергеевна' })
     await owner.getByLabel('Вопрос', { exact: true }).fill('Каково ваше мнение по выбранному материалу?')
     await owner.getByRole('button', { name: 'Запросить мнение', exact: true }).click()
@@ -111,6 +128,7 @@ test('two doctors complete a clinical case and revocation closes an open documen
     await expect(peer.getByAltText('Вложение медицинской записи')).toBeVisible()
     await peer.getByRole('button', { name: 'Закрыть просмотр' }).click()
 
+    await owner.getByRole('button', { name: 'Итог', exact: true }).click()
     await owner.getByRole('button', { name: 'Составить новую версию итога' }).click()
     await owner.getByLabel('Краткое резюме').fill('Материалы рассмотрены двумя врачами.')
     await owner.getByLabel('Выводы', { exact: true }).fill('Синтетический итог для проверки процесса.')
@@ -139,6 +157,7 @@ test('two doctors complete a clinical case and revocation closes an open documen
     await peer.getByRole('button', { name: /2026-09-01 · Выбранный материал/ }).click()
     await peer.getByLabel('Вложение', { exact: true }).selectOption(file.id)
     await expect(peer.getByAltText('Вложение медицинской записи')).toBeVisible()
+    await owner.getByRole('button', { name: 'Участники', exact: true }).click()
     await owner.getByRole('button', { name: 'Исключить', exact: true }).click()
     await expect(peer.getByRole('dialog', { name: 'Материал случая' })).toHaveCount(0)
     await expect(peer.getByText('Секретный клинический вопрос')).toHaveCount(0)

@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import type { MaterialReference } from './CaseDocumentPanel'
 import CaseMaterialPicker from './CaseMaterialPicker'
 import api from '../../api/api'
+import DraftStatus from './DraftStatus'
+import { emptyWorkDraft, useCaseWorkDraft } from '../../hooks/useCaseWorkDraft'
 import { requestId } from '../../utils/requestId'
 import { caseError, type ClinicalCase, type Page } from '../../api/cases'
 import { buttonClass, cardClass, inputClass, opinionLabel } from './styles'
@@ -28,6 +30,7 @@ export default function CaseDiscussion({ c, userId, onChange, onOpen, reference 
   reference?: MaterialReference | null
   onOpen?: (recordId: string, attachmentId: string | null) => void
 }) {
+  const formId = useId()
   const [messages, setMessages] = useState<Message[]>([])
   const [opinions, setOpinions] = useState<Opinion[]>([])
   const [activity, setActivity] = useState<Activity[]>([])
@@ -49,10 +52,25 @@ export default function CaseDiscussion({ c, userId, onChange, onOpen, reference 
   }, [reference])
   const [question, setQuestion] = useState('')
   const [assignee, setAssignee] = useState('')
+  const [opinionRecord, setOpinionRecord] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const retry = useRef<{ fingerprint: string; key: string } | null>(null)
   const writable = c.status !== 'closed'
+  const [key, setKey] = useState(requestId)
+  const [restoredParent, setRestoredParent] = useState<string | null>(null)
+  const [restoredOpinion, setRestoredOpinion] = useState<string | null>(null)
+  const messageDraft = useCaseWorkDraft(c.id, 'message', writable, { ...emptyWorkDraft, text: body,
+    record_ids: record ? [record] : [], attachment_id: attachment, parent_id: parent?.id ?? restoredParent,
+    opinion_id: replyOpinion?.id ?? restoredOpinion, idempotency_key: body ? key : null }, value => {
+    setBody(value.text); setRecord(value.record_ids[0] ?? ''); setAttachment(value.attachment_id)
+    setRestoredParent(value.parent_id); setRestoredOpinion(value.opinion_id); setParent(null); setReplyOpinion(null)
+    setKey(value.idempotency_key ?? requestId())
+  }, busy)
+  const opinionDraft = useCaseWorkDraft(c.id, 'opinion', writable, { ...emptyWorkDraft, text: question,
+    assignee_id: assignee || null, record_ids: opinionRecord ? [opinionRecord] : [] }, value => {
+    setQuestion(value.text); setAssignee(value.assignee_id ?? ''); setOpinionRecord(value.record_ids[0] ?? '')
+  }, busy)
   const doctors = [{ user_id: c.coordinator_id, name: 'Координатор' }, ...c.members.filter(m => m.status === 'accepted')]
   const name = (id: string) => doctors.find(d => d.user_id === id)?.name ?? 'Врач'
   const activeRead = useRef<AbortController | null>(null)
@@ -81,17 +99,26 @@ export default function CaseDiscussion({ c, userId, onChange, onOpen, reference 
     catch (e) { setError(caseError(e)); await onChange(); return false }
     finally { setBusy(false) }
   }
+  useEffect(() => {
+    if (!retry.current) return
+    const fingerprint = JSON.stringify({ body, parent_id: parent?.id ?? restoredParent, record_id: record || null,
+      opinion_id: replyOpinion?.id ?? restoredOpinion, attachment_id: attachment })
+    if (retry.current.fingerprint !== fingerprint) { retry.current = null; setKey(requestId()) }
+  }, [body, parent?.id, record, replyOpinion?.id, restoredParent, restoredOpinion, attachment])
   async function send() {
-    const payload = { body, parent_id: parent?.id ?? null, record_id: record || null, opinion_id: replyOpinion?.id ?? null, attachment_id: attachment }
+    if (!await messageDraft.flush()) return
+    const payload = { body, parent_id: parent?.id ?? restoredParent, record_id: record || null, opinion_id: replyOpinion?.id ?? restoredOpinion, attachment_id: attachment }
     const fingerprint = JSON.stringify(payload)
-    if (retry.current?.fingerprint !== fingerprint) retry.current = { fingerprint, key: requestId() }
+    if (retry.current?.fingerprint !== fingerprint) retry.current = { fingerprint, key }
     if (await mutate('messages', { ...payload, idempotency_key: retry.current.key })) {
-      setBody(''); setParent(null); setReplyOpinion(null); retry.current = null; setOffset(0)
+      setBody(''); setParent(null); setReplyOpinion(null); setRestoredParent(null); setRestoredOpinion(null); retry.current = null; setOffset(0)
+      await messageDraft.refresh()
     }
   }
   return <>
     {error && <p role="alert" className="text-red-700">{error}</p>}
     <section id="discussion" className={cardClass}><h2 className="text-lg font-semibold">Обсуждение</h2>
+      <div className="max-h-[45vh] space-y-3 overflow-y-auto overscroll-contain pr-1">
       {[...messages].reverse().map(m => <article key={m.id} className={`rounded-lg bg-gray-50 p-3 ${m.parent_id ? 'ml-6' : ''}`}>
         <p className="text-sm text-gray-500">{m.author_name} · {new Date(m.created_at).toLocaleString('ru-RU')}</p>
         {m.parent_id && <button className="text-xs text-primary-700" onClick={async () => {
@@ -102,22 +129,28 @@ export default function CaseDiscussion({ c, userId, onChange, onOpen, reference 
         {m.record_id && <button className="text-primary-700 underline"
           onClick={() => onOpen?.(m.record_id!, m.attachment_id)}>Открыть связанный материал</button>}
         {writable && !m.parent_id && <button className="ml-4 text-primary-700" onClick={() => {
-          setParent(m); setReplyOpinion(null); messageInput.current?.focus()
+          setParent(m); setReplyOpinion(null); setRestoredParent(null); setRestoredOpinion(null); messageInput.current?.focus()
         }}>Ответить</button>}
       </article>)}
-      <div className="flex gap-4"><button disabled={!offset} onClick={() => setOffset(offset - 20)}>Новые сообщения</button>
+      </div>
+      {!messages.length && <p className="py-3 text-sm text-gray-500">Начните обсуждение: задайте вопрос или поделитесь наблюдением со ссылкой на материал.</p>}
+      <div className="flex flex-wrap gap-4 text-xs text-gray-500"><button disabled={!offset} onClick={() => setOffset(offset - 20)}>Новые сообщения</button>
         <span>{total} сообщений</span><button disabled={offset + 20 >= total} onClick={() => setOffset(offset + 20)}>Ранее</button></div>
       {parentContext && <div className="rounded-lg border p-3"><p>{parentContext.author_name}: {parentContext.body}</p>
         <button onClick={() => setParentContext(null)}>Скрыть исходное сообщение</button></div>}
       {writable && <div className="space-y-2">
+        {(restoredParent || restoredOpinion) && <p className="text-sm text-primary-700">Восстановлен ответ {restoredOpinion ? 'на запрос мнения' : 'на сообщение'}. <button onClick={() => { setRestoredParent(null); setRestoredOpinion(null) }}>Убрать связь ответа</button></p>}
         {parent && <p>Ответ: {parent.body} <button onClick={() => setParent(null)}>Отмена</button></p>}
         {replyOpinion && <p>Ответ на запрос: {replyOpinion.question} <button onClick={() => setReplyOpinion(null)}>Отмена</button></p>}
-        <label className="block">Сообщение<textarea ref={messageInput} rows={3} className={inputClass} maxLength={10000} value={body} onChange={e => setBody(e.target.value)} /></label>
+        <label className="block" htmlFor={`${formId}-message`}>Сообщение</label><textarea id={`${formId}-message`} ref={messageInput} disabled={!messageDraft.ready || busy} rows={3} className={inputClass} maxLength={10000} value={body} onChange={e => setBody(e.target.value)} />
+        <details open={!!record} className="rounded-xl border border-gray-200 p-3"><summary className="cursor-pointer text-sm font-medium text-primary-700">Связать сообщение с материалом{record ? ' · выбран' : ' (необязательно)'}</summary>
         <CaseMaterialPicker caseId={c.id} sequence={c.sequence} selected={record ? [record] : []}
           onAccessLost={onChange} onChange={ids => { setRecord(ids[0] ?? ''); setAttachment(null) }} />
+        </details>
         {attachment && <p>Ссылка на вложение: {reference?.label} <button onClick={() => setAttachment(null)}>Убрать вложение</button></p>}
         <p className="text-sm text-gray-500">Сообщения неизменяемы. Исправление отправьте новым ответом.</p>
-        <button className={buttonClass} disabled={busy || !body.trim()} onClick={() => void send()}>Отправить сообщение</button>
+        <button className={buttonClass} disabled={busy || !body.trim() || !messageDraft.ready || messageDraft.conflict} onClick={() => void send()}>Отправить сообщение</button>
+        <DraftStatus draft={messageDraft} />
       </div>}
     </section>
     <section id="opinions" className={cardClass}><h2 className="text-lg font-semibold">Запросы мнения</h2>
@@ -126,7 +159,7 @@ export default function CaseDiscussion({ c, userId, onChange, onOpen, reference 
         {o.reason && <p className="text-sm">Причина отмены: {o.reason === 'assignee_left' ? 'Адресат вышел из случая' : o.reason}</p>}
         {o.record_id && <button onClick={() => onOpen?.(o.record_id!, null)}>Открыть материал</button>}
         {writable && o.status === 'open' && o.assignee_id === userId && <button className="text-primary-700" onClick={() => {
-          setReplyOpinion(o); setParent(null); setRecord(o.record_id ?? ''); setAttachment(null); messageInput.current?.focus()
+          setReplyOpinion(o); setParent(null); setRestoredParent(null); setRestoredOpinion(null); setRecord(o.record_id ?? ''); setAttachment(null); messageInput.current?.focus()
         }}>Ответить на запрос</button>}
         {writable && o.status === 'open' && [o.requester_id, c.coordinator_id].includes(userId) && <button className="ml-4" disabled={busy}
           onClick={() => void mutate(`opinions/${o.id}/cancel`)}>Отменить запрос</button>}
@@ -137,10 +170,16 @@ export default function CaseDiscussion({ c, userId, onChange, onOpen, reference 
         <label>Адресат<select className={inputClass} value={assignee} onChange={e => setAssignee(e.target.value)}>
           <option value="">Выберите врача</option>{doctors.filter(d => d.user_id !== userId).map(d =>
             <option key={d.user_id} value={d.user_id}>{d.name}</option>)}</select></label>
-        <label>Вопрос<textarea className={inputClass} maxLength={10000} value={question} onChange={e => setQuestion(e.target.value)} /></label>
-        <button className={buttonClass} disabled={busy || !question.trim() || !assignee} onClick={async () => {
-          if (await mutate('opinions', { assignee_id: assignee, question, record_id: record || null })) setQuestion('')
+        <label htmlFor={`${formId}-question`}>Вопрос</label><textarea id={`${formId}-question`} className={inputClass} maxLength={10000} disabled={!opinionDraft.ready || busy} value={question} onChange={e => setQuestion(e.target.value)} />
+        <details open={!!opinionRecord}><summary className="text-sm text-gray-600">Материал для запроса (необязательно)</summary>
+          <CaseMaterialPicker caseId={c.id} sequence={c.sequence} selected={opinionRecord ? [opinionRecord] : []} onAccessLost={onChange}
+            onChange={ids => setOpinionRecord(ids[0] ?? '')} />
+        </details>
+        <button className={buttonClass} disabled={busy || !question.trim() || !assignee || !opinionDraft.ready || opinionDraft.conflict} onClick={async () => {
+          if (!await opinionDraft.flush()) return
+          if (await mutate('opinions', { assignee_id: assignee, question, record_id: opinionRecord || null })) await opinionDraft.refresh()
         }}>Запросить мнение</button>
+        <DraftStatus draft={opinionDraft} />
       </div>}
     </section>
     <details className={cardClass}><summary className="font-semibold">Журнал действий</summary>

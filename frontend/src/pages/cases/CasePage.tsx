@@ -19,11 +19,13 @@ function CaseWorkspace({ id }: { id: string }) {
   const [view, setView] = useState<CaseView | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [section, setSection] = useState('review')
+  const [mobilePane, setMobilePane] = useState('materials')
   const [query, setQuery] = useState('')
   const [document, setDocument] = useState<{ recordId: string; attachmentId: string | null } | null>(null)
   const [reference, setReference] = useState<MaterialReference | null>(null)
   const openMaterial = useCallback((recordId: string, attachmentId: string | null = null) => {
-    setDocument({ recordId, attachmentId })
+    setDocument({ recordId, attachmentId }); setSection('review'); setMobilePane('materials')
   }, [])
   const [doctors, setDoctors] = useState<Doctor[]>([])
   const reads = useRef(0)
@@ -86,9 +88,11 @@ function CaseWorkspace({ id }: { id: string }) {
         {c.status === 'closed' && <Link to={`/cases/new?patient=${c.patient_id}&previous=${c.id}`}>Создать продолжение</Link>}
       </section>
       <nav aria-label="Разделы клинического случая" className="sticky top-14 z-10 flex flex-wrap gap-2 rounded-xl border border-gray-200 bg-white/95 p-2 shadow-xs backdrop-blur-sm">
-        {[['materials', 'Материалы'], ['discussion', 'Обсуждение'], ['opinions', 'Запросы мнения'], ['conclusion', 'Итог'], ['members', 'Участники']].map(([anchor, label]) =>
-          <a key={anchor} href={`#${anchor}`} className="rounded-lg px-3 py-2 text-sm font-medium text-gray-600 hover:bg-primary-50 hover:text-primary-700">{label}</a>)}
+        {[['review', 'Совместный разбор'], ['conclusion', 'Итог'], ['members', 'Участники']].map(([value, label]) =>
+          <button key={value} type="button" aria-pressed={section === value} onClick={() => setSection(value)}
+            className={`rounded-lg px-4 py-2 text-sm font-semibold ${section === value ? 'bg-primary-50 text-primary-700' : 'text-gray-500 hover:bg-gray-50'}`}>{label}</button>)}
       </nav>
+      <div hidden={section !== 'members'}>
       <section id="members" className={cardClass}><h2 className="text-lg font-semibold">Участники</h2>
         {c.members.map(m => <div key={m.user_id} className="flex gap-4">
           <span>{m.name} · {memberLabel[m.status] ?? 'Участник'}</span>
@@ -104,12 +108,26 @@ function CaseWorkspace({ id }: { id: string }) {
             onClick={() => void action('invitations', { user_id: d.id, version: c.version })}>Пригласить: {d.name} ({d.email})</button>)}
         </div>}
       </section>
-      <CaseMaterials c={c} owner={owner} onChange={load} onOpen={openMaterial} />
-      <CaseDiscussion c={c} userId={userId ?? ''} onChange={load} onOpen={openMaterial} reference={reference} />
-      <CaseConclusion c={c} owner={owner} onChange={load} onOpen={openMaterial} />
-      {document && <CaseDocumentPanel key={`${id}-${document.recordId}`} caseId={id} recordId={document.recordId}
-        attachmentId={document.attachmentId} onClose={() => setDocument(null)} onAccessLost={load}
-        onReference={ref => { setReference(ref); setDocument(null) }} />}
+      </div>
+      <div hidden={section !== 'review'}>
+        <div className="mb-4 flex gap-2 lg:hidden" role="group" aria-label="Панели разбора">
+          {[['materials', 'Материалы'], ['discussion', 'Обсуждение']].map(([value, label]) =>
+            <button key={value} className={`flex-1 rounded-xl border px-4 py-2 text-sm font-semibold ${mobilePane === value ? 'border-primary-200 bg-primary-50 text-primary-700' : 'border-gray-200 bg-white text-gray-600'}`}
+              aria-pressed={mobilePane === value} onClick={() => setMobilePane(value)}>{label}</button>)}
+        </div>
+        <div className="grid items-start gap-5 lg:grid-cols-2">
+          <div className={`min-w-0 space-y-4 lg:sticky lg:top-32 lg:max-h-[calc(100vh-9rem)] lg:overflow-y-auto ${mobilePane !== 'materials' ? 'hidden lg:block' : ''}`}>
+            {document && <CaseDocumentPanel key={`${id}-${document.recordId}`} caseId={id} recordId={document.recordId}
+              attachmentId={document.attachmentId} onClose={() => setDocument(null)} onAccessLost={load}
+              onReference={ref => { setReference(ref); setMobilePane('discussion') }} />}
+            <CaseMaterials c={c} owner={owner} onChange={load} onOpen={openMaterial} />
+          </div>
+          <div className={`min-w-0 space-y-5 ${mobilePane !== 'discussion' ? 'hidden lg:block' : ''}`}>
+            <CaseDiscussion c={c} userId={userId ?? ''} onChange={load} onOpen={openMaterial} reference={reference} />
+          </div>
+        </div>
+      </div>
+      <div hidden={section !== 'conclusion'}><CaseConclusion c={c} owner={owner} onChange={load} onOpen={openMaterial} /></div>
     </>}
   </div>
 }
