@@ -22,3 +22,23 @@ it('retrieves protected blobs and destroys the document URL when the workspace i
   view.unmount()
   expect(revoke).toHaveBeenCalledWith('blob:protected-document')
 })
+
+it('does not display an attachment response that arrives after selecting another record', async () => {
+  let resolveFirst!: (result: unknown) => void
+  Object.defineProperty(URL, 'createObjectURL', { value: vi.fn(() => 'blob:current'), configurable: true })
+  Object.defineProperty(URL, 'revokeObjectURL', { value: vi.fn(), configurable: true })
+  vi.spyOn(api, 'get').mockImplementation(async url => {
+    if (String(url).endsWith('/attachments/first')) return new Promise(resolve => { resolveFirst = resolve })
+    if (String(url).endsWith('/attachments/second')) return { data: new Blob(['new']), headers: { 'content-type': 'image/png' } }
+    const second = String(url).endsWith('/record-2')
+    return { data: { id: second ? 'record-2' : 'record-1', title: 'Record', event_date: '2026-01-01', clinical_summary: '',
+      attachments: [{ id: second ? 'second' : 'first', filename: 'scan.png', mime_type: 'image/png', size_bytes: 42 }], comments: [] } }
+  })
+  const props = { caseId: 'case-1', onClose: vi.fn(), onAccessLost: vi.fn(), onReference: vi.fn() }
+  const view = render(<CaseDocumentPanel {...props} recordId="record-1" attachmentId="first" />)
+  await waitFor(() => expect(resolveFirst).toBeDefined())
+  view.rerender(<CaseDocumentPanel {...props} recordId="record-2" attachmentId="second" />)
+  await waitFor(() => expect(screen.getByAltText('Вложение медицинской записи')).toHaveAttribute('src', 'blob:current'))
+  resolveFirst({ data: new Blob(['old']), headers: { 'content-type': 'application/pdf' } })
+  await waitFor(() => expect(screen.queryByTitle('Просмотр PDF')).not.toBeInTheDocument())
+})

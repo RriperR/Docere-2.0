@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { caseApi, caseError, type CaseView, type Doctor } from '../../api/cases'
 import { watchChanges } from '../../api/caseUpdates'
 import CaseMaterials from './CaseMaterials'
@@ -19,14 +19,18 @@ function CaseWorkspace({ id }: { id: string }) {
   const [view, setView] = useState<CaseView | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [section, setSection] = useState('review')
+  const [params, setParams] = useSearchParams()
+  const section = ['review', 'conclusion', 'members'].includes(params.get('tab') ?? '') ? params.get('tab')! : 'review'
+  const setSection = (value: string) => setParams(previous => { const next = new URLSearchParams(previous); next.set('tab', value); return next })
   const [mobilePane, setMobilePane] = useState('materials')
   const [query, setQuery] = useState('')
-  const [document, setDocument] = useState<{ recordId: string; attachmentId: string | null } | null>(null)
+  const recordId = params.get('record')
+  const document = recordId ? { recordId, attachmentId: params.get('attachment') } : null
+  const setDocument = useCallback((value: { recordId: string; attachmentId: string | null } | null) => setParams(previous => { const next = new URLSearchParams(previous); next.delete('record'); next.delete('attachment'); if (value) { next.set('record', value.recordId); if (value.attachmentId) next.set('attachment', value.attachmentId) }; return next }), [setParams])
   const [reference, setReference] = useState<MaterialReference | null>(null)
   const openMaterial = useCallback((recordId: string, attachmentId: string | null = null) => {
-    setDocument({ recordId, attachmentId }); setSection('review'); setMobilePane('materials')
-  }, [])
+    setParams(previous => { const next = new URLSearchParams(previous); next.set('tab', 'review'); next.set('record', recordId); next.delete('attachment'); if (attachmentId) next.set('attachment', attachmentId); return next }); setMobilePane('materials')
+  }, [setParams])
   const [doctors, setDoctors] = useState<Doctor[]>([])
   const reads = useRef(0)
   const load = useCallback(async () => {
@@ -37,8 +41,8 @@ function CaseWorkspace({ id }: { id: string }) {
   useEffect(() => { setView(null); void load(); return () => { reads.current += 1 } }, [load])
   const accessible = !!view?.accessible
   useEffect(() => {
-    if (!accessible) { setDocument(null); setReference(null) }
-  }, [accessible])
+    if (view && !accessible) { setDocument(null); setReference(null) }
+  }, [accessible, view, setDocument])
   useEffect(() => {
     if (!accessible) return
     const controller = new AbortController()

@@ -1,5 +1,5 @@
-import React, { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import React, { ChangeEvent, FormEvent, useEffect, useMemo, useState, useCallback } from 'react'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   ArrowLeft,
@@ -21,6 +21,8 @@ import {
 } from 'lucide-react'
 import { format } from 'date-fns'
 
+import api from '../../api/api'
+import DocumentViewer from '../../components/records/DocumentViewer'
 import { AddRecordModal } from '../../components/AddRecordModal'
 import { Button } from '../../components/common/Button'
 import { DateInput } from '../../components/common/DateInput'
@@ -94,6 +96,8 @@ function isShareRequestExpired(expiresAt: string | null): boolean {
 const PatientDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>()
   const { user } = useAuthStore()
+  const [params] = useSearchParams()
+  const [openedDocument, setDocument] = useState<{ recordId: string; attachmentId: string | null } | null>(null)
   const {
     currentPatient,
     patientRecords,
@@ -106,7 +110,6 @@ const PatientDetailsPage: React.FC = () => {
     addRecordComment,
     uploadCommentAttachment,
     uploadRecordAttachment,
-    downloadAttachment,
     clearActiveRecord,
   } = usePatientsStore()
   const createShareRequest = useShareRequestsStore((s) => s.createShareRequest)
@@ -142,6 +145,20 @@ const PatientDetailsPage: React.FC = () => {
   const [recordDateFrom, setRecordDateFrom] = useState('')
   const [recordDateTo, setRecordDateTo] = useState('')
 
+  const clearDocument = useCallback(async () => { setDocument(null); setSelectedRecordId(null); clearActiveRecord() }, [clearActiveRecord])
+  const linkedId = params.get('record')
+  useEffect(() => {
+    if (!linkedId || !id) return
+    const controller = new AbortController()
+    void api.get<{ patient_passport_id: string | null }>(`/records/${linkedId}`, { signal: controller.signal }).then(({ data }) => {
+      if (controller.signal.aborted) return
+      if (data.patient_passport_id !== id) { setAttachmentError('Запись не принадлежит этому пациенту'); return }
+      setSelectedRecordId(linkedId)
+      setDocument({ recordId: linkedId, attachmentId: null })
+    }).catch(() => { if (!controller.signal.aborted) setAttachmentError('Запись недоступна') })
+    return () => controller.abort()
+  }, [id, linkedId])
+  useEffect(() => { setDocument(null) }, [id, user?.id])
   useEffect(() => {
     if (id) {
       void fetchPatientById(id)
@@ -370,6 +387,7 @@ const PatientDetailsPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {openedDocument && <div className="fixed inset-y-16 right-0 z-40 w-full max-w-2xl overflow-auto bg-white p-3 shadow-xl"><DocumentViewer patientId={id} {...openedDocument} onClose={() => setDocument(null)} onAccessLost={clearDocument} /></div>}
       {/* Breadcrumb + Header */}
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
         <Link
@@ -802,7 +820,7 @@ const PatientDetailsPage: React.FC = () => {
                                       <button
                                         key={a.id}
                                         type="button"
-                                        onClick={() => void downloadAttachment(detail.id, a.id, a.filename ?? 'file')}
+                                        onClick={() => setDocument({ recordId: detail.id, attachmentId: a.id })}
                                         className="flex w-full items-center gap-3 rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-left hover:border-primary-300 hover:bg-primary-50"
                                       >
                                         <Paperclip className="h-4 w-4 shrink-0 text-gray-400" />
@@ -846,7 +864,7 @@ const PatientDetailsPage: React.FC = () => {
                                                 key={att.id}
                                                 type="button"
                                                 onClick={() =>
-                                                  void downloadAttachment(detail.id, att.id, att.filename ?? 'file')
+                                                  setDocument({ recordId: detail.id, attachmentId: att.id })
                                                 }
                                                 className="flex w-full items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-left text-xs text-gray-700 hover:border-primary-300 hover:bg-primary-50"
                                               >
