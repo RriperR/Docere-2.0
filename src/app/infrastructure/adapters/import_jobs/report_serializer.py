@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
+from app.application.use_cases.import_jobs.documents import import_file_id
 from app.application.use_cases.import_jobs.dtos import (
     DicomMetadata,
     IMPORT_REPORT_SCHEMA_VERSION,
@@ -52,6 +53,7 @@ def import_draft_result_to_json(result: ImportDraftResult) -> dict[str, object]:
 
 def _file_to_json(file: ImportedFileCandidate) -> dict[str, object]:
     return {
+        'id': import_file_id(file.path),
         'path': file.path,
         'filename': file.filename,
         'mime_type': file.mime_type,

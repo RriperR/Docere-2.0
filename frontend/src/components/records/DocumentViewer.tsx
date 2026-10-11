@@ -1,3 +1,4 @@
+import { ImportPatientDraft } from '../../stores/uploadStore'
 import axios from 'axios'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import api from '../../api/api'
@@ -14,11 +15,12 @@ interface RecordDetail {
 }
 export interface MaterialReference { recordId: string; attachmentId: string | null; label: string }
 
-export default function DocumentViewer({ caseId, patientId, recordId, attachmentId, onClose, onAccessLost, onReference }: {
-  caseId?: string; patientId?: string; recordId: string; attachmentId: string | null; onClose: () => void
+export default function DocumentViewer({ caseId, patientId, importJobId, page = 1, recordId, attachmentId, onClose, onAccessLost, onReference }: {
+  caseId?: string; patientId?: string; importJobId?: string; page?: number; recordId: string; attachmentId: string | null; onClose: () => void
   onAccessLost: () => Promise<void>; onReference?: (reference: MaterialReference) => void
 }) {
   const base = caseId ? `/cases/${caseId}/materials/${recordId}` : `/records/${recordId}`
+  const sourceUrl = useCallback((id: string) => importJobId ? `/archives/imports/${importJobId}/files/${id}` : `${base}/attachments/${id}`, [importJobId, base])
   const [revision, setRevision] = useState(0)
   const [expanded, setExpanded] = useState(false)
   const expandButton = useRef<HTMLButtonElement>(null)
@@ -45,19 +47,25 @@ export default function DocumentViewer({ caseId, patientId, recordId, attachment
   useEffect(() => {
     const controller = new AbortController()
     setRecord(null); setError(''); setSelected(attachmentId ?? '')
-    void api.get<RecordDetail>(base, { signal: controller.signal }).then(result => {
+    const request = importJobId
+      ? api.get<{ report_json: { patients?: ImportPatientDraft[] } }>(`/archives/imports/${importJobId}`, { signal: controller.signal }).then(result => ({
+          id: importJobId, title: 'Исходный документ', event_date: '', clinical_summary: null, record_type: 'other', status: 'unconfirmed',
+          attachments: (result.data.report_json.patients ?? []).flatMap(p => p.record_groups.flatMap(g => g.files)).filter(f => f.id).map(f => ({ ...f, id: f.id! })), comments: [],
+        } as RecordDetail))
+      : api.get<RecordDetail>(base, { signal: controller.signal }).then(result => result.data)
+    void request.then(data => {
       if (controller.signal.aborted) return
-      if (patientId && result.data.patient_passport_id !== patientId) { setError('Запись не принадлежит этому пациенту'); void onAccessLost(); return }
-      setRecord({ ...result.data, attachments: [...result.data.attachments, ...result.data.comments.flatMap(c => c.attachments)] })
+      if (patientId && data.patient_passport_id !== patientId) { setError('Запись не принадлежит этому пациенту'); void onAccessLost(); return }
+      setRecord({ ...data, attachments: [...data.attachments, ...data.comments.flatMap(c => c.attachments)] })
     }).catch(e => { if (!controller.signal.aborted) { void fail(e) } })
     return () => controller.abort()
-  }, [base, patientId, attachmentId, onAccessLost, revision, fail])
+  }, [base, importJobId, patientId, attachmentId, onAccessLost, revision, fail])
   useEffect(() => {
     const controller = new AbortController()
     let objectUrl = ''
     setUrl(''); setMime(''); if (record && selected) setError('')
     setZoom(1)
-    if (selected && record && record.attachments.some(file => file.id === selected)) void api.get<Blob>(`${base}/attachments/${selected}`,
+    if (selected && record && record.attachments.some(file => file.id === selected)) void api.get<Blob>(sourceUrl(selected),
       { responseType: 'blob', signal: controller.signal }).then(result => {
       if (controller.signal.aborted) return
       const contentType = String(result.headers['content-type'] ?? '').split(';')[0]
@@ -66,10 +74,10 @@ export default function DocumentViewer({ caseId, patientId, recordId, attachment
       } else setMime('unsupported')
     }).catch(e => { if (!controller.signal.aborted) { void fail(e) } })
     return () => { controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl) }
-  }, [base, selected, record, revision, fail])
+  }, [base, importJobId, sourceUrl, selected, record, revision, fail])
   async function download() {
     try {
-      const file = (await api.get<Blob>(`${base}/attachments/${selected}`,
+      const file = (await api.get<Blob>(sourceUrl(selected),
         { responseType: 'blob', params: { download: true } })).data
       const objectUrl = URL.createObjectURL(file)
       const a = document.createElement('a'); a.href = objectUrl
@@ -77,7 +85,7 @@ export default function DocumentViewer({ caseId, patientId, recordId, attachment
       a.click(); URL.revokeObjectURL(objectUrl)
     } catch (e) { await fail(e) }
   }
-  const content = <aside aria-label="Материал случая" className="flex min-w-0 flex-col rounded-2xl border border-primary-200 bg-white p-5 shadow-card">
+  const content = <aside aria-label="Просмотр документа" className="flex min-w-0 flex-col rounded-2xl border border-primary-200 bg-white p-5 shadow-card">
     <div className="flex flex-wrap justify-between gap-3"><h2 className="min-w-0 break-words text-xl font-semibold">{record?.title ?? 'Материал случая'}</h2>
       <div className="flex gap-3"><button ref={expandButton} onClick={() => setExpanded(value => !value)}>{expanded ? 'Вернуть в панель' : 'На весь экран'}</button><button aria-label="Закрыть просмотр" onClick={onClose}>✕</button></div></div>
     {!record && !error && <p role="status" className="py-4 text-sm text-gray-500">Загружаем материал…</p>}
@@ -92,7 +100,7 @@ export default function DocumentViewer({ caseId, patientId, recordId, attachment
           {onReference && <button className="text-primary-700 underline" onClick={() => onReference({ recordId, attachmentId: selected,
             label: record.attachments.find(f => f.id === selected)?.filename ?? 'Документ' })}>Сослаться на вложение в сообщении</button>}</div>}
       </>}
-      {url && mime === 'application/pdf' && <iframe title="Просмотр PDF" src={url} referrerPolicy="no-referrer" className="h-[55vh] min-h-80 w-full rounded-lg border" />}
+      {url && mime === 'application/pdf' && <iframe title="Просмотр PDF" src={page > 1 ? `${url}#page=${page}` : url} referrerPolicy="no-referrer" className="h-[55vh] min-h-80 w-full rounded-lg border" />}
       {url && ['image/png', 'image/jpeg'].includes(mime) && <><div className="flex gap-3"><button aria-label="Уменьшить изображение" disabled={zoom <= 0.5} onClick={() => setZoom(value => Math.max(0.5, value - 0.25))}>−</button><span>{Math.round(zoom * 100)}%</span><button aria-label="Увеличить изображение" disabled={zoom >= 3} onClick={() => setZoom(value => Math.min(3, value + 0.25))}>+</button><button onClick={() => setZoom(1)}>По размеру панели</button></div><div className="overflow-auto"><img src={url} alt="Вложение медицинской записи" style={{ width: `${zoom * 100}%`, maxWidth: 'none' }} className="object-contain" /></div></>}
       {mime === 'unsupported' && <p>Этот формат доступен для скачивания. Полноценный DICOM-viewer здесь не используется.</p>}
     </div>

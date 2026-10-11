@@ -33,6 +33,7 @@ class SqlAlchemyImportJobRepositoryAdapter(ImportJobRepositoryPort):
         archive_storage_key: str,
         size_bytes: int,
         request_id: str | None = None,
+        ai_requested: bool = False,
     ) -> ImportJob:
         """Атомарно создать ImportJob в статусе queued и намерение отправить его обработчику.
 
@@ -46,6 +47,7 @@ class SqlAlchemyImportJobRepositoryAdapter(ImportJobRepositoryPort):
             archive_storage_key=archive_storage_key,
             size_bytes=size_bytes,
             report_json={
+                'ai_requested': ai_requested,
                 'message': 'Archive uploaded and queued for processing',
                 'archive_storage_key': archive_storage_key,
                 'original_filename': original_filename,
@@ -124,6 +126,7 @@ class SqlAlchemyImportJobRepositoryAdapter(ImportJobRepositoryPort):
         row = self._session.get(ImportJobRow, job_id)
         if row is None:
             return None
+        row.version += 1
         row.review_decisions_json = decisions or None
         row.review_updated_at = utc_now() if decisions else None
         self._session.flush()
@@ -143,6 +146,7 @@ class SqlAlchemyImportJobRepositoryAdapter(ImportJobRepositoryPort):
             review_updated_at=row.review_updated_at,
             created_at=row.created_at,
             finished_at=row.finished_at,
+            version=row.version,
         )
 
     def get_progress(
@@ -162,3 +166,19 @@ class SqlAlchemyImportJobRepositoryAdapter(ImportJobRepositoryPort):
             statement = statement.where(ImportJobRow.uploaded_by_user_id == requested_by_user_id)
         row = self._session.execute(statement).one_or_none()
         return ImportJobProgress(id=row.id, status=row.status, version=row.version) if row is not None else None
+
+    def lock_job(self, *, job_id: UUID, requested_by_user_id: UUID, requested_by_role: str) -> ImportJob | None:
+        """Захватить строку до конца транзакции и повторно проверить доступ.
+
+        Returns:
+            Доступное задание либо None.
+        """
+        row = self._session.scalar(
+            select(ImportJobRow)
+            .where(ImportJobRow.id == job_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if row is None or (requested_by_role != 'admin' and row.uploaded_by_user_id != requested_by_user_id):
+            return None
+        return self._to_domain(row)

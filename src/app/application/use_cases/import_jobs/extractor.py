@@ -121,7 +121,9 @@ class ExtractImportDraftUseCase:
                 event_date_candidates=tuple(event_date_candidates),
                 record_type=record_type,
                 title=_guess_title(archive_file.path, dicom_metadata),
-                group_key=_group_key(
+                group_key=archive_file.path
+                if dicom_metadata is None
+                else _group_key(
                     path=archive_file.path,
                     event_date=event_date,
                     record_type=record_type,

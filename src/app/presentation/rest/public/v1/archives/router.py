@@ -2,18 +2,23 @@
 
 from __future__ import annotations
 
+from urllib.parse import quote
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, status, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, status, UploadFile
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
+from app.application.ports.import_jobs.document_bundle import UploadedDocument
 from app.application.use_cases.auth.common.dtos import AuthenticatedUserDTO
+from app.application.use_cases.import_jobs.documents import ReadImportSourceUseCase, UploadDocumentsUseCase
 from app.application.use_cases.import_jobs.dtos import ImportJobDTO, ImportReviewDraftDTO
 from app.application.use_cases.import_jobs.errors import (
     ImportJobDuplicateConfirmationRequiredError,
     ImportJobEventDateRequiredError,
     ImportJobNotFoundError,
     ImportJobValidationError,
+    ImportReviewConflictError,
 )
 from app.application.use_cases.import_jobs.use_cases import (
     CreateImportJobUseCase,
@@ -22,6 +27,7 @@ from app.application.use_cases.import_jobs.use_cases import (
     ResolveImportJobUseCase,
     SaveImportReviewDraftUseCase,
 )
+from app.infrastructure.adapters.import_jobs.document_bundle import DocumentBundle
 from app.infrastructure.adapters.import_jobs.factory import build_zip_archive_reader
 from app.infrastructure.adapters.repositories.audit_events import AuditEventRepositoryAdapter
 from app.infrastructure.adapters.repositories.import_jobs.sqlalchemy_import_job_repository import (
@@ -49,7 +55,9 @@ from app.presentation.webserver.http_errors import raise_forbidden, raise_not_fo
 
 router = APIRouter(prefix='/archives', tags=['archives'])
 router.include_router(events_router)
-archive_file_dependency = File(...)
+archive_file_dependency = File(None)
+documents_dependency = File(None)
+ai_requested_dependency = Form(False)
 MAX_ARCHIVE_SIZE_MB = 200
 MAX_ARCHIVE_SIZE_BYTES = MAX_ARCHIVE_SIZE_MB * 1024 * 1024
 
@@ -129,7 +137,9 @@ save_import_review_draft_use_case_dependency = Depends(get_save_import_review_dr
 @router.post('/imports', response_model=ImportJobResponseSchema, status_code=status.HTTP_201_CREATED)
 def create_import_job(
     request: Request,
-    file: UploadFile = archive_file_dependency,
+    file: UploadFile | None = archive_file_dependency,
+    files: list[UploadFile] | None = documents_dependency,
+    ai_requested: bool = ai_requested_dependency,
     current_user: AuthenticatedUserDTO = current_authenticated_user_dependency,
     use_case: CreateImportJobUseCase = create_import_job_use_case_dependency,
     session: Session = db_session_dependency,
@@ -142,9 +152,28 @@ def create_import_job(
     Raises:
         HTTPException: Если файл не является ZIP-архивом.
     """
+    if current_user.role not in {'doctor', 'admin'}:
+        raise_forbidden('Only doctors and admins can upload documents')
+    if files:
+        if file or len(files) > 100:
+            raise HTTPException(422, 'Выберите ZIP либо отдельные документы')
+        try:
+            documents = tuple(
+                UploadedDocument(f.filename or 'document', f.file.read(MAX_ARCHIVE_SIZE_BYTES + 1)) for f in files
+            )
+            job = UploadDocumentsUseCase(DocumentBundle(), use_case).execute(
+                documents, current_user.id, request.state.request_id, ai_requested
+            )
+            session.commit()
+            return job
+        except ImportJobValidationError as exc:
+            session.rollback()
+            raise HTTPException(422, 'Допустимы PDF, PNG и JPEG; проверьте размеры файлов') from exc
+    if file is None:
+        raise HTTPException(422, 'Выберите документы')
     if file.size is not None and file.size > MAX_ARCHIVE_SIZE_BYTES:
         raise_payload_too_large(f'Archive exceeds maximum size {MAX_ARCHIVE_SIZE_MB} MB')
-    content = file.file.read()
+    content = file.file.read(MAX_ARCHIVE_SIZE_BYTES + 1)
     if len(content) > MAX_ARCHIVE_SIZE_BYTES:
         raise_payload_too_large(f'Archive exceeds maximum size {MAX_ARCHIVE_SIZE_MB} MB')
     if current_user.role not in {'doctor', 'admin'}:
@@ -156,6 +185,7 @@ def create_import_job(
             content=content,
             content_type=file.content_type or 'application/zip',
             request_id=request.state.request_id,
+            ai_requested=ai_requested,
         )
         session.commit()
         return job
@@ -231,9 +261,13 @@ def save_import_review_draft(
             actor_user_id=current_user.id,
             actor_role=current_user.role,
             decisions=[decision.model_dump(mode='json') for decision in payload.decisions],
+            version=payload.version,
         )
         session.commit()
         return draft
+    except ImportReviewConflictError as exc:
+        session.rollback()
+        raise HTTPException(409, 'Черновик изменился. Обновите данные, сохранив свои правки') from exc
     except ImportJobNotFoundError:
         session.rollback()
         raise_not_found('Import job not found')
@@ -270,9 +304,13 @@ def resolve_import_job(
             actor_role=current_user.role,
             actor_fio=current_user.fio,
             decisions=[decision.model_dump(mode='json') for decision in payload.decisions],
+            version=payload.version,
         )
         session.commit()
         return job
+    except ImportReviewConflictError as exc:
+        session.rollback()
+        raise HTTPException(409, 'Черновик изменился. Обновите данные, сохранив свои правки') from exc
     except ImportJobNotFoundError:
         session.rollback()
         raise_not_found('Import job not found')
@@ -300,3 +338,40 @@ def resolve_import_job(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail='Invalid import resolution',
         ) from exc
+
+
+@router.get('/imports/{job_id}/files/{file_id}')
+def read_import_source(
+    job_id: UUID,
+    file_id: str,
+    current_user: AuthenticatedUserDTO = current_authenticated_user_dependency,
+    session: Session = db_session_dependency,
+) -> Response:
+    """Вернуть исходник через API после проверки доступа к импорту.
+
+    Returns:
+        Документ с запретом кеширования.
+
+    Raises:
+        HTTPException: Черновик изменился во время операции.
+    """
+    if current_user.role not in {'doctor', 'admin'}:
+        raise_forbidden('Документ недоступен')
+    try:
+        source = ReadImportSourceUseCase(
+            _build_repository(session), get_file_storage(), build_zip_archive_reader()
+        ).execute(job_id, file_id, current_user.id, current_user.role)
+    except ImportReviewConflictError as exc:
+        session.rollback()
+        raise HTTPException(409, 'Черновик изменился. Обновите данные, сохранив свои правки') from exc
+    except ImportJobNotFoundError:
+        raise_not_found('Документ недоступен')
+    return Response(
+        source.content,
+        media_type=source.mime_type,
+        headers={
+            'Cache-Control': 'no-store',
+            'X-Content-Type-Options': 'nosniff',
+            'Content-Disposition': "inline; filename*=UTF-8''" + quote(source.filename),
+        },
+    )

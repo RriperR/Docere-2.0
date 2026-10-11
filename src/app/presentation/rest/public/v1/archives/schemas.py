@@ -13,6 +13,7 @@ from app.presentation.rest.serialization import MoscowDatetime
 class ImportFileDraftSchema(BaseModel):
     """Файл-кандидат из отчёта импорта."""
 
+    id: str | None = None
     path: str
     filename: str
     mime_type: str
@@ -112,6 +113,7 @@ class ImportRecordGroupResolveSchema(BaseModel):
     record_type: str | None = Field(default=None, pattern='^(consultation_result|exam_result|lab_result|other)$')
     event_date: date | None = None
     title: str | None = Field(default=None, max_length=255)
+    clinical_summary: str | None = Field(default=None, max_length=10000)
     allow_possible_duplicate: bool = False
 
     @model_validator(mode='before')
@@ -155,18 +157,21 @@ class ImportJobResponseSchema(BaseModel):
     review_decisions: list[ImportPatientResolveSchema] = Field(default_factory=list)
     review_updated_at: MoscowDatetime | None = None
     created_at: MoscowDatetime
+    version: int = 1
     finished_at: MoscowDatetime | None
 
 
 class ResolveImportJobRequestSchema(BaseModel):
     """Тело запроса финализации ImportJob после review."""
 
+    version: int | None = Field(default=None, ge=1)
     decisions: list[ImportPatientResolveSchema] = Field(min_length=1)
 
 
 class SaveImportReviewDraftRequestSchema(BaseModel):
     """Тело запроса сохранения промежуточных решений review."""
 
+    version: int | None = Field(default=None, ge=1)
     decisions: list[ImportPatientResolveSchema] = Field(max_length=500)
 
 
@@ -174,4 +179,5 @@ class ImportReviewDraftResponseSchema(BaseModel):
     """Сохраненный серверный черновик review."""
 
     decisions: list[ImportPatientResolveSchema] = Field(default_factory=list)
+    version: int = 1
     updated_at: MoscowDatetime | None = None

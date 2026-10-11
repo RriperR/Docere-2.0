@@ -3,6 +3,7 @@ import { create } from 'zustand'
 import api from '../api/api'
 
 export interface ImportFileDraft {
+  id?: string
   path: string
   filename: string
   mime_type: string
@@ -78,6 +79,7 @@ export interface ImportResolvedPatient {
 export interface UploadJob {
   id: string
   status: 'queued' | 'running' | 'needs_review' | 'completed' | 'failed' | 'completed_with_warnings'
+  version?: number
   original_filename: string | null
   archive_storage_key: string | null
   size_bytes: number | null
@@ -99,6 +101,7 @@ export interface ImportRecordGroupDecision {
   record_type?: string
   event_date?: string | null
   title?: string
+  clinical_summary?: string
   allow_possible_duplicate?: boolean
 }
 
@@ -124,7 +127,7 @@ interface UploadState {
   error: string | null
 
   setCurrentUpload: (file: File | null) => void
-  uploadFile: (file: File) => Promise<string>
+  uploadFile: (file: File | File[], aiRequested?: boolean) => Promise<string>
   listJobs: () => Promise<void>
   getJobById: (id: string) => Promise<void>
   resolveJob: (id: string, patients: ImportPatientDecision[]) => Promise<void>
@@ -168,10 +171,13 @@ export const useUploadStore = create<UploadState>((set, get) => ({
 
   setCurrentUpload: (file) => set({ currentUpload: file }),
 
-  uploadFile: async (file) => {
+  uploadFile: async (input, aiRequested = false) => {
+    const documents = Array.isArray(input) ? input : [input]
+    const file = documents[0]
     set({ isUploading: true, progress: 0, error: null })
     const form = new FormData()
-    form.append('file', file)
+    documents.forEach(document => form.append(documents.length === 1 && document.name.toLowerCase().endsWith('.zip') ? 'file' : 'files', document))
+    form.append('ai_requested', String(aiRequested))
 
     try {
       const { data } = await api.post<UploadJob>('/archives/imports', form, {
@@ -222,7 +228,7 @@ export const useUploadStore = create<UploadState>((set, get) => ({
   resolveJob: async (id, patients) => {
     set({ isResolving: true, error: null })
     try {
-      const { data } = await api.post<UploadJob>(`/archives/imports/${id}/resolve`, { decisions: patients })
+      const { data } = await api.post<UploadJob>(`/archives/imports/${id}/resolve`, { decisions: patients, version: get().currentJob?.version })
       set({
         currentJob: data,
         jobs: get().jobs.map((item) => (item.id === data.id ? data : item)),
@@ -240,11 +246,13 @@ export const useUploadStore = create<UploadState>((set, get) => ({
       const { data } = await api.put<{
         decisions: ImportPatientDecision[]
         updated_at: string | null
-      }>(`/archives/imports/${id}/review-draft`, { decisions: patients })
+        version?: number
+      }>(`/archives/imports/${id}/review-draft`, { decisions: patients, version: get().currentJob?.version })
       set((state) => ({
         currentJob: state.currentJob?.id === id
           ? {
               ...state.currentJob,
+              version: data.version,
               review_decisions: data.decisions,
               review_updated_at: data.updated_at,
             }

@@ -34,6 +34,7 @@ const UploadPage = () => {
     error,
   } = useUploadStore();
   const [uploadError, setUploadError] = useState('');
+  const [documents, setDocuments] = useState<File[]>([]);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest');
   const filteredJobs = jobs
@@ -58,27 +59,24 @@ const UploadPage = () => {
 
     const file = acceptedFiles[0];
 
-    const acceptedTypes = ['application/zip', 'application/x-zip-compressed'];
-    const isZip = acceptedTypes.includes(file.type) || file.name.toLowerCase().endsWith('.zip');
-    if (!isZip) {
-      setUploadError('Выберите ZIP-архив.');
-      return;
+    const hasZip = acceptedFiles.some(f => f.name.toLowerCase().endsWith('.zip'));
+    if ((hasZip && acceptedFiles.length !== 1) || acceptedFiles.some(f => !/\.(zip|pdf|png|jpe?g)$/i.test(f.name))) {
+      setUploadError('Выберите один ZIP либо PDF, PNG и JPEG.'); return;
     }
-
-    if (file.size > 200 * 1024 * 1024) {
-      setUploadError('Файл слишком большой. Максимальный размер - 200 МБ.');
-      return;
+    if (acceptedFiles.length > 100 || acceptedFiles.reduce((sum, f) => sum + f.size, 0) > 200 * 1024 * 1024) {
+      setUploadError('Не более 100 файлов и 200 МБ суммарно.'); return;
     }
-
+    setDocuments(acceptedFiles);
     setUploadError('');
     setCurrentUpload(file);
   }, [setCurrentUpload]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    multiple: false,
+    multiple: true,
     accept: {
       'application/zip': ['.zip'],
+      'application/pdf': ['.pdf'], 'image/png': ['.png'], 'image/jpeg': ['.jpg', '.jpeg'],
       'application/x-zip-compressed': ['.zip'],
     },
   });
@@ -87,7 +85,7 @@ const UploadPage = () => {
     if (!currentUpload) return;
 
     try {
-      const jobId = await uploadFile(currentUpload);
+      const jobId = await uploadFile(documents.length ? documents : [currentUpload]);
       navigate(`/upload/status/${jobId}`);
     } catch {
       // Error is handled by the upload store
@@ -121,9 +119,9 @@ const UploadPage = () => {
         transition={{ duration: 0.5 }}
         className="mb-8"
       >
-        <h1 className="text-2xl font-bold text-gray-900">Импорт архива</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Импорт документов</h1>
         <p className="mt-1 text-gray-500">
-          Загрузите ZIP-архив с медицинскими данными пациента.
+          Загрузите ZIP или отдельные PDF, PNG и JPEG.
         </p>
       </motion.div>
 
@@ -167,10 +165,10 @@ const UploadPage = () => {
                 <p className="text-lg font-medium text-gray-700 mb-1">
                   {isDragActive
                     ? 'Отпустите архив здесь'
-                    : 'Перетащите ZIP-архив сюда или выберите файл'}
+                    : 'Перетащите документы сюда или выберите файлы'}
                 </p>
                 <p className="text-sm text-gray-500 mb-4">
-                  Поддерживается ZIP до 200 МБ
+                  ZIP или документы до 200 МБ суммарно
                 </p>
 
                 <Button
@@ -185,7 +183,7 @@ const UploadPage = () => {
           ) : (
             <div className="border rounded-lg p-6">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-medium text-gray-900">Выбранный архив</h3>
+                <h3 className="text-lg font-medium text-gray-900">Выбранные документы</h3>
                 {!isUploading && (
                   <button
                     onClick={clearUpload}
@@ -202,7 +200,7 @@ const UploadPage = () => {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-900 truncate">
-                    {currentUpload.name}
+                    {documents.length > 1 ? `${documents.length} документов` : currentUpload.name}
                   </p>
                   <p className="text-sm text-gray-500">
                     {formatFileSize(currentUpload.size)}

@@ -1,4 +1,5 @@
 import axios from 'axios'
+import DocumentViewer from '../../components/records/DocumentViewer'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
@@ -71,6 +72,8 @@ const UploadReviewPage: React.FC = () => {
   } = usePatientsStore()
   const [decisions, setDecisions] = useState<PatientDecisionState[]>([])
   const [formError, setFormError] = useState('')
+  const [previewFile, setPreviewFile] = useState<string | null>(null)
+  const accessLost = React.useCallback(async () => { setPreviewFile(null); if (jobId) await getJobById(jobId) }, [jobId, getJobById])
   const [serverDuplicates, setServerDuplicates] = useState<string[]>([])
   const [selectedGroupsByPatient, setSelectedGroupsByPatient] = useState<Record<string, string[]>>({})
   const [bulkPatchByPatient, setBulkPatchByPatient] = useState<Record<string, BulkPatchState>>({})
@@ -283,6 +286,7 @@ const UploadReviewPage: React.FC = () => {
         </div>
       )}
 
+      {previewFile && jobId && <div className="lg:sticky lg:top-4"><DocumentViewer importJobId={jobId} recordId={jobId} attachmentId={previewFile} onClose={() => setPreviewFile(null)} onAccessLost={accessLost} /></div>}
       {decisions.map((decision, patientIndex) => {
         const patientCandidate = patientCandidates.find((item) => item.candidate_id === decision.candidate_id)
         if (!patientCandidate) return null
@@ -580,6 +584,7 @@ const UploadReviewPage: React.FC = () => {
                         </label>
                       </div>
 
+                      <label className="mt-3 block text-sm">Клиническое описание<textarea className="mt-1 w-full rounded-md border border-gray-200 p-3" maxLength={10000} value={group.clinical_summary ?? ''} onChange={e => updateGroup(patientIndex, groupIndex, { clinical_summary: e.target.value })} /></label>
                       {sourceGroup && (
                         <div className="mt-3 space-y-2">
                           <p className="text-xs text-gray-500">
@@ -591,7 +596,7 @@ const UploadReviewPage: React.FC = () => {
                               return (
                                 <div key={file.path} className="rounded-sm border border-gray-100 bg-gray-50 px-3 py-2 text-xs">
                                   <div className="flex items-center justify-between gap-2">
-                                    <span className="truncate font-medium text-gray-800">{file.filename}</span>
+                                    {file.id ? <button className="truncate font-medium text-primary-700 underline" onClick={() => setPreviewFile(file.id!)}>{file.filename}</button> : <span className="truncate font-medium text-gray-800">{file.filename}</span>}
                                     <span className="shrink-0 text-gray-500">{formatFileSize(file.size_bytes)}</span>
                                   </div>
                                   <div className="mt-1 flex flex-wrap gap-2 text-gray-500">
@@ -787,11 +792,10 @@ function buildPatientOptions(accessiblePatients: Patient[], patientCandidate: Im
 }
 
 function toInitialDecision(patient: ImportPatientDraft): PatientDecisionState {
-  const exactMatch = patient.existing_matches.find((match) => match.match_type === 'exact')
   return {
     candidate_id: patient.candidate_id,
-    action: exactMatch ? 'existing' : 'create',
-    patient_passport_id: exactMatch?.id ?? '',
+    action: 'create',
+    patient_passport_id: '',
     fio: patient.fio ?? '',
     date_of_birth: patient.date_of_birth ?? '',
     record_groups: patient.record_groups.map((group) => ({
@@ -800,6 +804,7 @@ function toInitialDecision(patient: ImportPatientDraft): PatientDecisionState {
       record_type: group.record_type,
       event_date: group.event_date,
       title: group.title,
+      clinical_summary: '',
       allow_possible_duplicate: false,
     })),
   }
@@ -876,6 +881,7 @@ function toPayload(decision: PatientDecisionState): ImportPatientDecision {
       record_type: group.record_type,
       event_date: group.event_date || null,
       title: group.title,
+      clinical_summary: group.clinical_summary,
       allow_possible_duplicate: group.allow_possible_duplicate ?? false,
     })),
   }

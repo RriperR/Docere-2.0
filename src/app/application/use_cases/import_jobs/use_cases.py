@@ -18,6 +18,7 @@ from app.application.use_cases.import_jobs.errors import (
     ImportJobEventDateRequiredError,
     ImportJobNotFoundError,
     ImportJobValidationError,
+    ImportReviewConflictError,
 )
 from app.domain.entities.file_attachment import FileAttachmentCategory
 from app.domain.entities.import_job import ImportJob
@@ -53,6 +54,7 @@ class CreateImportJobUseCase:
         content: bytes,
         content_type: str,
         request_id: str | None = None,
+        ai_requested: bool = False,
     ) -> ImportJobDTO:
         """Создать ImportJob из загруженного ZIP-архива.
 
@@ -62,6 +64,7 @@ class CreateImportJobUseCase:
             content: Бинарное содержимое архива.
             content_type: MIME-тип файла.
             request_id: Идентификатор HTTP-запроса для фоновой обработки.
+            ai_requested: Запустить AI после разбора по явному выбору пользователя.
 
         Returns:
             Созданный ImportJob.
@@ -80,6 +83,7 @@ class CreateImportJobUseCase:
             archive_storage_key=storage_key,
             size_bytes=len(content),
             request_id=request_id,
+            **({'ai_requested': True} if ai_requested else {}),
         )
         self._audit_events.record(
             actor_user_id=uploaded_by_user_id,
@@ -235,6 +239,7 @@ class SaveImportReviewDraftUseCase:
         actor_user_id: UUID,
         actor_role: str,
         decisions: list[dict[str, object]],
+        version: int | None = None,
     ) -> ImportReviewDraftDTO:
         """Проверить и сохранить черновик review.
 
@@ -243,15 +248,18 @@ class SaveImportReviewDraftUseCase:
 
         Raises:
             ImportJobNotFoundError: Если job не найден или недоступен.
+            ImportReviewConflictError: Версия черновика устарела.
             ImportJobValidationError: Если job не ожидает review или решения не относятся к отчету.
         """
-        job = self._repository.get_job(
+        job = self._repository.lock_job(
             job_id=job_id,
             requested_by_user_id=actor_user_id,
             requested_by_role=actor_role,
         )
         if job is None:
             raise ImportJobNotFoundError
+        if version is not None and version != job.version:
+            raise ImportReviewConflictError
         if job.status.value != 'needs_review':
             raise ImportJobValidationError
         _validate_review_draft(job.report_json, decisions)
@@ -262,6 +270,7 @@ class SaveImportReviewDraftUseCase:
         return ImportReviewDraftDTO(
             decisions=updated.review_decisions,
             updated_at=updated.review_updated_at,
+            version=updated.version,
         )
 
 
@@ -294,6 +303,7 @@ class ResolveImportJobUseCase:
         actor_role: str,
         actor_fio: str,
         decisions: list[dict[str, object]],
+        version: int | None = None,
     ) -> ImportJobDTO:
         """Финализировать ImportJob по решениям пользователя.
 
@@ -303,10 +313,11 @@ class ResolveImportJobUseCase:
         Raises:
             ImportJobNotFoundError: Если job не найден или недоступен.
             ImportJobValidationError: Если job не готов к resolve или решение некорректно.
+            ImportReviewConflictError: Версия черновика устарела.
             ImportJobDuplicateConfirmationRequiredError: Если найдена похожая запись без подтверждения.
             ImportJobEventDateRequiredError: Если для создаваемой записи не определена дата события.
         """
-        job = self._import_jobs.get_job(
+        job = self._import_jobs.lock_job(
             job_id=job_id,
             requested_by_user_id=actor_user_id,
             requested_by_role=actor_role,
@@ -315,9 +326,12 @@ class ResolveImportJobUseCase:
             raise ImportJobNotFoundError
         if job.status.value in _FINAL_STATUSES:
             return _to_dto(job)
+        if version is not None and version != job.version:
+            raise ImportReviewConflictError
         if job.status.value != 'needs_review':
             raise ImportJobValidationError
 
+        _validate_review_draft(job.report_json, decisions)
         report = job.report_json
         patients = {
             str(patient.get('candidate_id')): patient
@@ -407,7 +421,9 @@ class ResolveImportJobUseCase:
                     event_date=event_date,
                     title=title,
                     appointment_location=None,
-                    clinical_summary='Создано из импортированного архива.',
+                    clinical_summary=str(
+                        group_decision.get('clinical_summary') or 'Создано из импортированного архива.'
+                    ),
                     payload_json=_payload_json(
                         group=group,
                         job_id=job.id,
@@ -548,6 +564,7 @@ def _to_dto(job: ImportJob, report_json: dict[str, object] | None = None) -> Imp
         review_updated_at=job.review_updated_at,
         created_at=job.created_at,
         finished_at=job.finished_at,
+        version=job.version,
     )
 
 

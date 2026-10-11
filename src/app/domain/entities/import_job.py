@@ -34,6 +34,7 @@ class ImportJob:
     review_updated_at: datetime | None
     created_at: datetime
     finished_at: datetime | None
+    version: int = 1
 
 
 @dataclass(frozen=True, slots=True)

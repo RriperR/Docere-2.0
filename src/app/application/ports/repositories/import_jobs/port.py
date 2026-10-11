@@ -18,6 +18,7 @@ class ImportJobRepositoryPort:
         archive_storage_key: str,
         size_bytes: int,
         request_id: str | None = None,
+        ai_requested: bool = False,
     ) -> ImportJob:
         """Атомарно создать ImportJob в статусе queued и намерение отправить его обработчику."""
         raise NotImplementedError
@@ -51,3 +52,13 @@ class ImportJobRepositoryPort:
     ) -> ImportJobProgress | None:
         """Вернуть доступный статус, не загружая медицинский отчёт."""
         raise NotImplementedError
+
+    def lock_job(self, *, job_id: UUID, requested_by_user_id: UUID, requested_by_role: str) -> ImportJob | None:
+        """Захватить задание для изменения; адаптер БД обязан блокировать строку.
+
+        Returns:
+            Доступное задание.
+        """
+        return self.get_job(
+            job_id=job_id, requested_by_user_id=requested_by_user_id, requested_by_role=requested_by_role
+        )

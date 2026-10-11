@@ -41,3 +41,7 @@ class ImportJobEventDateRequiredError(ImportJobValidationError):
 
 class ArchiveExtractionError(ImportJobError):
     """Архив не может быть прочитан как корректный импортируемый ZIP."""
+
+
+class ImportReviewConflictError(ImportJobError):
+    """Черновик изменился в другой вкладке."""
