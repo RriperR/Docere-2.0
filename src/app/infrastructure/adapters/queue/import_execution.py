@@ -64,6 +64,9 @@ def finish_import(job_id: UUID, token: UUID, status: ImportJobStatus, report: di
         True, если результат принят.
     """
     with get_session_factory()() as session:
+        original = session.get(ImportJobRow, job_id)
+        if original is not None and original.report_json.get('ai_requested') is True:
+            report = {**report, 'ai_requested': True}
         updated = session.scalar(
             update(ImportJobRow)
             .where(

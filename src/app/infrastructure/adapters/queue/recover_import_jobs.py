@@ -12,6 +12,7 @@ from sqlalchemy import or_, select, update
 
 from app.domain.entities.import_job import ImportJobStatus
 from app.infrastructure.adapters.queue.case_events import cleanup_invalid_participants, enqueue_case_events
+from app.infrastructure.adapters.queue.import_ai import enqueue_import_ai_runs, start_automatic_import_ai
 from app.infrastructure.adapters.queue.tasks import process_import_job
 from app.infrastructure.db.models._time import utc_now
 from app.infrastructure.db.models.import_dispatch import ImportDispatchRow
@@ -113,6 +114,18 @@ def main() -> None:
         try:
             count = enqueue_recoverable_import_jobs()
             logger.info('import_dispatch_cycle', sent=count)
+            with get_session_factory()() as session:
+                automatic = session.scalars(
+                    select(ImportJobRow.id)
+                    .where(
+                        ImportJobRow.status == ImportJobStatus.NEEDS_REVIEW,
+                        ImportJobRow.report_json['ai_requested'].as_boolean().is_(True),
+                    )
+                    .limit(100)
+                ).all()
+            for job_id in automatic:
+                start_automatic_import_ai(job_id)
+            enqueue_import_ai_runs()
             cleanup_invalid_participants()
             logger.info('case_dispatch_cycle', sent=enqueue_case_events())
         except Exception:

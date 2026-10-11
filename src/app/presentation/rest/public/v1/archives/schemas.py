@@ -89,6 +89,9 @@ class ImportResolvedPatientSchema(BaseModel):
 class ImportReportSchema(BaseModel):
     """Типизированный отчёт ImportJob."""
 
+    ai_requested: bool = False
+    latest_ai_run_id: UUID | None = None
+    ai_error_code: str | None = None
     schema_version: int | None = None
     message: str | None = None
     source_archive: str | None = None

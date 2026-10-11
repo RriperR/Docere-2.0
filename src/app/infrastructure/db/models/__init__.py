@@ -15,6 +15,7 @@ from app.infrastructure.db.models.clinical_cases import (
     ClinicalCaseRow,
     OpinionRequestRow,
 )
+from app.infrastructure.db.models.import_ai import ImportAiDocumentRow, ImportAiRunRow
 from app.infrastructure.db.models.import_dispatch import ImportDispatchRow
 from app.infrastructure.db.models.medical_records.file_attachment import FileAttachmentRow
 from app.infrastructure.db.models.medical_records.import_job import ImportJobRow
@@ -25,6 +26,8 @@ from app.infrastructure.db.models.medical_records.record_comment import RecordCo
 from app.infrastructure.db.models.medical_records.user_record_link import UserRecordLinkRow, UserRecordLinkSourceRow
 
 __all__ = [
+    'ImportAiRunRow',
+    'ImportAiDocumentRow',
     'CaseNotificationRow',
     'CaseDiscussionReadRow',
     'CaseWorkDraftRow',

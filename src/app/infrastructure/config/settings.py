@@ -3,9 +3,10 @@
 from functools import cache
 from pathlib import Path
 
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.domain.import_ai import AiOptions
 from app.infrastructure.config.paths import DEFAULT_ENV_FILE
 
 
@@ -50,6 +51,39 @@ class ImportArchiveSettings(BaseModel):
     max_compression_ratio: int = 100
 
 
+class ImportAiSettings(BaseModel):
+    """Настройки внешнего AI; токен не попадает в публичные ответы."""
+
+    enabled: bool = False
+    provider: str = 'AI-сервис'
+    base_url: str = ''
+    model: str = ''
+    token: SecretStr = SecretStr('')
+    timeout_seconds: float = Field(default=60, gt=0, le=120)
+    max_documents: int = Field(default=20, ge=1, le=100)
+    max_pages: int = Field(default=100, ge=1, le=1000)
+    max_pages_per_document: int = Field(default=30, ge=1, le=100)
+    batch_pages: int = Field(default=5, ge=1, le=10)
+    concurrency: int = Field(default=2, ge=1, le=10)
+
+    def options(self) -> AiOptions:
+        """Вернуть не секретную конфигурацию; неполное подключение недоступно.
+
+        Returns:
+            Параметры с безопасным признаком готовности.
+        """
+        return AiOptions(
+            enabled=self.enabled and bool(self.base_url and self.model and self.token.get_secret_value()),
+            provider=self.provider,
+            model=self.model,
+            max_documents=self.max_documents,
+            max_pages=self.max_pages,
+            max_pages_per_document=self.max_pages_per_document,
+            batch_pages=self.batch_pages,
+            concurrency=self.concurrency,
+        )
+
+
 class AppSettings(BaseSettings):
     """Корневой объект конфигурации приложения."""
 
@@ -67,6 +101,7 @@ class AppSettings(BaseSettings):
     storage: StorageSettings
     queue: QueueSettings
     import_archive: ImportArchiveSettings = ImportArchiveSettings()
+    import_ai: ImportAiSettings = ImportAiSettings()
 
 
 @cache

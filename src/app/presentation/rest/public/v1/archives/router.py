@@ -40,6 +40,7 @@ from app.infrastructure.adapters.repositories.patient_cards.sqlalchemy_patient_c
     SqlAlchemyPatientCardRepositoryAdapter,
 )
 from app.infrastructure.adapters.storage.factory import get_file_storage
+from app.presentation.rest.public.v1.archives.ai import router as ai_router
 from app.presentation.rest.public.v1.archives.events import router as events_router
 from app.presentation.rest.public.v1.archives.schemas import (
     ImportJobResponseSchema,
@@ -55,6 +56,7 @@ from app.presentation.webserver.http_errors import raise_forbidden, raise_not_fo
 
 router = APIRouter(prefix='/archives', tags=['archives'])
 router.include_router(events_router)
+router.include_router(ai_router)
 archive_file_dependency = File(None)
 documents_dependency = File(None)
 ai_requested_dependency = Form(False)
@@ -366,12 +368,14 @@ def read_import_source(
         raise HTTPException(409, 'Черновик изменился. Обновите данные, сохранив свои правки') from exc
     except ImportJobNotFoundError:
         raise_not_found('Документ недоступен')
+    inline = source.mime_type in {'application/pdf', 'image/png', 'image/jpeg'}
+    disposition = 'inline' if inline else 'attachment'
     return Response(
         source.content,
-        media_type=source.mime_type,
+        media_type=source.mime_type if inline else 'application/octet-stream',
         headers={
             'Cache-Control': 'no-store',
             'X-Content-Type-Options': 'nosniff',
-            'Content-Disposition': "inline; filename*=UTF-8''" + quote(source.filename),
+            'Content-Disposition': disposition + "; filename*=UTF-8''" + quote(source.filename),
         },
     )

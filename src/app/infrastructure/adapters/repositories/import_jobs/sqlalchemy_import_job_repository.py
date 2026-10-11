@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.application.ports.repositories.import_jobs.port import ImportJobRepositoryPort
 from app.domain.entities.import_job import ImportJob, ImportJobProgress, ImportJobStatus
 from app.infrastructure.db.models._time import utc_now
+from app.infrastructure.db.models.import_ai import ImportAiDocumentRow, ImportAiRunRow
 from app.infrastructure.db.models.import_dispatch import ImportDispatchRow
 from app.infrastructure.db.models.medical_records.import_job import ImportJobRow
 
@@ -90,6 +91,7 @@ class SqlAlchemyImportJobRepositoryAdapter(ImportJobRepositoryPort):
         row = self._session.get(ImportJobRow, job_id)
         if row is None:
             return None
+        self._cancel_ai(job_id)
         row.status = ImportJobStatus.COMPLETED
         row.version += 1
         row.report_json = report_json
@@ -108,6 +110,7 @@ class SqlAlchemyImportJobRepositoryAdapter(ImportJobRepositoryPort):
         row = self._session.get(ImportJobRow, job_id)
         if row is None:
             return None
+        self._cancel_ai(job_id)
         row.status = ImportJobStatus.COMPLETED_WITH_WARNINGS
         row.version += 1
         row.report_json = report_json
@@ -182,3 +185,17 @@ class SqlAlchemyImportJobRepositoryAdapter(ImportJobRepositoryPort):
         if row is None or (requested_by_role != 'admin' and row.uploaded_by_user_id != requested_by_user_id):
             return None
         return self._to_domain(row)
+
+    def _cancel_ai(self, job_id: UUID) -> None:
+        ids = self._session.scalars(
+            update(ImportAiRunRow)
+            .where(ImportAiRunRow.job_id == job_id, ImportAiRunRow.status.in_(['queued', 'running']))
+            .values(status='cancelled', processing_token=None, finished_at=utc_now())
+            .returning(ImportAiRunRow.id)
+        ).all()
+        if ids:
+            self._session.execute(
+                update(ImportAiDocumentRow)
+                .where(ImportAiDocumentRow.run_id.in_(ids), ImportAiDocumentRow.status == 'queued')
+                .values(status='cancelled', error_code='cancelled')
+            )
