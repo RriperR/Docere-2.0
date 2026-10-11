@@ -27,7 +27,7 @@ test('doctor checks AI sources, preserves corrections, and imports reviewed reco
   await page.getByRole('button', { name: 'Загрузить', exact: true }).click()
   await expect(page).toHaveURL(/\/upload\/status\//)
   const jobId = page.url().split('/').at(-1)!
-  await page.getByRole('button', { name: 'Проверить импорт' }).click()
+  await page.locator(`a[href="/upload/review/${jobId}"]`).getByRole('button', { name: 'Проверить импорт' }).click()
   await expect(page).toHaveURL(/\/upload\/review\//)
   await expect(page.getByRole('button', { name: 'Заполнить пустые поля' })).toHaveCount(2)
   await page.getByRole('button', { name: 'Заполнить пустые поля' }).first().click()

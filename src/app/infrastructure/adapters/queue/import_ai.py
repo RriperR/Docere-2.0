@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.application.use_cases.import_jobs.ai import AnalyzeImportDocumentUseCase, ImportAiUseCase
 from app.application.use_cases.import_jobs.documents import import_file_id, ReadImportSourceUseCase
 from app.application.use_cases.import_jobs.use_cases import _as_dict_list
-from app.domain.import_ai import AI_ACTIVE, AiOptions, AiRun, ImportAiError
+from app.domain.import_ai import AI_ACTIVE, AiOptions, AiRun, ImportAiError, PROMPT_VERSION
 from app.infrastructure.adapters.import_jobs.ai_provider import ChatCompletionsImportProvider
 from app.infrastructure.adapters.import_jobs.document_pages import DocumentPages
 from app.infrastructure.adapters.import_jobs.factory import build_zip_archive_reader
@@ -244,7 +244,12 @@ def process_import_ai(run_id: str) -> None:
         if not check():
             break
         try:
-            if not cfg.options().enabled or cfg.model != claimed.run.model or cfg.provider != claimed.run.provider:
+            if (
+                not cfg.options().enabled
+                or cfg.model != claimed.run.model
+                or cfg.provider != claimed.run.provider
+                or claimed.run.prompt_version != PROMPT_VERSION
+            ):
                 raise ImportAiError('configuration_changed', 503)
             with get_session_factory()() as session:
                 source = ReadImportSourceUseCase(

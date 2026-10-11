@@ -124,6 +124,29 @@ def test_conflicting_patient_facts_are_not_merged():
     assert 'conflicting:fio' in result['issues']
 
 
+@pytest.mark.parametrize('name', ['event_date', 'fio', 'date_of_birth'])
+def test_ambiguous_field_is_removed_even_if_provider_supplies_a_candidate(name):
+    payload = facts()
+    payload['fields']['fio'] = {'value': 'Синтетический пациент', 'sources': [{'page': 1, 'excerpt': 'Пациент'}]}
+    payload['fields']['date_of_birth'] = {'value': '1980-01-01', 'sources': [{'page': 1, 'excerpt': '01.01.1980'}]}
+    payload['ambiguous_fields'] = [name]
+    parsed = parse_extraction(json.dumps(payload), (DocumentPage(1, '', ''),))
+    assert name not in parsed.fields
+    result = merge_extractions([parsed])
+    assert name not in result['fields']
+    assert 'conflicting:' + name in result['issues']
+    assert result['patient_conflict'] is (name in {'fio', 'date_of_birth'})
+    other_batch = AiExtraction({name: AiField(payload['fields'][name]['value'], (AiSource(2, 'Другой фрагмент'),))})
+    assert name not in merge_extractions([parsed, other_batch])['fields']
+
+
+def test_unknown_ambiguous_field_rejects_response():
+    payload = facts()
+    payload['ambiguous_fields'] = ['treatment']
+    with pytest.raises(ImportAiError, match='invalid_response'):
+        parse_extraction(json.dumps(payload), (DocumentPage(1, '', ''),))
+
+
 def test_images_and_unreadable_documents():
     pages = DocumentPages().prepare(png_bytes(), 'image/png', 30)
     assert len(pages) == 1 and pages[0].image_base64
@@ -209,6 +232,72 @@ def complete_with_facts(monkeypatch, run_id, payload):
         ),
     )
     import_ai.process_import_ai(run_id)
+
+
+def test_manual_finalize_cancels_running_ai_and_rejects_late_result(record_client, monkeypatch):
+    configure_ai(monkeypatch)
+    jid, headers, job = upload_job(record_client, monkeypatch)
+    started, _ = start(record_client, jid, headers, job)
+    run_id = UUID(started.json()['id'])
+    token = uuid4()
+    claim = import_ai.claim_ai_run(run_id, token)
+    assert claim is not None
+    patient = job['report_json']['patients'][0]
+    decisions = [
+        {
+            'candidate_id': patient['candidate_id'],
+            'action': 'create',
+            'fio': 'Синтетический пациент',
+            'record_groups': [
+                {
+                    'group_id': g['group_id'],
+                    'action': 'create',
+                    'event_date': '2026-10-11',
+                    'title': 'Название, введённое врачом',
+                    'clinical_summary': 'Ручное описание',
+                }
+                for g in patient['record_groups']
+            ],
+        }
+    ]
+    response = record_client.post(
+        f'/api/archives/imports/{jid}/resolve',
+        headers=headers,
+        json={'version': job['version'], 'decisions': decisions},
+    )
+    assert response.status_code == 200
+    record_id = response.json()['report_json']['resolved_patients'][0]['record_ids'][0]
+    assert not import_ai.ai_authorized(run_id, token)
+    assert not import_ai.save_ai_document(run_id, token, claim.run.documents[0].file_id, facts(), 1, 'checksum', {})
+    import_ai.finish_ai_run(run_id, token)
+    run = record_client.get(f'/api/archives/imports/{jid}/ai-runs/{run_id}', headers=headers).json()
+    assert run['status'] == 'cancelled'
+    assert all(d['status'] == 'cancelled' and not d['result'] for d in run['documents'])
+    record = record_client.get('/api/records/' + record_id, headers=headers).json()
+    assert record['title'] == 'Название, введённое врачом'
+    assert record['clinical_summary'] == 'Ручное описание'
+    assert record['status'] == 'unconfirmed'
+    assert start(record_client, jid, headers, job)[0].status_code == 409
+
+
+def test_worker_does_not_mislabel_old_run_with_new_prompt_version(record_client, monkeypatch):
+    configure_ai(monkeypatch)
+    jid, headers, job = upload_job(record_client, monkeypatch)
+    started, _ = start(record_client, jid, headers, job)
+    rid = started.json()['id']
+    with get_session_factory()() as session:
+        session.get(ImportAiRunRow, UUID(rid)).prompt_version = 'obsolete-test-version'
+        session.commit()
+
+    def unexpected_call(*_args, **_kwargs):
+        pytest.fail('Нельзя отправлять документ с новой инструкцией под старой версией')
+
+    monkeypatch.setattr(ChatCompletionsImportProvider, 'extract', unexpected_call)
+    import_ai.process_import_ai(rid)
+    run = record_client.get(f'/api/archives/imports/{jid}/ai-runs/{rid}', headers=headers).json()
+    assert run['status'] == 'failed'
+    assert run['prompt_version'] == 'obsolete-test-version'
+    assert all(d['error_code'] == 'configuration_changed' and not d['result'] for d in run['documents'])
 
 
 def test_provenance_uses_server_sources_and_requires_identity_check(record_client, monkeypatch):
@@ -534,6 +623,72 @@ def test_provider_reasoning_extension_is_opt_in(disable_thinking):
         assert requests[0]['chat_template_kwargs'] == {'enable_thinking': False}
     else:
         assert 'chat_template_kwargs' not in requests[0]
+
+
+@pytest.mark.parametrize(
+    'status,code,expected_attempts',
+    [
+        (400, 'provider_request_rejected', 1),
+        (403, 'provider_authentication', 1),
+        (429, 'provider_unavailable', 3),
+        (502, 'provider_unavailable', 3),
+    ],
+)
+def test_provider_http_failures_do_not_leak_body_or_retry_permanent_errors(status, code, expected_attempts):
+    requests = []
+
+    def handle(request):
+        requests.append(request)
+        return httpx.Response(status, text='private upstream body with document facts and credentials')
+
+    provider = ChatCompletionsImportProvider(
+        'https://provider.example/v1', 'vision', 'test-only', transport=httpx.MockTransport(handle), wait=lambda _: None
+    )
+    with pytest.raises(ImportAiError, match=code) as failure:
+        provider.extract((DocumentPage(1, '', ''),))
+    assert len(requests) == expected_attempts
+    assert str(failure.value) == code
+
+
+@pytest.mark.parametrize('finish_reason', ['length', 'content_filter', 'tool_calls'])
+def test_provider_rejects_incomplete_or_non_document_response(finish_reason):
+    provider = ChatCompletionsImportProvider(
+        'https://provider.example/v1',
+        'vision',
+        'test-only',
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(
+                200, json={'choices': [{'finish_reason': finish_reason, 'message': {'content': json.dumps(facts())}}]}
+            )
+        ),
+    )
+    with pytest.raises(ImportAiError, match='incomplete_response'):
+        provider.extract((DocumentPage(1, '', ''),))
+
+
+def test_cancel_during_provider_backoff_prevents_second_external_call():
+    active = True
+    requests = []
+
+    def handle(request):
+        requests.append(request)
+        return httpx.Response(429)
+
+    def cancel(_delay):
+        nonlocal active
+        active = False
+
+    provider = ChatCompletionsImportProvider(
+        'https://provider.example/v1',
+        'vision',
+        'test-only',
+        transport=httpx.MockTransport(handle),
+        wait=cancel,
+        authorized=lambda: active,
+    )
+    with pytest.raises(ImportAiError, match='cancelled'):
+        provider.extract((DocumentPage(1, '', ''),))
+    assert len(requests) == 1
 
 
 def test_database_failures_do_not_render_clinical_bound_parameters(record_client):

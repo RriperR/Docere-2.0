@@ -7,7 +7,7 @@ from typing import Literal
 AiFieldName = Literal['fio', 'date_of_birth', 'event_date', 'record_type', 'title', 'clinical_summary']
 AI_FIELDS = {'fio', 'date_of_birth', 'event_date', 'record_type', 'title', 'clinical_summary'}
 AI_ACTIVE = {'queued', 'running'}
-PROMPT_VERSION = 'import-facts-v2'
+PROMPT_VERSION = 'import-facts-v3'
 
 
 class ImportAiError(Exception):
@@ -63,8 +63,12 @@ def merge_extractions(batches: list[AiExtraction]) -> dict[str, object]:
     """
     merged: dict[str, object] = {}
     issues = list(dict.fromkeys(issue for batch in batches for issue in batch.issues))
-    patient_conflict = any(b.multiple_patients for b in batches)
+    patient_conflict = any(b.multiple_patients for b in batches) or any(
+        issue in {'conflicting:fio', 'conflicting:date_of_birth'} for issue in issues
+    )
     for name in sorted(AI_FIELDS):
+        if 'conflicting:' + name in issues:
+            continue
         fields = [b.fields[name] for b in batches if name in b.fields]
         if not fields:
             issues.append('missing:' + name)
