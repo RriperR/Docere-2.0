@@ -171,8 +171,6 @@ def finish_ai_run(run_id: UUID, token: UUID) -> None:
         if raw is None:
             return
         # Сначала тот же порядок job -> run, что у resolve/cancel.
-        from app.infrastructure.db.models.medical_records.import_job import ImportJobRow
-
         session.scalar(select(ImportJobRow).where(ImportJobRow.id == raw.job_id).with_for_update())
         row = session.scalars(
             select(ImportAiRunRow)
@@ -294,9 +292,15 @@ def enqueue_import_ai_runs(limit: int = 100) -> int:
                 | UserRow.role.not_in(['doctor', 'admin'])
             )
         )
+        invalid_ids = session.scalars(invalid).all()
+        session.execute(
+            update(ImportAiDocumentRow)
+            .where(ImportAiDocumentRow.run_id.in_(invalid_ids), ImportAiDocumentRow.status == 'queued')
+            .values(status='cancelled', error_code='cancelled')
+        )
         session.execute(
             update(ImportAiRunRow)
-            .where(ImportAiRunRow.id.in_(invalid), ImportAiRunRow.status.in_(AI_ACTIVE))
+            .where(ImportAiRunRow.id.in_(invalid_ids), ImportAiRunRow.status.in_(AI_ACTIVE))
             .values(status='cancelled', processing_token=None, finished_at=utc_now())
         )
         session.commit()
@@ -339,8 +343,6 @@ def start_automatic_import_ai(job_id: UUID) -> None:
         ImportAiError: Недоступный пользователь; код сохраняется в отчёте.
     """
     with get_session_factory()() as session:
-        from app.infrastructure.db.models.medical_records.import_job import ImportJobRow
-
         job = session.scalar(select(ImportJobRow).where(ImportJobRow.id == job_id).with_for_update())
         if job is None or job.status.value != 'needs_review' or job.report_json.get('ai_requested') is not True:
             return

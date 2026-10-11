@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 
 import api from '../api/api'
+import { useAuthStore } from './authStore'
 import { aiErrorLabels, AppliedAi } from '../api/importAi'
 
 export interface ImportFileDraft {
@@ -164,6 +165,11 @@ const normalizeError = (error: unknown, fallback: string): string => {
   return apiError.message || fallback
 }
 
+let sessionGeneration = 0
+const ensureCurrentSession = (generation: number) => {
+  if (generation !== sessionGeneration) throw new Error('Сессия изменилась')
+}
+
 export const useUploadStore = create<UploadState>((set, get) => ({
   currentUpload: null,
   currentJob: null,
@@ -179,6 +185,7 @@ export const useUploadStore = create<UploadState>((set, get) => ({
   setCurrentUpload: (file) => set({ currentUpload: file }),
 
   uploadFile: async (input, aiRequested = false) => {
+    const generation = sessionGeneration
     const documents = Array.isArray(input) ? input : [input]
     const file = documents[0]
     set({ isUploading: true, progress: 0, error: null })
@@ -190,10 +197,11 @@ export const useUploadStore = create<UploadState>((set, get) => ({
       const { data } = await api.post<UploadJob>('/archives/imports', form, {
         headers: { 'Content-Type': 'multipart/form-data' },
         onUploadProgress: (event) => {
-          if (!event.total) return
+          if (!event.total || generation !== sessionGeneration) return
           set({ progress: Math.round((event.loaded / event.total) * 100) })
         },
       })
+      ensureCurrentSession(generation)
       const job = {
         ...data,
         file: { name: file.name, size: file.size, type: file.type },
@@ -201,25 +209,31 @@ export const useUploadStore = create<UploadState>((set, get) => ({
       set({ currentJob: job, jobs: [job, ...get().jobs.filter((item) => item.id !== job.id)], isUploading: false, progress: 100 })
       return data.id
     } catch (error: unknown) {
+      if (generation !== sessionGeneration) throw error
       set({ error: normalizeError(error, 'Не удалось загрузить архив'), isUploading: false, progress: 0 })
       throw error
     }
   },
 
   listJobs: async () => {
+    const generation = sessionGeneration
     set({ isLoadingJobs: true, error: null })
     try {
       const { data } = await api.get<UploadJob[]>('/archives/imports')
+      ensureCurrentSession(generation)
       set({ jobs: data, isLoadingJobs: false })
     } catch (error: unknown) {
+      if (generation !== sessionGeneration) return
       set({ error: normalizeError(error, 'Не удалось загрузить список импортов'), isLoadingJobs: false })
     }
   },
 
   getJobById: async (id) => {
+    const generation = sessionGeneration
     set({ error: null })
     try {
       const { data } = await api.get<UploadJob>(`/archives/imports/${id}`)
+      ensureCurrentSession(generation)
       set({
         currentJob: {
           ...data,
@@ -228,26 +242,34 @@ export const useUploadStore = create<UploadState>((set, get) => ({
         jobs: get().jobs.map((item) => (item.id === data.id ? data : item)),
       })
     } catch (error: unknown) {
+      if (generation !== sessionGeneration) return
+      const denied = typeof error === 'object' && error !== null && 'response' in error
+        && [401, 403, 404].includes((error as { response?: { status?: number } }).response?.status ?? 0)
+      if (denied) set({ currentJob: null, jobs: get().jobs.filter(job => job.id !== id) })
       set({ error: normalizeError(error, 'Не удалось получить статус импорта') })
     }
   },
 
   resolveJob: async (id, patients) => {
+    const generation = sessionGeneration
     set({ isResolving: true, error: null })
     try {
       const { data } = await api.post<UploadJob>(`/archives/imports/${id}/resolve`, { decisions: patients, version: get().currentJob?.version })
+      ensureCurrentSession(generation)
       set({
         currentJob: data,
         jobs: get().jobs.map((item) => (item.id === data.id ? data : item)),
         isResolving: false,
       })
     } catch (error: unknown) {
+      if (generation !== sessionGeneration) throw error
       set({ error: normalizeError(error, 'Не удалось подтвердить импорт'), isResolving: false })
       throw error
     }
   },
 
   saveReviewDraft: async (id, patients) => {
+    const generation = sessionGeneration
     set({ isSavingReviewDraft: true, reviewDraftError: null })
     try {
       const { data } = await api.put<{
@@ -255,6 +277,7 @@ export const useUploadStore = create<UploadState>((set, get) => ({
         updated_at: string | null
         version?: number
       }>(`/archives/imports/${id}/review-draft`, { decisions: patients, version: get().currentJob?.version })
+      ensureCurrentSession(generation)
       set((state) => ({
         currentJob: state.currentJob?.id === id
           ? {
@@ -268,6 +291,7 @@ export const useUploadStore = create<UploadState>((set, get) => ({
       }))
       return data.updated_at
     } catch (error: unknown) {
+      if (generation !== sessionGeneration) throw error
       const message = normalizeError(error, 'Не удалось сохранить черновик проверки')
       set({ reviewDraftError: message, isSavingReviewDraft: false })
       throw error
@@ -288,3 +312,11 @@ export const useUploadStore = create<UploadState>((set, get) => ({
       error: null,
     }),
 }))
+
+// A previous account must not leave documents or late HTTP replies in the next session.
+useAuthStore.subscribe((state, previous) => {
+  if (state.user?.id !== previous.user?.id || state.user?.role !== previous.user?.role || state.user?.status !== previous.user?.status || state.isAuthenticated !== previous.isAuthenticated) {
+    sessionGeneration += 1
+    useUploadStore.getState().clearUpload()
+  }
+})

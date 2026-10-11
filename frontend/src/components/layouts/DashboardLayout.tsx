@@ -182,13 +182,13 @@ export const DashboardLayout = () => {
       doctor: [
         { path: '/cases', label: 'Клинические случаи', icon: <MessagesSquare className="h-5 w-5" />, badge: 0 },
         { path: '/patients', label: 'Пациенты', icon: <Users className="h-5 w-5" />, badge: 0 },
-        { path: '/upload', label: 'Импорт архива', icon: <UploadCloud className="h-5 w-5" />, badge: 0 },
+        { path: '/upload', label: 'Импорт документов', icon: <UploadCloud className="h-5 w-5" />, badge: 0 },
         { path: '/notifications', label: 'Входящие', icon: <Bell className="h-5 w-5" />, badge: clinicalUnread },
         { path: '/doctor-role-reviews', label: 'Заявки врачей', icon: <UserCheck className="h-5 w-5" />, badge: pendingRoleApplicationCount },
       ],
       admin: [
         { path: '/doctor-role-reviews', label: 'Заявки врачей', icon: <UserCheck className="h-5 w-5" />, badge: pendingRoleApplicationCount },
-        { path: '/upload', label: 'Импорт архива', icon: <UploadCloud className="h-5 w-5" />, badge: 0 },
+        { path: '/upload', label: 'Импорт документов', icon: <UploadCloud className="h-5 w-5" />, badge: 0 },
         { path: '/patients', label: 'Пациенты', icon: <Users className="h-5 w-5" />, badge: 0 },
         { path: '/admin', label: 'Панель админа', icon: <Shield className="h-5 w-5" />, badge: 0 },
       ],

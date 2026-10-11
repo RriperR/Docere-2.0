@@ -56,6 +56,7 @@ class CreateImportJobUseCase:
         content_type: str,
         request_id: str | None = None,
         ai_requested: bool = False,
+        original_filenames: dict[str, str] | None = None,
     ) -> ImportJobDTO:
         """Создать ImportJob из загруженного ZIP-архива.
 
@@ -66,6 +67,7 @@ class CreateImportJobUseCase:
             content_type: MIME-тип файла.
             request_id: Идентификатор HTTP-запроса для фоновой обработки.
             ai_requested: Запустить AI после разбора по явному выбору пользователя.
+            original_filenames: Исходные названия отдельно загруженных документов.
 
         Returns:
             Созданный ImportJob.
@@ -84,7 +86,8 @@ class CreateImportJobUseCase:
             archive_storage_key=storage_key,
             size_bytes=len(content),
             request_id=request_id,
-            **({'ai_requested': True} if ai_requested else {}),
+            ai_requested=ai_requested,
+            original_filenames=original_filenames,
         )
         self._audit_events.record(
             actor_user_id=uploaded_by_user_id,

@@ -207,7 +207,7 @@ const UploadPage = () => {
                     {documents.length > 1 ? `${documents.length} документов` : currentUpload.name}
                   </p>
                   <p className="text-sm text-gray-500">
-                    {formatFileSize(currentUpload.size)}
+                    {formatFileSize(documents.length ? documents.reduce((total, file) => total + file.size, 0) : currentUpload.size)}
                   </p>
                 </div>
               </div>
@@ -215,6 +215,7 @@ const UploadPage = () => {
               <label className="mb-4 block rounded-lg border border-primary-100 bg-primary-50 p-3 text-sm">
                 <input type="checkbox" checked={aiRequested} disabled={!capabilities?.enabled || isUploading} onChange={e => setAiRequested(e.target.checked)} className="mr-2" />Проанализировать с AI
                 <p className="mt-1 text-xs text-gray-600">{capabilities?.enabled ? `Содержимое документов будет передано внешнему сервису «${capabilities.provider}». Проверьте результат перед импортом.` : 'AI-сервис не настроен. Документы можно импортировать вручную.'}</p>
+                {capabilities?.enabled && <p className="mt-1 text-xs text-gray-500">До {capabilities.max_documents} документов, {capabilities.max_pages} страниц на запуск и {capabilities.max_pages_per_document} страниц в документе.</p>}
               </label>
               {isUploading ? (
                 <div className="mb-6">

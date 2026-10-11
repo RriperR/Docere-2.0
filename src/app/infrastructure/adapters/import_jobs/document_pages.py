@@ -2,6 +2,7 @@
 
 import warnings
 from base64 import b64encode
+from contextlib import closing
 from io import BytesIO
 
 import pypdfium2 as pdfium
@@ -44,14 +45,14 @@ class DocumentPages:
                         raise ImportAiError('document_page_limit')
                     pages = []
                     for index in range(len(pdf)):
-                        with pdf[index] as page:
+                        with closing(pdf[index]) as page:
                             width, height = page.get_size()
                             if width <= 0 or height <= 0:
                                 raise ImportAiError('unreadable_document')
                             scale = min(2.0, 2000 / max(width, height))
                             with (
-                                page.get_textpage() as text_page,
-                                page.render(scale=scale) as bitmap,
+                                closing(page.get_textpage()) as text_page,
+                                closing(page.render(scale=scale)) as bitmap,
                                 bitmap.to_pil() as image,
                             ):
                                 pages.append(

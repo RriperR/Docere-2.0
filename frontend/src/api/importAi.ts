@@ -54,3 +54,5 @@ export function importAiError(error: unknown) {
 }
 
 export const listAiRuns = async (jobId: string, offset = 0, signal?: AbortSignal) => (await api.get<AiRun[]>(`/archives/imports/${jobId}/ai-runs`, { params: { offset, limit: 5 }, signal })).data
+
+export const aiStatusLabels: Record<string, string> = { queued: 'В очереди', running: 'Выполняется', completed: 'Готово', completed_with_errors: 'Готово с ошибками', failed: 'Ошибка', cancelled: 'Отменено' }

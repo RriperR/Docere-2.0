@@ -35,6 +35,7 @@ class SqlAlchemyImportJobRepositoryAdapter(ImportJobRepositoryPort):
         size_bytes: int,
         request_id: str | None = None,
         ai_requested: bool = False,
+        original_filenames: dict[str, str] | None = None,
     ) -> ImportJob:
         """Атомарно создать ImportJob в статусе queued и намерение отправить его обработчику.
 
@@ -49,6 +50,7 @@ class SqlAlchemyImportJobRepositoryAdapter(ImportJobRepositoryPort):
             size_bytes=size_bytes,
             report_json={
                 'ai_requested': ai_requested,
+                'original_filenames': original_filenames or {},
                 'message': 'Archive uploaded and queued for processing',
                 'archive_storage_key': archive_storage_key,
                 'original_filename': original_filename,

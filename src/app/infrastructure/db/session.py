@@ -20,7 +20,7 @@ def get_engine() -> Engine:
         Объект `Engine`.
     """
     settings = get_settings()
-    return create_engine(settings.database.url, pool_pre_ping=True)
+    return create_engine(settings.database.url, pool_pre_ping=True, hide_parameters=True)
 
 
 @lru_cache(maxsize=1)

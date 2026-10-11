@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import api from '../api/api'
+import { useAuthStore } from './authStore'
 import { type UploadJob, useUploadStore } from './uploadStore'
 
 vi.mock('../api/api', () => ({
@@ -63,4 +64,25 @@ describe('upload store', () => {
     expect(useUploadStore.getState().currentJob?.review_updated_at).toBe(updatedAt)
     expect(useUploadStore.getState().isSavingReviewDraft).toBe(false)
   })
+})
+
+
+it('clears import data on logout and discards a previous session response', async () => {
+  useAuthStore.setState({ isAuthenticated: true })
+  let complete!: (value: { data: UploadJob }) => void
+  vi.mocked(api.get).mockReturnValueOnce(new Promise(resolve => { complete = resolve }))
+  useUploadStore.setState({ currentJob: job, jobs: [job] })
+  const pending = useUploadStore.getState().getJobById(job.id)
+  useAuthStore.getState().logout()
+  expect(useUploadStore.getState().currentJob).toBeNull()
+  complete({ data: job })
+  await pending
+  expect(useUploadStore.getState()).toMatchObject({ currentJob: null, jobs: [] })
+})
+
+it('removes cached clinical data when access to the import is denied', async () => {
+  useUploadStore.setState({ currentJob: job, jobs: [job] })
+  vi.mocked(api.get).mockRejectedValueOnce({ response: { status: 404 } })
+  await useUploadStore.getState().getJobById(job.id)
+  expect(useUploadStore.getState()).toMatchObject({ currentJob: null, jobs: [] })
 })

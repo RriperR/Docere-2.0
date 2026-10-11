@@ -57,10 +57,12 @@ class UploadDocumentsUseCase:
         Returns:
             Задание, которое ничего не публикует в истории автоматически.
         """
+        bundle = self._bundle.pack(documents)
         return self._create.execute(
             uploaded_by_user_id=user_id,
             original_filename='documents.zip',
-            content=self._bundle.pack(documents),
+            content=bundle.content,
+            original_filenames=bundle.original_filenames,
             content_type='application/zip',
             request_id=request_id,
             ai_requested=ai_requested,
@@ -94,6 +96,12 @@ class ReadImportSourceUseCase:
         job = self._jobs.get_job(job_id=job_id, requested_by_user_id=user_id, requested_by_role=role)
         if job is None or not job.archive_storage_key:
             raise ImportJobNotFoundError
+        file_infos = [
+            f
+            for p in _as_dict_list(job.report_json.get('patients'))
+            for g in _as_dict_list(p.get('record_groups'))
+            for f in _as_dict_list(g.get('files'))
+        ]
         paths = [
             str(f.get('path', ''))
             for p in _as_dict_list(job.report_json.get('patients'))
@@ -106,4 +114,8 @@ class ReadImportSourceUseCase:
         source = self._reader.read_file(archive_content=self._storage.download(key=job.archive_storage_key), path=path)
         if source is None:
             raise ImportJobNotFoundError
-        return ImportSourceFile(file_id, source.filename, source.mime_type, source.content)
+        filename = next(
+            (str(f.get('filename') or source.filename) for f in file_infos if str(f.get('path')) == path),
+            source.filename,
+        )
+        return ImportSourceFile(file_id, filename, source.mime_type, source.content)

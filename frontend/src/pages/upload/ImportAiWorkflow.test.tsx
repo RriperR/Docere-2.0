@@ -26,7 +26,7 @@ it('keeps all references when filling several empty fields and preserves manual 
   fireEvent.click(screen.getByRole('button', { name: 'Заполнить пустые поля' }))
   expect(screen.getByLabelText('Клиническое описание')).toHaveValue('Исправлено врачом')
   await waitFor(() => expect(save).toHaveBeenCalled(), { timeout: 2000 })
-  const group = save.mock.calls.at(-1)![1][0].record_groups[0]
+  const group = save.mock.calls[save.mock.calls.length - 1][1][0].record_groups[0]
   expect(group.title).toBe('Ручное название')
   expect(group.applied_ai.flatMap((reference: { fields: string[] }) => reference.fields).sort()).toEqual(['clinical_summary', 'event_date', 'fio'])
 })

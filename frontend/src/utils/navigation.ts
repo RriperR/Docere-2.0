@@ -8,7 +8,7 @@ export function getBreadcrumbs(pathname: string): Breadcrumb[] {
   const labels: Record<string, string> = {
     patients: 'Пациенты', cases: 'Клинические случаи', notifications: 'Входящие',
     'share-requests': 'Доступ к записям', 'doctor-role-request': 'Заявка на роль врача',
-    'doctor-role-reviews': 'Проверка заявок врачей', upload: 'Импорт архива',
+    'doctor-role-reviews': 'Проверка заявок врачей', upload: 'Импорт документов',
     admin: 'Управление системой', settings: 'Настройки аккаунта',
   }
   const crumbs = [home, { label: labels[section] ?? 'Страница', path: `/${section}` }]

@@ -1,6 +1,6 @@
 import axios from 'axios'
 import api from '../../api/api'
-import { AiFieldName, AppliedAi, aiErrorLabels } from '../../api/importAi'
+import { AiFieldName, AppliedAi, aiErrorLabels, aiStatusLabels } from '../../api/importAi'
 import AiSuggestions from './AiSuggestions'
 import { useImportAi } from './useImportAi'
 import { UploadJob } from '../../stores/uploadStore'
@@ -150,7 +150,7 @@ const UploadReviewPage: React.FC = () => {
   if (!currentJob || currentJob.id !== jobId) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <p className="text-gray-500">Загрузка черновика импорта...</p>
+        <div>{error ? <p role="alert" className="text-red-700">{error} <button className="underline" onClick={() => jobId && void getJobById(jobId)}>Повторить</button></p> : <p className="text-gray-500">Загрузка черновика импорта...</p>}</div>
       </div>
     )
   }
@@ -299,13 +299,14 @@ const UploadReviewPage: React.FC = () => {
 
       <Card title="AI-помощник импорта">
         <p className="mb-3 text-sm text-gray-600">Выберите документы для передачи внешнему сервису. AI предлагает факты; вы проверяете оригиналы и решаете, какие поля применить.</p>
+        {ai.capabilities?.enabled && <p className="text-xs text-gray-500">До {ai.capabilities.max_documents} документов и {ai.capabilities.max_pages} страниц за запуск; до {ai.capabilities.max_pages_per_document} страниц в одном документе.</p>}
         {!ai.capabilities?.enabled && <p className="text-sm text-gray-500">AI-сервис пока не настроен. Обычный импорт доступен.</p>}
         <div className="my-3 grid gap-2 md:grid-cols-2">{patientCandidates.flatMap(p => p.record_groups.flatMap(g => g.files)).filter(f => f.id && !f.is_dicom && ['application/pdf', 'image/png', 'image/jpeg'].includes(f.mime_type)).map(file => <label key={file.id} className="flex min-w-0 items-center gap-2 text-sm"><input type="checkbox" disabled={ai.active} checked={aiSelection.includes(file.id!)} onChange={e => setAiSelection(current => e.target.checked ? [...current, file.id!] : current.filter(id => id !== file.id))} /><span className="break-all">{file.filename}</span></label>)}</div>
         <div className="flex flex-wrap items-center gap-3"><Button disabled={!ai.capabilities?.enabled || !aiSelection.length || ai.active || isSavingReviewDraft} isLoading={ai.busy} onClick={() => void ai.start(aiSelection)}>Проанализировать выбранные</Button>
           {ai.active && <><p role="status" className="text-sm">Анализ выполняется…</p><Button variant="outline" onClick={() => void ai.cancel()}>Отменить анализ</Button></>}
           {ai.run && <span className="text-xs text-gray-500">{ai.run.provider} · {ai.run.model} · обработано {ai.run.documents.filter(d => d.status !== 'queued').length} из {ai.run.documents.length}</span>}
         </div>
-        {!!ai.history.length && <div className="mt-3 flex flex-wrap items-center gap-3"><label className="text-sm">Версия предложений<select className="ml-2 rounded-md border p-2" value={ai.run?.id ?? ''} onChange={e => { const run = ai.history.find(r => r.id === e.target.value); if (run) ai.selectRun(run) }}><option value="">Последний запуск</option>{ai.history.map(run => <option key={run.id} value={run.id}>{new Date(run.created_at).toLocaleString('ru-RU')} · {run.status}</option>)}</select></label>{ai.hasOlder && <Button size="sm" variant="outline" onClick={() => void ai.loadOlder()}>Предыдущие запуски</Button>}</div>}
+        {!!ai.history.length && <div className="mt-3 flex flex-wrap items-center gap-3"><label className="text-sm">Версия предложений<select className="ml-2 rounded-md border p-2" value={ai.run?.id ?? ''} onChange={e => { const run = ai.history.find(r => r.id === e.target.value); if (run) ai.selectRun(run) }}><option value="">Последний запуск</option>{ai.history.map(run => <option key={run.id} value={run.id}>{new Date(run.created_at).toLocaleString('ru-RU')} · {aiStatusLabels[run.status] ?? run.status}</option>)}</select></label>{ai.hasOlder && <Button size="sm" variant="outline" onClick={() => void ai.loadOlder()}>Предыдущие запуски</Button>}</div>}
         {(ai.error || currentJob.report_json.ai_error_code) && <p role="alert" className="mt-3 text-sm text-red-700">{ai.error || aiErrorLabels[currentJob.report_json.ai_error_code ?? ''] || 'Автоматический анализ недоступен.'}</p>}
       </Card>
       {previewFile && <div className="flex gap-2 lg:hidden"><Button variant={mobileTab === 'document' ? 'primary' : 'outline'} onClick={() => setMobileTab('document')}>Документ</Button><Button variant={mobileTab === 'fields' ? 'primary' : 'outline'} onClick={() => setMobileTab('fields')}>Поля</Button></div>}
@@ -322,7 +323,7 @@ const UploadReviewPage: React.FC = () => {
             <div id={decision.candidate_id} className="scroll-mt-24" />
             <div className="space-y-5">
               <div className="grid gap-4 lg:grid-cols-3">
-                <label className="space-y-1">
+                <label className="min-w-0 space-y-1">
                   <span className="text-sm font-medium text-gray-700">Решение</span>
                   <select
                     className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm"
@@ -337,7 +338,7 @@ const UploadReviewPage: React.FC = () => {
 
                 {decision.action === 'create' && (
                   <>
-                    <label className="space-y-1">
+                    <label className="min-w-0 space-y-1">
                       <span className="text-sm font-medium text-gray-700">ФИО</span>
                       <input
                         className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm"
@@ -345,7 +346,7 @@ const UploadReviewPage: React.FC = () => {
                         onChange={(event) => updatePatient(patientIndex, { fio: event.target.value })}
                       />
                     </label>
-                    <label className="space-y-1">
+                    <label className="min-w-0 space-y-1">
                       <span className="text-sm font-medium text-gray-700">Дата рождения</span>
                       <DateInput
                         className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm"
@@ -413,8 +414,8 @@ const UploadReviewPage: React.FC = () => {
                     Применить найденные даты
                   </Button>
                 </div>
-                <div className="grid gap-3 rounded-md border border-gray-100 bg-gray-50 p-3 md:grid-cols-[minmax(160px,1fr)_minmax(180px,1fr)_auto_auto] md:items-end">
-                  <label className="space-y-1">
+                <div className="grid gap-3 rounded-md border border-gray-100 bg-gray-50 p-3 sm:grid-cols-2 sm:items-end">
+                  <label className="min-w-0 space-y-1">
                     <span className="text-xs font-medium text-gray-500">Тип для выбранных</span>
                     <select
                       className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm"
@@ -428,7 +429,7 @@ const UploadReviewPage: React.FC = () => {
                       ))}
                     </select>
                   </label>
-                  <label className="space-y-1">
+                  <label className="min-w-0 space-y-1">
                     <span className="text-xs font-medium text-gray-500">Дата для выбранных</span>
                     <DateInput
                       className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm"
@@ -469,9 +470,9 @@ const UploadReviewPage: React.FC = () => {
                       className="scroll-mt-28 rounded-lg border border-gray-100 p-4"
                     >
                       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                        <div className="flex items-center gap-2">
+                        <div className="flex min-w-0 flex-wrap items-center gap-2">
                           <FileText className="h-4 w-4 text-primary-600" />
-                          <p className="font-medium text-gray-900">{group.title || sourceGroup?.title || 'Запись'}</p>
+                          <p className="min-w-0 break-words font-medium text-gray-900">{group.title || sourceGroup?.title || 'Запись'}</p>
                           <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${group.action === 'skip' ? 'border-gray-200 bg-gray-50 text-gray-600' : needsDate || needsDuplicateConfirmation ? 'border-warning-200 bg-warning-50 text-warning-700' : 'border-success-200 bg-success-50 text-success-700'}`}>
                             {group.action === 'skip' ? 'Пропущено' : needsDate ? 'Нужно выбрать дату' : needsDuplicateConfirmation ? 'Нужно решить по дублю' : 'Готово'}
                           </span>
@@ -549,7 +550,7 @@ const UploadReviewPage: React.FC = () => {
                       )}
 
                       <div className="grid gap-3 md:grid-cols-3">
-                        <label className="space-y-1">
+                        <label className="min-w-0 space-y-1">
                           <span className="text-xs font-medium text-gray-500">Тип</span>
                           <select
                             className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm"
@@ -564,7 +565,7 @@ const UploadReviewPage: React.FC = () => {
                             ))}
                           </select>
                         </label>
-                        <label className="space-y-1">
+                        <label className="min-w-0 space-y-1">
                           <span className="text-xs font-medium text-gray-500">Дата события</span>
                           <DateInput
                             className={`w-full rounded-md border px-3 py-2 text-sm ${
@@ -598,7 +599,7 @@ const UploadReviewPage: React.FC = () => {
                             </div>
                           )}
                         </label>
-                        <label className="space-y-1">
+                        <label className="min-w-0 space-y-1">
                           <span className="text-xs font-medium text-gray-500">Название</span>
                           <input
                             className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm"

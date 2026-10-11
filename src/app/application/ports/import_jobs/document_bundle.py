@@ -12,10 +12,18 @@ class UploadedDocument:
     content: bytes
 
 
+@dataclass(frozen=True, slots=True)
+class DocumentBundleResult:
+    """Архив с отображаемыми именами исходников."""
+
+    content: bytes
+    original_filenames: dict[str, str]
+
+
 class DocumentBundlePort(Protocol):
     """Упаковка документов без зависимости application от ZIP."""
 
-    def pack(self, documents: tuple[UploadedDocument, ...]) -> bytes:
+    def pack(self, documents: tuple[UploadedDocument, ...]) -> DocumentBundleResult:
         """Проверить форматы и вернуть безопасный ZIP.
 
         Args:

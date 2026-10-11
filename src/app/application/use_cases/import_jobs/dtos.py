@@ -54,6 +54,7 @@ class ExtractImportDraftCommand:
     archive_content: bytes
     requested_by_user_id: UUID | None = None
     requested_by_role: str | None = None
+    original_filenames: dict[str, str] | None = None
 
 
 @dataclass(frozen=True, slots=True)

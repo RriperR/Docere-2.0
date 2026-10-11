@@ -1,0 +1,2 @@
+# PDF fixtures contain byte offsets and must remain binary artifacts.
+tests/fixtures/import_ai/*.pdf binary

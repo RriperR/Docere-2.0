@@ -27,7 +27,7 @@ def test_documents_preview_review_version_and_description(record_client, monkeyp
         '/api/archives/imports',
         headers=headers,
         files=[
-            ('files', ('report.pdf', b'%PDF-1.4 first', 'application/pdf')),
+            ('files', ('<report>.pdf', b'%PDF-1.4 first', 'application/pdf')),
             ('files', ('report.pdf', b'%PDF-1.4 second', 'application/pdf')),
         ],
     )
@@ -38,6 +38,8 @@ def test_documents_preview_review_version_and_description(record_client, monkeyp
     patient = job['report_json']['patients'][0]
     groups = patient['record_groups']
     assert len(groups) == 2
+    assert groups[0]['files'][0]['filename'] == '<report>.pdf'
+    assert groups[0]['title'] == '<report>'
     assert groups[0]['files'][0]['id'] != groups[1]['files'][0]['id']
     url = f'/api/archives/imports/{job_id}/files/{groups[0]["files"][0]["id"]}'
     source = record_client.get(url, headers=headers)

@@ -1,3 +1,4 @@
+import { requestId } from '../../utils/requestId'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { aiActive, AiCapabilities, AiRun, cancelAiRun, getAiCapabilities, getAiRun, startAiRun, importAiError, listAiRuns } from '../../api/importAi'
 import axios from 'axios'
@@ -36,9 +37,17 @@ export function useImportAi(job: UploadJob | null) {
       try {
         if (runId) {
           const result = await getAiRun(jobId, runId, controller.signal)
-          if (!controller.signal.aborted) { setRun(result); setError('') }
+          if (!controller.signal.aborted) { setRun(result); setHistory(prev => prev.map(item => item.id === result.id ? result : item)); setError('') }
         } else if (automatic) await refreshJob(jobId)
-      } catch (e) { if (!controller.signal.aborted) { setError(importAiError(e)); if (axios.isAxiosError(e) && [401, 403, 404].includes(e.response?.status ?? 0)) setRun(null) } }
+      } catch (e) {
+        if (!controller.signal.aborted) {
+          setError(importAiError(e))
+          if (axios.isAxiosError(e) && [401, 403, 404].includes(e.response?.status ?? 0)) {
+            setRun(null); setHistory([])
+            await refreshJob(jobId)
+          }
+        }
+      }
       finally { fetching = false }
     }
     void refresh()
@@ -65,7 +74,7 @@ export function useImportAi(job: UploadJob | null) {
     if (!jobId || !job) return
     const current = generation.current
     const selection = fileIds.slice().sort().join(',')
-    if (pendingKey.current?.selection !== selection) pendingKey.current = { selection, key: crypto.randomUUID() }
+    if (pendingKey.current?.selection !== selection) pendingKey.current = { selection, key: requestId() }
     setBusy(true); setError('')
     try {
       const result = await startAiRun(jobId, fileIds, job.version ?? 1, pendingKey.current.key)

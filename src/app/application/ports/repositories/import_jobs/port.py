@@ -19,6 +19,7 @@ class ImportJobRepositoryPort:
         size_bytes: int,
         request_id: str | None = None,
         ai_requested: bool = False,
+        original_filenames: dict[str, str] | None = None,
     ) -> ImportJob:
         """Атомарно создать ImportJob в статусе queued и намерение отправить его обработчику."""
         raise NotImplementedError

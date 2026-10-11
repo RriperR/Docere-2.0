@@ -79,7 +79,6 @@ def process_import_job(job_id: str, request_id: str | None = None) -> None:
         logger.info(
             'import_job_processing_started',
             job_id=str(job.id),
-            source_archive=job.original_filename,
             size_bytes=job.size_bytes,
         )
         try:
@@ -90,12 +89,18 @@ def process_import_job(job_id: str, request_id: str | None = None) -> None:
                 dicom_metadata_reader=PydicomMetadataReader(),
                 patient_matcher=RepositoryPatientMatcher(patient_repository),
             )
+            original_names = job.report_json.get('original_filenames')
             result = use_case.execute(
                 ExtractImportDraftCommand(
                     archive_filename=job.original_filename or 'archive.zip',
                     archive_content=archive_content,
                     requested_by_user_id=job.uploaded_by_user_id,
                     requested_by_role=_user_role(session=session, user_id=job.uploaded_by_user_id),
+                    original_filenames={
+                        str(path): name for path, name in original_names.items() if isinstance(name, str)
+                    }
+                    if isinstance(original_names, dict)
+                    else None,
                 ),
             )
             report = import_draft_result_to_json(result)

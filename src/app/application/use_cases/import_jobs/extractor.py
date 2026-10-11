@@ -88,11 +88,13 @@ class ExtractImportDraftUseCase:
                 content=archive_file.content,
                 path=archive_file.path,
             )
-            name_context = f'{command.archive_filename} {archive_file.path}'
-            patient_fio = _dicom_patient_name(dicom_metadata) or _find_fio(archive_file.path) or archive_fio
+            source_name = (command.original_filenames or {}).get(archive_file.path)
+            display_path = source_name or archive_file.path
+            name_context = f'{command.archive_filename} {display_path}'
+            patient_fio = _dicom_patient_name(dicom_metadata) or _find_fio(display_path) or archive_fio
             birth_date_candidates = _unique_dates(
                 [
-                    *_find_explicit_birth_dates(archive_file.path),
+                    *_find_explicit_birth_dates(display_path),
                     *archive_birth_dates,
                 ],
             )
@@ -101,7 +103,7 @@ class ExtractImportDraftUseCase:
                 warning_context=f'birth date for {archive_file.path}',
                 warnings=warnings,
             )
-            path_dates = [item for item in _find_dates(archive_file.path) if item not in birth_date_candidates]
+            path_dates = [item for item in _find_dates(display_path) if item not in birth_date_candidates]
             event_date_candidates = _unique_dates([*_dicom_event_dates(dicom_metadata), *path_dates])
             event_date = _single_date_or_none(
                 candidates=event_date_candidates,
@@ -111,7 +113,7 @@ class ExtractImportDraftUseCase:
             record_type = _guess_record_type(name_context, dicom_metadata)
             candidate = ImportedFileCandidate(
                 path=archive_file.path,
-                filename=archive_file.filename,
+                filename=source_name or archive_file.filename,
                 size_bytes=archive_file.size_bytes,
                 mime_type='application/dicom' if dicom_metadata else archive_file.mime_type,
                 is_dicom=dicom_metadata is not None,
@@ -120,7 +122,7 @@ class ExtractImportDraftUseCase:
                 event_date=event_date,
                 event_date_candidates=tuple(event_date_candidates),
                 record_type=record_type,
-                title=_guess_title(archive_file.path, dicom_metadata),
+                title=_guess_title(display_path, dicom_metadata),
                 group_key=archive_file.path
                 if dicom_metadata is None
                 else _group_key(

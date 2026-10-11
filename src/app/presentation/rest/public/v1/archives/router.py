@@ -170,9 +170,15 @@ def create_import_job(
         if file or len(files) > 100:
             raise HTTPException(422, 'Выберите ZIP либо отдельные документы')
         try:
-            documents = tuple(
-                UploadedDocument(f.filename or 'document', f.file.read(MAX_ARCHIVE_SIZE_BYTES + 1)) for f in files
-            )
+            documents_list = []
+            total = 0
+            for document in files:
+                content = document.file.read(MAX_ARCHIVE_SIZE_BYTES - total + 1)
+                total += len(content)
+                if total > MAX_ARCHIVE_SIZE_BYTES:
+                    raise_payload_too_large('Документы превышают суммарный лимит 200 МБ')
+                documents_list.append(UploadedDocument(document.filename or 'document', content))
+            documents = tuple(documents_list)
             job = UploadDocumentsUseCase(DocumentBundle(), use_case).execute(
                 documents, current_user.id, request.state.request_id, ai_requested
             )
