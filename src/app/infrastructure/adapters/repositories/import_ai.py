@@ -211,3 +211,33 @@ class SqlAlchemyImportAiRepository:
             )
         self.session.flush()
         return run_to_domain(self.session, row)
+
+    def latest_documents(self, job_id: UUID, user_id: UUID, role: str) -> tuple[AiRun, ...]:
+        """Прочитать завершённые предложения по доступному импорту.
+
+        Returns:
+            Запуски от новых к старым для проверки выбранных групп.
+        """
+        require_job(self.session, job_id, user_id, role)
+        rows = self.session.scalars(
+            select(ImportAiRunRow)
+            .where(ImportAiRunRow.job_id == job_id)
+            .order_by(ImportAiRunRow.created_at.desc(), ImportAiRunRow.id.desc())
+        ).all()
+        return tuple(run_to_domain(self.session, row) for row in rows)
+
+    def list_runs(self, job_id: UUID, user_id: UUID, role: str, offset: int, limit: int) -> tuple[AiRun, ...]:
+        """Получить страницу версий предложений с повторной проверкой доступа.
+
+        Returns:
+            Запуски от новых к старым.
+        """
+        require_job(self.session, job_id, user_id, role)
+        rows = self.session.scalars(
+            select(ImportAiRunRow)
+            .where(ImportAiRunRow.job_id == job_id)
+            .order_by(ImportAiRunRow.created_at.desc(), ImportAiRunRow.id.desc())
+            .offset(offset)
+            .limit(limit)
+        ).all()
+        return tuple(run_to_domain(self.session, row) for row in rows)

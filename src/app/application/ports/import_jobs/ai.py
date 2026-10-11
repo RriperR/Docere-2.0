@@ -50,3 +50,27 @@ class ImportAiRepositoryPort(Protocol):
     def cancel(self, job_id: UUID, run_id: UUID, user_id: UUID, role: str) -> AiRun:
         """Отменить оставшуюся обработку и отбросить поздние результаты."""
         ...
+
+    def list_runs(self, job_id: UUID, user_id: UUID, role: str, offset: int, limit: int) -> tuple[AiRun, ...]:
+        """Вернуть страницу запусков доступного импорта."""
+        ...
+
+    def latest_documents(self, job_id: UUID, user_id: UUID, role: str) -> tuple[AiRun, ...]:
+        """Вернуть запуски с завершёнными документами для проверки финализации."""
+        ...
+
+
+class ImportAiReviewPort(Protocol):
+    """Проверка происхождения AI независима от обычного финализатора импорта."""
+
+    def provenance(
+        self,
+        job_id: UUID,
+        user_id: UUID,
+        role: str,
+        report: dict[str, object],
+        decisions: list[dict[str, object]],
+        final: bool,
+    ) -> dict[str, list[dict[str, object]]]:
+        """Проверить источники и конфликты, вернуть происхождение по группам."""
+        ...

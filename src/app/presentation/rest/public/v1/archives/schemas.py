@@ -108,6 +108,14 @@ class ImportReportSchema(BaseModel):
     resolved_at: date | None = None
 
 
+class AppliedAiSchema(BaseModel):
+    """Ссылка на серверные предложения, без клиентской копии медицинского текста."""
+
+    run_id: UUID
+    file_id: str = Field(min_length=64, max_length=64)
+    fields: list[str] = Field(min_length=1, max_length=6)
+
+
 class ImportRecordGroupResolveSchema(BaseModel):
     """Решение пользователя по группе файлов импортируемой записи."""
 
@@ -116,6 +124,8 @@ class ImportRecordGroupResolveSchema(BaseModel):
     record_type: str | None = Field(default=None, pattern='^(consultation_result|exam_result|lab_result|other)$')
     event_date: date | None = None
     title: str | None = Field(default=None, max_length=255)
+    patient_identity_confirmed: bool = False
+    applied_ai: list[AppliedAiSchema] = Field(default_factory=list, max_length=20)
     clinical_summary: str | None = Field(default=None, max_length=10000)
     allow_possible_duplicate: bool = False
 

@@ -67,6 +67,8 @@ class SqlAlchemyImportJobRepositoryAdapter(ImportJobRepositoryPort):
         Returns:
             Задание импорта или ``None``.
         """
+        if requested_by_role not in {'doctor', 'admin'}:
+            return None
         row = self._session.get(ImportJobRow, job_id)
         if row is None:
             return None
@@ -199,3 +201,22 @@ class SqlAlchemyImportJobRepositoryAdapter(ImportJobRepositoryPort):
                 .where(ImportAiDocumentRow.run_id.in_(ids), ImportAiDocumentRow.status == 'queued')
                 .values(status='cancelled', error_code='cancelled')
             )
+
+    def replace_review(self, job_id: UUID, report: dict[str, object], decisions: list[dict[str, object]]) -> ImportJob:
+        """Сохранить перегруппировку, сохранив стабильные идентификаторы файлов.
+
+        Returns:
+            Обновлённый импорт.
+
+        Raises:
+            ValueError: Исходный импорт отсутствует.
+        """
+        row = self._session.get(ImportJobRow, job_id)
+        if row is None:
+            raise ValueError('Import job not found')
+        row.report_json = report
+        row.review_decisions_json = decisions
+        row.review_updated_at = utc_now()
+        row.version += 1
+        self._session.flush()
+        return self._to_domain(row)

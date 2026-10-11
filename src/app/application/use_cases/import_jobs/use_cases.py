@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date
 from uuid import UUID, uuid4
 
+from app.application.ports.import_jobs.ai import ImportAiReviewPort
 from app.application.ports.import_jobs.archive_reader import ArchiveReaderPort
 from app.application.ports.repositories.audit_events.port import AuditEventRepositoryPort
 from app.application.ports.repositories.import_jobs.port import ImportJobRepositoryPort
@@ -224,13 +225,15 @@ class ListImportJobsUseCase:
 class SaveImportReviewDraftUseCase:
     """Сохранить промежуточные решения пользователя по импорту."""
 
-    def __init__(self, repository: ImportJobRepositoryPort) -> None:
+    def __init__(self, repository: ImportJobRepositoryPort, ai_review: ImportAiReviewPort | None = None) -> None:
         """Инициализировать use case.
 
         Args:
             repository: Репозиторий заданий импорта.
+            ai_review: Проверка ссылок на предложения AI.
         """
         self._repository = repository
+        self._ai_review = ai_review
 
     def execute(
         self,
@@ -264,6 +267,8 @@ class SaveImportReviewDraftUseCase:
             raise ImportJobValidationError
         _validate_review_draft(job.report_json, decisions)
 
+        if self._ai_review is not None:
+            self._ai_review.provenance(job_id, actor_user_id, actor_role, job.report_json, decisions, False)
         updated = self._repository.save_review_draft(job_id=job_id, decisions=decisions)
         if updated is None:
             raise ImportJobNotFoundError
@@ -286,6 +291,7 @@ class ResolveImportJobUseCase:
         storage: FileStoragePort,
         archive_reader: ArchiveReaderPort,
         audit_events: AuditEventRepositoryPort,
+        ai_review: ImportAiReviewPort | None = None,
     ) -> None:
         """Инициализировать use case."""
         self._import_jobs = import_jobs
@@ -294,6 +300,7 @@ class ResolveImportJobUseCase:
         self._storage = storage
         self._archive_reader = archive_reader
         self._audit_events = audit_events
+        self._ai_review = ai_review
 
     def execute(
         self,
@@ -332,6 +339,11 @@ class ResolveImportJobUseCase:
             raise ImportJobValidationError
 
         _validate_review_draft(job.report_json, decisions)
+        ai_provenance = (
+            self._ai_review.provenance(job_id, actor_user_id, actor_role, job.report_json, decisions, True)
+            if self._ai_review
+            else {}
+        )
         report = job.report_json
         patients = {
             str(patient.get('candidate_id')): patient
@@ -384,7 +396,7 @@ class ResolveImportJobUseCase:
             resolved_groups: list[dict[str, object]] = []
             for group in _as_dict_list(patient.get('record_groups')):
                 group_id = str(group.get('group_id'))
-                group_decision = record_decisions.get(group_id, {})
+                group_decision = record_decisions.get(group_id, {'action': 'skip'})
                 if group_decision.get('action') == 'skip':
                     resolved_groups.append({'group_id': group_id, 'action': 'skip', 'record_id': None})
                     continue
@@ -429,6 +441,7 @@ class ResolveImportJobUseCase:
                         job_id=job.id,
                         source_archive=job.original_filename,
                         resolved_by_user_id=actor_user_id,
+                        applied_ai=ai_provenance.get(group_id, []),
                     ),
                 )
                 created_records += 1
@@ -630,11 +643,14 @@ def _payload_json(
     job_id: UUID,
     source_archive: str | None,
     resolved_by_user_id: UUID,
+    applied_ai: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     payload = group.get('payload_json')
     result = dict(payload) if isinstance(payload, dict) else {}
     result['import_provenance'] = {
         'source': 'archive',
+        'ai_assistance': applied_ai or [],
+        'reviewed_by_user_id': str(resolved_by_user_id),
         'import_job_id': str(job_id),
         'source_archive': source_archive,
         'resolved_by_user_id': str(resolved_by_user_id),

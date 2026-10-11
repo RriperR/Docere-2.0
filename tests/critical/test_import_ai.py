@@ -191,3 +191,145 @@ def test_cancel_rejects_late_document_and_automatic_uses_same_run(record_client,
     assert response.json()['status'] == 'cancelled'
     assert not import_ai.ai_authorized(run_id, token)
     assert not import_ai.save_ai_document(run_id, token, claim.run.documents[0].file_id, {'fields': {}}, 1, None, {})
+
+
+def complete_with_facts(monkeypatch, run_id, payload):
+    actual_class = ChatCompletionsImportProvider
+    monkeypatch.setattr(
+        import_ai,
+        'ChatCompletionsImportProvider',
+        lambda *a, **kw: actual_class(
+            *a,
+            **kw,
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(
+                    200, json={'choices': [{'message': {'content': json.dumps(payload)}, 'finish_reason': 'stop'}]}
+                )
+            ),
+        ),
+    )
+    import_ai.process_import_ai(run_id)
+
+
+def test_provenance_uses_server_sources_and_requires_identity_check(record_client, monkeypatch):
+    configure_ai(monkeypatch)
+    jid, headers, job = upload_job(record_client, monkeypatch)
+    created, payload = start(record_client, jid, headers, job)
+    run_id = created.json()['id']
+    extraction = facts()
+    extraction['fields']['fio'] = {'value': 'Тестовый пациент', 'sources': [{'page': 1, 'excerpt': 'Тестовый пациент'}]}
+    complete_with_facts(monkeypatch, run_id, extraction)
+    patient = job['report_json']['patients'][0]
+    group = patient['record_groups'][0]
+    decision = {
+        'candidate_id': patient['candidate_id'],
+        'action': 'create',
+        'fio': 'Тестовый пациент',
+        'record_groups': [
+            {
+                'group_id': group['group_id'],
+                'action': 'create',
+                'event_date': '2026-10-11',
+                'title': 'Исправленное название',
+                'clinical_summary': 'Проверенное описание',
+                'applied_ai': [{'run_id': run_id, 'file_id': payload['file_ids'][0], 'fields': ['title']}],
+            }
+        ],
+    }
+    response = record_client.post(
+        f'/api/archives/imports/{jid}/resolve', headers=headers, json={'decisions': [decision]}
+    )
+    assert response.status_code == 422
+    assert response.json()['detail']['code'] == 'patient_identity_confirmation_required'
+    decision['record_groups'][0]['patient_identity_confirmed'] = True
+    decision['record_groups'][0]['applied_ai'][0]['file_id'] = 'f' * 64
+    rejected = record_client.post(
+        f'/api/archives/imports/{jid}/resolve', headers=headers, json={'decisions': [decision]}
+    )
+    assert rejected.json()['detail']['code'] == 'invalid_ai_source'
+    decision['record_groups'][0]['applied_ai'][0]['file_id'] = payload['file_ids'][0]
+    final = record_client.post(f'/api/archives/imports/{jid}/resolve', headers=headers, json={'decisions': [decision]})
+    assert final.status_code == 200
+    record_id = final.json()['report_json']['resolved_patients'][0]['record_ids'][0]
+    record = record_client.get('/api/records/' + record_id, headers=headers).json()
+    proof = record['payload_json']['import_provenance']['ai_assistance'][0]
+    assert proof['suggested_value'] == extraction['fields']['title']['value']
+    assert proof['edited_by_reviewer'] is True
+    assert proof['sources'] == extraction['fields']['title']['sources']
+    assert proof['checksum']
+    assert record['status'] == 'unconfirmed'
+
+
+def test_regroup_preserves_description_and_rejects_stale_version(record_client, monkeypatch):
+    jid, headers, job = upload_job(
+        record_client,
+        monkeypatch,
+        files=[('files', ('one.png', png_bytes(), 'image/png')), ('files', ('two.png', png_bytes(), 'image/png'))],
+    )
+    patient = job['report_json']['patients'][0]
+    decisions = [
+        {
+            'candidate_id': patient['candidate_id'],
+            'action': 'create',
+            'fio': 'Первый пациент',
+            'record_groups': [
+                {'group_id': g['group_id'], 'action': 'create', 'clinical_summary': 'Ручное описание'}
+                for g in patient['record_groups']
+            ],
+        }
+    ]
+    payload = {
+        'version': job['version'],
+        'group_id': patient['record_groups'][0]['group_id'],
+        'target_candidate_id': None,
+        'decisions': decisions,
+    }
+    response = record_client.put(f'/api/archives/imports/{jid}/groups', headers=headers, json=payload)
+    assert response.status_code == 200
+    updated = response.json()
+    assert len(updated['report_json']['patients']) == 2
+    assert updated['review_decisions'][1]['record_groups'][0]['clinical_summary'] == 'Ручное описание'
+    assert updated['review_decisions'][1]['record_groups'][0]['patient_identity_confirmed'] is False
+    assert record_client.put(f'/api/archives/imports/{jid}/groups', headers=headers, json=payload).status_code == 409
+    assert set(
+        f['id'] for p in updated['report_json']['patients'] for g in p['record_groups'] for f in g['files']
+    ) == set(f['id'] for p in job['report_json']['patients'] for g in p['record_groups'] for f in g['files'])
+
+
+def test_mixed_success_and_multiple_patient_document_cannot_be_imported(record_client, monkeypatch):
+    configure_ai(monkeypatch)
+    jid, headers, job = upload_job(
+        record_client,
+        monkeypatch,
+        files=[
+            ('files', ('one.png', png_bytes(), 'image/png')),
+            ('files', ('broken.pdf', b'%PDF-invalid', 'application/pdf')),
+        ],
+    )
+    created, payload = start(record_client, jid, headers, job)
+    extraction = facts()
+    extraction['multiple_patients'] = True
+    complete_with_facts(monkeypatch, created.json()['id'], extraction)
+    run = record_client.get(f'/api/archives/imports/{jid}/ai-runs/{created.json()["id"]}', headers=headers).json()
+    assert run['status'] == 'completed_with_errors'
+    patient = job['report_json']['patients'][0]
+    decisions = [
+        {
+            'candidate_id': patient['candidate_id'],
+            'action': 'create',
+            'fio': 'Нельзя объединять',
+            'record_groups': [
+                {
+                    'group_id': g['group_id'],
+                    'action': 'create',
+                    'event_date': '2026-10-11',
+                    'patient_identity_confirmed': True,
+                }
+                for g in patient['record_groups']
+            ],
+        }
+    ]
+    response = record_client.post(
+        f'/api/archives/imports/{jid}/resolve', headers=headers, json={'decisions': decisions}
+    )
+    assert response.json()['detail']['code'] == 'multiple_patients_document'

@@ -1,4 +1,9 @@
 import axios from 'axios'
+import api from '../../api/api'
+import { AiFieldName, AppliedAi, aiErrorLabels } from '../../api/importAi'
+import AiSuggestions from './AiSuggestions'
+import { useImportAi } from './useImportAi'
+import { UploadJob } from '../../stores/uploadStore'
 import DocumentViewer from '../../components/records/DocumentViewer'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
@@ -73,6 +78,11 @@ const UploadReviewPage: React.FC = () => {
   const [decisions, setDecisions] = useState<PatientDecisionState[]>([])
   const [formError, setFormError] = useState('')
   const [previewFile, setPreviewFile] = useState<string | null>(null)
+  const [previewPage, setPreviewPage] = useState(1)
+  const [mobileTab, setMobileTab] = useState<'fields' | 'document'>('fields')
+  const [aiSelection, setAiSelection] = useState<string[]>([])
+  const [regrouping, setRegrouping] = useState(false)
+  const ai = useImportAi(currentJob)
   const accessLost = React.useCallback(async () => { setPreviewFile(null); if (jobId) await getJobById(jobId) }, [jobId, getJobById])
   const [serverDuplicates, setServerDuplicates] = useState<string[]>([])
   const [selectedGroupsByPatient, setSelectedGroupsByPatient] = useState<Record<string, string[]>>({})
@@ -110,7 +120,7 @@ const UploadReviewPage: React.FC = () => {
       initializedJobId !== jobId ||
       currentJob?.status !== 'needs_review' ||
       isResolving ||
-      isSavingReviewDraft
+      isSavingReviewDraft || regrouping
     ) return
     const payload = decisions.map(toPayload)
     const snapshot = JSON.stringify(payload)
@@ -134,9 +144,10 @@ const UploadReviewPage: React.FC = () => {
     isSavingReviewDraft,
     jobId,
     saveReviewDraft,
+    regrouping,
   ])
 
-  if (!currentJob) {
+  if (!currentJob || currentJob.id !== jobId) {
     return (
       <div className="flex h-64 items-center justify-center">
         <p className="text-gray-500">Загрузка черновика импорта...</p>
@@ -286,7 +297,21 @@ const UploadReviewPage: React.FC = () => {
         </div>
       )}
 
-      {previewFile && jobId && <div className="lg:sticky lg:top-4"><DocumentViewer importJobId={jobId} recordId={jobId} attachmentId={previewFile} onClose={() => setPreviewFile(null)} onAccessLost={accessLost} /></div>}
+      <Card title="AI-помощник импорта">
+        <p className="mb-3 text-sm text-gray-600">Выберите документы для передачи внешнему сервису. AI предлагает факты; вы проверяете оригиналы и решаете, какие поля применить.</p>
+        {!ai.capabilities?.enabled && <p className="text-sm text-gray-500">AI-сервис пока не настроен. Обычный импорт доступен.</p>}
+        <div className="my-3 grid gap-2 md:grid-cols-2">{patientCandidates.flatMap(p => p.record_groups.flatMap(g => g.files)).filter(f => f.id && !f.is_dicom && ['application/pdf', 'image/png', 'image/jpeg'].includes(f.mime_type)).map(file => <label key={file.id} className="flex min-w-0 items-center gap-2 text-sm"><input type="checkbox" disabled={ai.active} checked={aiSelection.includes(file.id!)} onChange={e => setAiSelection(current => e.target.checked ? [...current, file.id!] : current.filter(id => id !== file.id))} /><span className="break-all">{file.filename}</span></label>)}</div>
+        <div className="flex flex-wrap items-center gap-3"><Button disabled={!ai.capabilities?.enabled || !aiSelection.length || ai.active || isSavingReviewDraft} isLoading={ai.busy} onClick={() => void ai.start(aiSelection)}>Проанализировать выбранные</Button>
+          {ai.active && <><p role="status" className="text-sm">Анализ выполняется…</p><Button variant="outline" onClick={() => void ai.cancel()}>Отменить анализ</Button></>}
+          {ai.run && <span className="text-xs text-gray-500">{ai.run.provider} · {ai.run.model} · обработано {ai.run.documents.filter(d => d.status !== 'queued').length} из {ai.run.documents.length}</span>}
+        </div>
+        {!!ai.history.length && <div className="mt-3 flex flex-wrap items-center gap-3"><label className="text-sm">Версия предложений<select className="ml-2 rounded-md border p-2" value={ai.run?.id ?? ''} onChange={e => { const run = ai.history.find(r => r.id === e.target.value); if (run) ai.selectRun(run) }}><option value="">Последний запуск</option>{ai.history.map(run => <option key={run.id} value={run.id}>{new Date(run.created_at).toLocaleString('ru-RU')} · {run.status}</option>)}</select></label>{ai.hasOlder && <Button size="sm" variant="outline" onClick={() => void ai.loadOlder()}>Предыдущие запуски</Button>}</div>}
+        {(ai.error || currentJob.report_json.ai_error_code) && <p role="alert" className="mt-3 text-sm text-red-700">{ai.error || aiErrorLabels[currentJob.report_json.ai_error_code ?? ''] || 'Автоматический анализ недоступен.'}</p>}
+      </Card>
+      {previewFile && <div className="flex gap-2 lg:hidden"><Button variant={mobileTab === 'document' ? 'primary' : 'outline'} onClick={() => setMobileTab('document')}>Документ</Button><Button variant={mobileTab === 'fields' ? 'primary' : 'outline'} onClick={() => setMobileTab('fields')}>Поля</Button></div>}
+      <div className={previewFile ? 'grid min-w-0 gap-6 lg:grid-cols-2' : ''}>
+        {previewFile && jobId && <div className={`${mobileTab === 'document' ? '' : 'hidden lg:block'} min-w-0 self-start lg:sticky lg:top-4`}><DocumentViewer importJobId={jobId} page={previewPage} recordId={jobId} attachmentId={previewFile} onClose={() => setPreviewFile(null)} onAccessLost={accessLost} /></div>}
+        <div className={`${previewFile && mobileTab === 'document' ? 'hidden lg:block' : ''} min-w-0 space-y-6`}>
       {decisions.map((decision, patientIndex) => {
         const patientCandidate = patientCandidates.find((item) => item.candidate_id === decision.candidate_id)
         if (!patientCandidate) return null
@@ -584,7 +609,15 @@ const UploadReviewPage: React.FC = () => {
                         </label>
                       </div>
 
+                      <label className="mt-3 block text-sm">Пациент этого документа<select className="mt-1 w-full rounded-md border border-gray-200 p-2" value={decision.candidate_id} disabled={regrouping || isSavingReviewDraft} onChange={e => void moveGroup(group.group_id, e.target.value === '__new' ? null : e.target.value)}><option value={decision.candidate_id}>Текущий пациент</option>{patientCandidates.filter(p => p.candidate_id !== decision.candidate_id).map(p => <option key={p.candidate_id} value={p.candidate_id}>{p.fio ?? 'Другой кандидат пациента'}</option>)}<option value="__new">Отдельный пациент</option></select></label>
                       <label className="mt-3 block text-sm">Клиническое описание<textarea className="mt-1 w-full rounded-md border border-gray-200 p-3" maxLength={10000} value={group.clinical_summary ?? ''} onChange={e => updateGroup(patientIndex, groupIndex, { clinical_summary: e.target.value })} /></label>
+                      {ai.run && sourceGroup?.files.map(file => {
+                        const document = ai.run?.documents.find(d => d.file_id === file.id)
+                        if (!document) return null
+                        const needsIdentity = document.result.patient_conflict || document.result.fields?.fio || document.result.fields?.date_of_birth
+                        return <React.Fragment key={file.id}><AiSuggestions document={document} runId={ai.run!.id} canApplyIdentity={decision.action === 'create'} onSource={openSource} onApply={(name, value, reference, emptyOnly) => applyAi(patientIndex, groupIndex, name, value, reference, emptyOnly)} />
+                          {needsIdentity && !document.result.multiple_patients && <label className="mt-2 flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 p-3 text-sm"><input type="checkbox" checked={group.patient_identity_confirmed ?? false} onChange={e => updateGroup(patientIndex, groupIndex, { patient_identity_confirmed: e.target.checked })} />Я проверил, что документ относится к выбранному пациенту</label>}</React.Fragment>
+                      })}
                       {sourceGroup && (
                         <div className="mt-3 space-y-2">
                           <p className="text-xs text-gray-500">
@@ -596,7 +629,7 @@ const UploadReviewPage: React.FC = () => {
                               return (
                                 <div key={file.path} className="rounded-sm border border-gray-100 bg-gray-50 px-3 py-2 text-xs">
                                   <div className="flex items-center justify-between gap-2">
-                                    {file.id ? <button className="truncate font-medium text-primary-700 underline" onClick={() => setPreviewFile(file.id!)}>{file.filename}</button> : <span className="truncate font-medium text-gray-800">{file.filename}</span>}
+                                    {file.id ? <button className="truncate font-medium text-primary-700 underline" onClick={() => openSource(file.id!, 1)}>{file.filename}</button> : <span className="truncate font-medium text-gray-800">{file.filename}</span>}
                                     <span className="shrink-0 text-gray-500">{formatFileSize(file.size_bytes)}</span>
                                   </div>
                                   <div className="mt-1 flex flex-wrap gap-2 text-gray-500">
@@ -619,6 +652,8 @@ const UploadReviewPage: React.FC = () => {
         )
       })}
 
+        </div>
+      </div>
       {warnings.length > 0 && (
         <Card title="Предупреждения" accent="warning">
           <div className="space-y-3 text-sm">
@@ -641,22 +676,58 @@ const UploadReviewPage: React.FC = () => {
       )}
 
       <div className="flex justify-end">
-        <Button type="button" onClick={submit} isLoading={isResolving} icon={<Check className="h-4 w-4" />}>
+        <Button type="button" onClick={submit} disabled={isSavingReviewDraft || regrouping} isLoading={isResolving} icon={<Check className="h-4 w-4" />}>
           Подтвердить импорт
         </Button>
       </div>
     </div>
   )
 
+  function openSource(fileId: string, page: number) {
+    setPreviewFile(fileId); setPreviewPage(page); setMobileTab('document')
+  }
+
+  function applyAi(patientIndex: number, groupIndex: number, name: AiFieldName, value: string, reference: AppliedAi, emptyOnly = false) {
+    const patient = decisions[patientIndex]
+    const group = patient.record_groups[groupIndex]
+    const existing = name === 'fio' || name === 'date_of_birth' ? patient[name] : group[name]
+    if (emptyOnly && existing) return
+    if (existing && existing !== value && !window.confirm('Заменить введённое значение предложением AI?')) return
+    setDecisions(current => current.map((item, index) => {
+      if (index !== patientIndex) return item
+      const identity = name === 'fio' || name === 'date_of_birth'
+      return { ...item, ...(identity ? { [name]: value } : {}), record_groups: item.record_groups.map((currentGroup, innerIndex) => {
+        if (innerIndex !== groupIndex) return identity ? { ...currentGroup, patient_identity_confirmed: false } : currentGroup
+        const references = (currentGroup.applied_ai ?? []).map(r => ({ ...r, fields: r.fields.filter(f => f !== name) })).filter(r => r.fields.length)
+        return { ...currentGroup, ...(identity ? { patient_identity_confirmed: false } : { [name]: value }),
+          applied_ai: [...references, reference], allow_possible_duplicate: false }
+      }) }
+    }))
+  }
+
+  async function moveGroup(groupId: string, targetId: string | null) {
+    if (!jobId || !currentJob || isSavingReviewDraft) return
+    setRegrouping(true); setFormError('')
+    try {
+      const response = await api.put<UploadJob>(`/archives/imports/${jobId}/groups`, { version: currentJob.version, group_id: groupId, target_candidate_id: targetId, decisions: decisions.map(toPayload) })
+      const restored = restoreDecisions(response.data.report_json.patients ?? [], response.data.review_decisions)
+      setDecisions(restored)
+      lastSavedSnapshot.current = JSON.stringify(restored.map(toPayload)); lastAttemptedSnapshot.current = lastSavedSnapshot.current
+      useUploadStore.setState({ currentJob: response.data })
+      setSelectedGroupsByPatient({}); setLastSavedAt(response.data.review_updated_at)
+    } catch { setFormError('Не удалось перенести документ. Проверьте, не изменился ли черновик в другой вкладке. Ваши правки сохранены в форме.') }
+    finally { setRegrouping(false) }
+  }
+
   function updatePatient(index: number, patch: Partial<PatientDecisionState>) {
     setDecisions((current) => current.map((item, itemIndex) => {
       if (itemIndex !== index) return item
-      const resetsDuplicateDecision = patch.action !== undefined || patch.patient_passport_id !== undefined
+      const resetsDuplicateDecision = patch.action !== undefined || patch.patient_passport_id !== undefined || patch.fio !== undefined || patch.date_of_birth !== undefined
       return {
         ...item,
         ...patch,
         record_groups: resetsDuplicateDecision
-          ? item.record_groups.map((group) => ({ ...group, allow_possible_duplicate: false }))
+          ? item.record_groups.map((group) => ({ ...group, allow_possible_duplicate: false, patient_identity_confirmed: false }))
           : item.record_groups,
       }
     }))
@@ -882,6 +953,8 @@ function toPayload(decision: PatientDecisionState): ImportPatientDecision {
       event_date: group.event_date || null,
       title: group.title,
       clinical_summary: group.clinical_summary,
+      patient_identity_confirmed: group.patient_identity_confirmed,
+      applied_ai: group.applied_ai,
       allow_possible_duplicate: group.allow_possible_duplicate ?? false,
     })),
   }

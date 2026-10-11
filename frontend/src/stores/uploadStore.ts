@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 
 import api from '../api/api'
+import { aiErrorLabels, AppliedAi } from '../api/importAi'
 
 export interface ImportFileDraft {
   id?: string
@@ -51,6 +52,9 @@ export interface ImportPatientDraft {
 }
 
 export interface ImportReport extends Record<string, unknown> {
+  ai_requested?: boolean
+  latest_ai_run_id?: string | null
+  ai_error_code?: string | null
   schema_version?: number
   message?: string
   source_archive?: string
@@ -101,6 +105,8 @@ export interface ImportRecordGroupDecision {
   record_type?: string
   event_date?: string | null
   title?: string
+  applied_ai?: AppliedAi[]
+  patient_identity_confirmed?: boolean
   clinical_summary?: string
   allow_possible_duplicate?: boolean
 }
@@ -147,6 +153,7 @@ const normalizeError = (error: unknown, fallback: string): string => {
   if (typeof detail === 'string' && detail) return detail
   if (detail && typeof detail === 'object' && 'code' in detail) {
     const payload = detail as { code?: unknown }
+    if (typeof payload.code === 'string' && aiErrorLabels[payload.code]) return aiErrorLabels[payload.code]
     if (payload.code === 'duplicate_confirmation_required') {
       return 'Появилась похожая запись. Проверьте дубликаты и подтвердите импорт повторно.'
     }

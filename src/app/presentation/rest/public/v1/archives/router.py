@@ -7,10 +7,13 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, status, UploadFile
 from fastapi.responses import Response
+from pydantic import BaseModel
+from pydantic import Field as SchemaField
 from sqlalchemy.orm import Session
 
 from app.application.ports.import_jobs.document_bundle import UploadedDocument
 from app.application.use_cases.auth.common.dtos import AuthenticatedUserDTO
+from app.application.use_cases.import_jobs.ai_review import ReviewImportAiUseCase
 from app.application.use_cases.import_jobs.documents import ReadImportSourceUseCase, UploadDocumentsUseCase
 from app.application.use_cases.import_jobs.dtos import ImportJobDTO, ImportReviewDraftDTO
 from app.application.use_cases.import_jobs.errors import (
@@ -20,6 +23,7 @@ from app.application.use_cases.import_jobs.errors import (
     ImportJobValidationError,
     ImportReviewConflictError,
 )
+from app.application.use_cases.import_jobs.regroup import RegroupImportUseCase
 from app.application.use_cases.import_jobs.use_cases import (
     CreateImportJobUseCase,
     GetImportJobUseCase,
@@ -27,9 +31,11 @@ from app.application.use_cases.import_jobs.use_cases import (
     ResolveImportJobUseCase,
     SaveImportReviewDraftUseCase,
 )
+from app.domain.import_ai import ImportAiError
 from app.infrastructure.adapters.import_jobs.document_bundle import DocumentBundle
 from app.infrastructure.adapters.import_jobs.factory import build_zip_archive_reader
 from app.infrastructure.adapters.repositories.audit_events import AuditEventRepositoryAdapter
+from app.infrastructure.adapters.repositories.import_ai import SqlAlchemyImportAiRepository
 from app.infrastructure.adapters.repositories.import_jobs.sqlalchemy_import_job_repository import (
     SqlAlchemyImportJobRepositoryAdapter,
 )
@@ -44,6 +50,7 @@ from app.presentation.rest.public.v1.archives.ai import router as ai_router
 from app.presentation.rest.public.v1.archives.events import router as events_router
 from app.presentation.rest.public.v1.archives.schemas import (
     ImportJobResponseSchema,
+    ImportPatientResolveSchema,
     ImportReviewDraftResponseSchema,
     ResolveImportJobRequestSchema,
     SaveImportReviewDraftRequestSchema,
@@ -115,6 +122,7 @@ def get_resolve_import_job_use_case(session: Session = db_session_dependency) ->
         storage=get_file_storage(),
         archive_reader=build_zip_archive_reader(),
         audit_events=AuditEventRepositoryAdapter(session=session),
+        ai_review=ReviewImportAiUseCase(SqlAlchemyImportAiRepository(session)),
     )
 
 
@@ -126,7 +134,9 @@ def get_save_import_review_draft_use_case(
     Returns:
         Настроенный use case сохранения черновика.
     """
-    return SaveImportReviewDraftUseCase(repository=_build_repository(session))
+    return SaveImportReviewDraftUseCase(
+        repository=_build_repository(session), ai_review=ReviewImportAiUseCase(SqlAlchemyImportAiRepository(session))
+    )
 
 
 create_import_job_use_case_dependency = Depends(get_create_import_job_use_case)
@@ -267,6 +277,9 @@ def save_import_review_draft(
         )
         session.commit()
         return draft
+    except ImportAiError as exc:
+        session.rollback()
+        raise HTTPException(exc.status, {'code': exc.code}) from exc
     except ImportReviewConflictError as exc:
         session.rollback()
         raise HTTPException(409, 'Черновик изменился. Обновите данные, сохранив свои правки') from exc
@@ -310,6 +323,9 @@ def resolve_import_job(
         )
         session.commit()
         return job
+    except ImportAiError as exc:
+        session.rollback()
+        raise HTTPException(exc.status, {'code': exc.code}) from exc
     except ImportReviewConflictError as exc:
         session.rollback()
         raise HTTPException(409, 'Черновик изменился. Обновите данные, сохранив свои правки') from exc
@@ -363,6 +379,9 @@ def read_import_source(
         source = ReadImportSourceUseCase(
             _build_repository(session), get_file_storage(), build_zip_archive_reader()
         ).execute(job_id, file_id, current_user.id, current_user.role)
+    except ImportAiError as exc:
+        session.rollback()
+        raise HTTPException(exc.status, {'code': exc.code}) from exc
     except ImportReviewConflictError as exc:
         session.rollback()
         raise HTTPException(409, 'Черновик изменился. Обновите данные, сохранив свои правки') from exc
@@ -379,3 +398,63 @@ def read_import_source(
             'Content-Disposition': disposition + "; filename*=UTF-8''" + quote(source.filename),
         },
     )
+
+
+class RegroupSchema(BaseModel):
+    """Явный перенос документа с текущими правками формы."""
+
+    version: int = SchemaField(ge=1)
+    group_id: str
+    target_candidate_id: str | None = None
+    decisions: list[ImportPatientResolveSchema]
+
+
+def get_regroup_use_case(session: Session = db_session_dependency) -> RegroupImportUseCase:
+    """Создать сценарий ручного распределения документов.
+
+    Returns:
+        Сценарий перегруппировки.
+    """
+    return RegroupImportUseCase(_build_repository(session))
+
+
+regroup_dependency = Depends(get_regroup_use_case)
+
+
+@router.put('/imports/{job_id}/groups', response_model=ImportJobResponseSchema)
+def regroup_import(
+    job_id: UUID,
+    payload: RegroupSchema,
+    current_user: AuthenticatedUserDTO = current_authenticated_user_dependency,
+    use_case: RegroupImportUseCase = regroup_dependency,
+    session: Session = db_session_dependency,
+) -> ImportJobDTO:
+    """Перенести документ, сохранив введённые значения.
+
+    Returns:
+        Обновлённая версия проверки.
+
+    Raises:
+        HTTPException: Перенос недоступен или форма устарела.
+    """
+    try:
+        result = use_case.execute(
+            job_id,
+            current_user.id,
+            current_user.role,
+            payload.group_id,
+            payload.target_candidate_id,
+            payload.version,
+            [d.model_dump(mode='json') for d in payload.decisions],
+        )
+        session.commit()
+        return result
+    except ImportReviewConflictError as exc:
+        session.rollback()
+        raise HTTPException(409, 'Черновик изменился. Сохраните свои правки перед обновлением') from exc
+    except ImportJobNotFoundError as exc:
+        session.rollback()
+        raise HTTPException(404, 'Импорт недоступен') from exc
+    except ImportJobValidationError as exc:
+        session.rollback()
+        raise HTTPException(422, 'Недопустимый перенос документа') from exc

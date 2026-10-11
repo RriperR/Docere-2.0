@@ -6,6 +6,7 @@ import { Upload, FileText, X, AlertCircle, FileSearch, RefreshCw } from 'lucide-
 import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { UploadJob, useUploadStore } from '../../stores/uploadStore';
+import { getAiCapabilities, AiCapabilities } from '../../api/importAi';
 import { groupedWarnings } from '../../utils/importWarnings';
 
 type StatusFilter = UploadJob['status'] | 'all';
@@ -34,6 +35,9 @@ const UploadPage = () => {
     error,
   } = useUploadStore();
   const [uploadError, setUploadError] = useState('');
+  const [aiRequested, setAiRequested] = useState(false);
+  const [capabilities, setCapabilities] = useState<AiCapabilities | null>(null);
+  useEffect(() => { const controller = new AbortController(); void getAiCapabilities(controller.signal).then(setCapabilities).catch(() => undefined); return () => controller.abort() }, []);
   const [documents, setDocuments] = useState<File[]>([]);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest');
@@ -85,7 +89,7 @@ const UploadPage = () => {
     if (!currentUpload) return;
 
     try {
-      const jobId = await uploadFile(documents.length ? documents : [currentUpload]);
+      const jobId = await uploadFile(documents.length ? documents : [currentUpload], aiRequested);
       navigate(`/upload/status/${jobId}`);
     } catch {
       // Error is handled by the upload store
@@ -208,6 +212,10 @@ const UploadPage = () => {
                 </div>
               </div>
 
+              <label className="mb-4 block rounded-lg border border-primary-100 bg-primary-50 p-3 text-sm">
+                <input type="checkbox" checked={aiRequested} disabled={!capabilities?.enabled || isUploading} onChange={e => setAiRequested(e.target.checked)} className="mr-2" />Проанализировать с AI
+                <p className="mt-1 text-xs text-gray-600">{capabilities?.enabled ? `Содержимое документов будет передано внешнему сервису «${capabilities.provider}». Проверьте результат перед импортом.` : 'AI-сервис не настроен. Документы можно импортировать вручную.'}</p>
+              </label>
               {isUploading ? (
                 <div className="mb-6">
                   <div className="flex justify-between text-sm font-medium text-gray-700 mb-1">

@@ -62,3 +62,7 @@ class ImportJobRepositoryPort:
         return self.get_job(
             job_id=job_id, requested_by_user_id=requested_by_user_id, requested_by_role=requested_by_role
         )
+
+    def replace_review(self, job_id: UUID, report: dict[str, object], decisions: list[dict[str, object]]) -> ImportJob:
+        """Заменить состав групп и решения в транзакции lock_job."""
+        raise NotImplementedError

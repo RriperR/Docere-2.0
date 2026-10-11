@@ -3,7 +3,7 @@
 from dataclasses import asdict
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -158,4 +158,26 @@ def cancel_ai(
         return result
     except ImportAiError as exc:
         session.rollback()
+        raise HTTPException(exc.status, {'code': exc.code}) from exc
+
+
+@router.get('/imports/{job_id}/ai-runs', response_model=list[AiRunSchema])
+def list_ai(
+    job_id: UUID,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(5, ge=1, le=20),
+    current_user: AuthenticatedUserDTO = current_authenticated_user_dependency,
+    use_case: ImportAiUseCase = ai_use_case_dependency,
+) -> tuple[AiRun, ...]:
+    """Вернуть страницу предыдущих AI-запусков.
+
+    Returns:
+        Запуски с актуальной проверкой доступа.
+
+    Raises:
+        HTTPException: Импорт недоступен.
+    """
+    try:
+        return use_case.repository.list_runs(job_id, current_user.id, current_user.role, offset, limit)
+    except ImportAiError as exc:
         raise HTTPException(exc.status, {'code': exc.code}) from exc
