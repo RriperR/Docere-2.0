@@ -59,6 +59,7 @@ class ImportAiSettings(BaseModel):
     base_url: str = ''
     model: str = ''
     token: SecretStr = SecretStr('')
+    disable_thinking: bool = False
     timeout_seconds: float = Field(default=60, gt=0, le=120)
     max_documents: int = Field(default=20, ge=1, le=100)
     max_pages: int = Field(default=100, ge=1, le=1000)

@@ -229,7 +229,12 @@ def process_import_ai(run_id: str) -> None:
         return ai_authorized(rid, token)
 
     provider = ChatCompletionsImportProvider(
-        cfg.base_url, claimed.run.model, cfg.token.get_secret_value(), cfg.timeout_seconds, authorized=check
+        cfg.base_url,
+        claimed.run.model,
+        cfg.token.get_secret_value(),
+        cfg.timeout_seconds,
+        authorized=check,
+        disable_thinking=cfg.disable_thinking,
     )
     analyze = AnalyzeImportDocumentUseCase(DocumentPages(), provider, claimed.options)
     remaining = claimed.options.max_pages - sum(d.page_count for d in claimed.run.documents if d.status != 'queued')

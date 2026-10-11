@@ -7,7 +7,7 @@ from typing import Literal
 AiFieldName = Literal['fio', 'date_of_birth', 'event_date', 'record_type', 'title', 'clinical_summary']
 AI_FIELDS = {'fio', 'date_of_birth', 'event_date', 'record_type', 'title', 'clinical_summary'}
 AI_ACTIVE = {'queued', 'running'}
-PROMPT_VERSION = 'import-facts-v1'
+PROMPT_VERSION = 'import-facts-v2'
 
 
 class ImportAiError(Exception):

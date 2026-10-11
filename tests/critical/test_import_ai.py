@@ -508,6 +508,34 @@ def test_omitted_date_stays_missing_and_unknown_output_fields_rejected():
         parse_extraction(json.dumps(payload), (DocumentPage(1, '', ''),))
 
 
+@pytest.mark.parametrize('disable_thinking', [False, True])
+def test_provider_reasoning_extension_is_opt_in(disable_thinking):
+    from app.infrastructure.config.settings import ImportAiSettings
+
+    requests = []
+
+    def handle(request):
+        requests.append(json.loads(request.content))
+        return httpx.Response(
+            200, json={'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(facts())}}]}
+        )
+
+    assert ImportAiSettings().disable_thinking is False
+    provider = ChatCompletionsImportProvider(
+        'https://provider.example/v1',
+        'vision',
+        'test-only',
+        transport=httpx.MockTransport(handle),
+        disable_thinking=disable_thinking,
+    )
+    extraction, _ = provider.extract((DocumentPage(1, '', 'synthetic-image'),))
+    assert extraction.fields
+    if disable_thinking:
+        assert requests[0]['chat_template_kwargs'] == {'enable_thinking': False}
+    else:
+        assert 'chat_template_kwargs' not in requests[0]
+
+
 def test_database_failures_do_not_render_clinical_bound_parameters(record_client):
     from sqlalchemy import text
     from sqlalchemy.exc import DBAPIError

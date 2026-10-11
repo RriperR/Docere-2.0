@@ -20,6 +20,10 @@ SYSTEM_PROMPT = """
 Поле без явно указанного значения пропусти. Каждому полю нужны источники: реальный номер страницы
 и подтверждающий фрагмент. Дату рождения отличай от даты события. Разные пациенты в одном документе:
 multiple_patients=true; не объединяй их данные. При нескольких возможных значениях пропусти поле и опиши проблему.
+Даты с точками читай как ДД.ММ.ГГГГ: 07.03.2024 означает 2024-03-07, а не 2024-07-03.
+Даты YYYY-MM-DD сохраняй без перестановки дня и месяца. Если формат действительно неоднозначен,
+пропусти дату и укажи проблему. clinical_summary — отдельное поле: кратко перескажи явно написанные
+факты документа, даже если они уже отражены в title; не добавляй интерпретаций.
 """
 
 
@@ -83,11 +87,25 @@ class ChatCompletionsImportProvider:
         transport: httpx.BaseTransport | None = None,
         wait: Callable[[float], None] = sleep,
         authorized: Callable[[], bool] = lambda: True,
+        *,
+        disable_thinking: bool = False,
     ) -> None:
-        """Настроить HTTP-вызовы; секрет хранится только в памяти worker."""
+        """Настроить HTTP-вызовы; секрет хранится только в памяти worker.
+
+        Args:
+            base_url: Адрес совместимого API до /chat/completions.
+            model: Идентификатор vision-модели.
+            token: Серверный токен провайдера.
+            timeout: Таймаут одного запроса в секундах.
+            transport: HTTP-транспорт; тесты подменяют сетевой вызов.
+            wait: Пауза между ограниченными повторами.
+            authorized: Повторная проверка прав текущей попытки перед запросом.
+            disable_thinking: Передать необязательное расширение Qwen/vLLM для ответа без рассуждений.
+        """
         self.base_url, self.model, self.token = base_url.rstrip('/'), model, token
         self.timeout, self.transport, self.wait = timeout, transport, wait
         self.authorized = authorized
+        self.disable_thinking = disable_thinking
 
     def extract(self, pages: tuple[DocumentPage, ...]) -> tuple[AiExtraction, dict[str, int]]:
         """Отправить только выбранные страницы и проверить ответ.
@@ -106,11 +124,13 @@ class ChatCompletionsImportProvider:
                     {'type': 'image_url', 'image_url': {'url': 'data:image/jpeg;base64,' + page.image_base64}},
                 ]
             )
-        payload = {
+        payload: dict[str, object] = {
             'model': self.model,
             'messages': [{'role': 'system', 'content': SYSTEM_PROMPT}, {'role': 'user', 'content': parts}],
             'stream': False,
         }
+        if self.disable_thinking:
+            payload['chat_template_kwargs'] = {'enable_thinking': False}
         with httpx.Client(
             timeout=self.timeout,
             transport=self.transport,
