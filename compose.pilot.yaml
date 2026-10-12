@@ -1,0 +1,177 @@
+# Standalone file: never merge with docker-compose.yml.
+x-app: &app
+  image: ${PILOT_API_IMAGE:?Required pilot API image}
+  build:
+    context: .
+    dockerfile: Dockerfile
+  entrypoint: ['python', '/opt/pilot/runtime.py']
+  environment: &app-env
+    APP_SERVICE_NAME: docere-pilot
+    APP_STORAGE__ENDPOINT: http://minio:9000
+    APP_STORAGE__BUCKET: docere-pilot-records
+    APP_STORAGE__REGION: us-east-1
+    APP_IMPORT_AI__ENABLED: ${PILOT_AI_ENABLED:-false}
+    APP_IMPORT_AI__BASE_URL: ${PILOT_AI_BASE_URL:-}
+    APP_IMPORT_AI__MODEL: ${PILOT_AI_MODEL:-}
+  secrets: &app-secrets
+    - auth_key
+    - postgres_password
+    - redis_password
+    - storage_access_key
+    - storage_secret_key
+    - ai_token
+  volumes:
+    - ./deploy/pilot/runtime.py:/opt/pilot/runtime.py:ro
+  init: true
+  restart: unless-stopped
+  stop_grace_period: 30s
+  security_opt: ['no-new-privileges:true']
+  logging: &logs
+    driver: json-file
+    options: {max-size: '10m', max-file: '3'}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: docere_pilot
+      POSTGRES_USER: docere_pilot
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U docere_pilot -d docere_pilot']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *logs
+
+  redis:
+    image: redis:7-alpine
+    command: ['/bin/sh', '-ec', 'exec redis-server --appendonly yes --requirepass "$$(cat /run/secrets/redis_password)"']
+    secrets: [redis_password]
+    volumes: [redis_data:/data]
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD-SHELL', 'REDISCLI_AUTH="$$(cat /run/secrets/redis_password)" redis-cli ping | grep -q PONG']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *logs
+
+  minio:
+    image: quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    command: ['server', '/data']
+    environment:
+      MINIO_ROOT_USER_FILE: /run/secrets/storage_access_key
+      MINIO_ROOT_PASSWORD_FILE: /run/secrets/storage_secret_key
+    secrets: [storage_access_key, storage_secret_key]
+    volumes: [minio_data:/data]
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *logs
+
+  createbuckets:
+    image: quay.io/minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
+    profiles: [tools]
+    secrets: [storage_access_key, storage_secret_key]
+    entrypoint: ['/bin/sh', '-ec']
+    command:
+      - >-
+        mc alias set pilot http://minio:9000 "$$(cat /run/secrets/storage_access_key)"
+        "$$(cat /run/secrets/storage_secret_key)" >/dev/null &&
+        mc mb --ignore-existing pilot/docere-pilot-records >/dev/null
+
+  migrate:
+    <<: *app
+    profiles: [tools]
+    command: [migrate]
+    restart: 'no'
+
+  api:
+    <<: *app
+    command: [serve]
+    healthcheck:
+      test: ['CMD', 'python', '-c', "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2).read()"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  celery-worker:
+    <<: *app
+    command: [worker]
+    healthcheck:
+      test: ['CMD', 'python', '/opt/pilot/runtime.py', 'worker-health']
+      interval: 20s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+
+  import-dispatcher:
+    <<: *app
+    command: [dispatcher]
+    # Dispatcher has no probe API yet (D6); check PID 1/process survival in status.
+
+  frontend:
+    image: ${PILOT_FRONTEND_IMAGE:?Required pilot frontend image}
+    build: {context: ./frontend, dockerfile: Dockerfile}
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1/health']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *logs
+
+  publish-assets:
+    image: ${PILOT_FRONTEND_IMAGE:?Required pilot frontend image}
+    profiles: [tools]
+    entrypoint: ['/bin/sh', '/opt/pilot/publish-assets.sh']
+    volumes:
+      - frontend_assets:/retained-assets
+      - ./deploy/pilot/publish-assets.sh:/opt/pilot/publish-assets.sh:ro
+
+  gateway:
+    image: nginx:1.27-alpine
+    environment:
+      PILOT_HOST: ${PILOT_HOST:?Required allowed host}
+      PILOT_AUTHORITY: ${PILOT_AUTHORITY:?Run scripts/pilot.py to validate authority}
+      PILOT_ORIGIN: ${PILOT_ORIGIN:?Required HTTPS origin}
+      NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx
+      NGINX_ENVSUBST_FILTER: ^PILOT_
+    ports: ['127.0.0.1:${PILOT_PORT:?Required isolated port}:443']
+    volumes:
+      - ./deploy/pilot/gateway.conf.template:/etc/nginx/templates/nginx.conf.template:ro
+      - frontend_assets:/retained-assets:ro
+    secrets: [tls_cert, tls_key]
+    depends_on:
+      api: {condition: service_healthy}
+      frontend: {condition: service_healthy}
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:8080/health']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *logs
+
+secrets:
+  auth_key: {file: '${PILOT_AUTH_KEY_FILE:?Required secret file}'}
+  postgres_password: {file: '${PILOT_POSTGRES_PASSWORD_FILE:?Required secret file}'}
+  redis_password: {file: '${PILOT_REDIS_PASSWORD_FILE:?Required secret file}'}
+  storage_access_key: {file: '${PILOT_STORAGE_ACCESS_KEY_FILE:?Required secret file}'}
+  storage_secret_key: {file: '${PILOT_STORAGE_SECRET_KEY_FILE:?Required secret file}'}
+  tls_cert: {file: '${PILOT_TLS_CERT_FILE:?Required TLS certificate file}'}
+  tls_key: {file: '${PILOT_TLS_KEY_FILE:?Required TLS key file}'}
+  ai_token: {file: '${PILOT_AI_TOKEN_FILE:?Required AI token file; empty file when disabled}'}
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  frontend_assets:

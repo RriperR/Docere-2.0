@@ -1,0 +1,57 @@
+worker_processes auto;
+events { worker_connections 1024; }
+http {
+    resolver 127.0.0.11 valid=5s ipv6=off;
+    # Never record query strings, document names, reset tokens or request bodies.
+    access_log off;
+    error_log /var/log/nginx/error.log crit;
+    server_tokens off;
+    client_max_body_size 200m;
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+    map $http_host $pilot_host_ok { default 0; "${PILOT_AUTHORITY}" 1; }
+    map $http_origin $pilot_origin_ok { default 0; "" 1; "${PILOT_ORIGIN}" 1; }
+    upstream pilot_api { zone pilot_api 64k; server api:8000 resolve; keepalive 16; }
+    upstream pilot_frontend { zone pilot_frontend 64k; server frontend:80 resolve; keepalive 8; }
+    server {
+        listen 127.0.0.1:8080;
+        location = /health { default_type text/plain; return 200 'ok'; }
+        location / { return 404; }
+    }
+    server {
+        listen 443 ssl;
+        server_name ${PILOT_HOST};
+        ssl_certificate /run/secrets/tls_cert;
+        ssl_certificate_key /run/secrets/tls_key;
+        ssl_protocols TLSv1.2 TLSv1.3;
+        ssl_session_tickets off;
+        if ($pilot_host_ok = 0) { return 421; }
+        if ($pilot_origin_ok = 0) { return 403; }
+        add_header Referrer-Policy no-referrer always;
+        add_header X-Content-Type-Options nosniff always;
+        location /api/ {
+            proxy_http_version 1.1;
+            proxy_set_header Connection "";
+            proxy_set_header Host ${PILOT_HOST};
+            proxy_set_header X-Forwarded-For $remote_addr;
+            proxy_set_header X-Forwarded-Proto https;
+            proxy_set_header X-Request-ID $request_id;
+            proxy_buffering off;
+            proxy_read_timeout 90s;
+            proxy_pass http://pilot_api;
+        }
+        location /assets/ {
+            alias /retained-assets/;
+            add_header Cache-Control 'public, max-age=604800, immutable';
+            add_header X-Content-Type-Options nosniff always;
+        }
+        location ~ ^/(docs|redoc|openapi.json)(/|$) { return 404; }
+        location / {
+            add_header Cache-Control 'no-store';
+            add_header Referrer-Policy no-referrer always;
+            add_header X-Content-Type-Options nosniff always;
+            proxy_set_header Host ${PILOT_HOST};
+            proxy_pass http://pilot_frontend;
+        }
+    }
+}
