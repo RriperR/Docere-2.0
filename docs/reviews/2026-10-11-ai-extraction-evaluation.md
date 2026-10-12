@@ -21,7 +21,7 @@
 Воспроизводимый запуск из корня проекта:
 
 ```sh
-PYTHONPATH=src .venv/bin/python scripts/evaluate_import_ai.py --output artifacts/ai-evaluation
+PYTHONPATH=src .venv/bin/python scripts/evaluate_import_ai.py --live-ai --output artifacts/ai-evaluation
 ```
 
 Скрипт создаёт документы и `results.json` в игнорируемом каталоге `artifacts`. Он выполняет

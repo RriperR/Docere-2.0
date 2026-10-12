@@ -1,21 +1,21 @@
 """Проверить реальный AI на расширенном наборе исключительно синтетических документов.
 
-Запуск: PYTHONPATH=src .venv/bin/python scripts/evaluate_import_ai.py --output artifacts/ai-evaluation
+Запуск: PYTHONPATH=src .venv/bin/python scripts/evaluate_import_ai.py --live-ai --output artifacts/ai-evaluation
 Отправляет только создаваемые скриптом PDF/изображения; не читает документы пациентов.
+Без --live-ai только генерирует полный набор E1, не читая настройки AI.
 """
 
 import argparse
 import json
 from dataclasses import dataclass
-from io import BytesIO
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
-
-from app.application.use_cases.import_jobs.ai import AnalyzeImportDocumentUseCase
-from app.infrastructure.adapters.import_jobs.ai_provider import ChatCompletionsImportProvider
-from app.infrastructure.adapters.import_jobs.document_pages import DocumentPages
-from app.infrastructure.config.settings import get_settings
+try:
+    from scripts.import_ai_dataset import generate
+    from scripts.import_ai_dataset import make_document as make_dataset_document
+except ModuleNotFoundError:
+    from import_ai_dataset import generate
+    from import_ai_dataset import make_document as make_dataset_document
 
 
 @dataclass(frozen=True)
@@ -91,27 +91,14 @@ def make_document(sample: Sample) -> tuple[bytes, str]:
     Returns:
         Байты и MIME документа.
     """
-    images = []
-    font = ImageFont.truetype('/System/Library/Fonts/Supplemental/Arial.ttf', 30)
-    try:
-        for text in sample.pages:
-            image = Image.new('RGB', (1600, 1000), 'white')
-            ImageDraw.Draw(image).multiline_text((60, 70), text, font=font, fill='black', spacing=22)
-            if sample.blur:
-                blurred = image.filter(ImageFilter.GaussianBlur(1.2))
-                image.close()
-                image = blurred
-            images.append(image)
-        output = BytesIO()
-        if sample.scan:
-            images[0].save(output, format='PDF', save_all=True, append_images=images[1:])
-            return output.getvalue(), 'application/pdf'
-        kind = 'JPEG' if sample.name.endswith('.jpg') else 'PNG'
-        images[0].save(output, format=kind)
-        return output.getvalue(), 'image/jpeg' if kind == 'JPEG' else 'image/png'
-    finally:
-        for image in images:
-            image.close()
+    return make_dataset_document(
+        {
+            'name': sample.name,
+            'pages': sample.pages,
+            'render': 'scan_pdf' if sample.scan else 'jpeg' if sample.name.endswith('.jpg') else 'png',
+            'blur': sample.blur,
+        }
+    )
 
 
 def main() -> None:
@@ -122,7 +109,20 @@ def main() -> None:
     """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, default=Path('artifacts/ai-evaluation'))
+    parser.add_argument(
+        '--live-ai', action='store_true', help='Явно разрешить внешние запросы для прежних пяти примеров'
+    )
     args = parser.parse_args()
+    if not args.live_ai:
+        dataset = generate(args.output)
+        print(f'Generated {len(dataset["documents"])} synthetic documents; no AI requests')
+        return
+
+    from app.application.use_cases.import_jobs.ai import AnalyzeImportDocumentUseCase
+    from app.infrastructure.adapters.import_jobs.ai_provider import ChatCompletionsImportProvider
+    from app.infrastructure.adapters.import_jobs.document_pages import DocumentPages
+    from app.infrastructure.config.settings import get_settings
+
     cfg = get_settings().import_ai
     if not cfg.options().enabled:
         raise SystemExit('AI не настроен')
