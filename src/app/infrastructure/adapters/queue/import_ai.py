@@ -27,6 +27,7 @@ from app.infrastructure.adapters.storage.factory import get_file_storage
 from app.infrastructure.config.settings import get_settings
 from app.infrastructure.db.models._time import utc_now
 from app.infrastructure.db.models.auth.user import UserRow
+from app.infrastructure.db.models.case_ai import CaseSummaryRunRow
 from app.infrastructure.db.models.import_ai import ImportAiDocumentRow, ImportAiRunRow
 from app.infrastructure.db.models.medical_records.import_job import ImportJobRow
 from app.infrastructure.db.session import get_session_factory
@@ -93,7 +94,10 @@ def claim_ai_run(run_id: UUID, token: UUID) -> ClaimedAiRun | None:
         running = session.scalar(
             select(func.count()).select_from(ImportAiRunRow).where(ImportAiRunRow.status == 'running')
         )
-        if (running or 0) >= get_settings().import_ai.concurrency:
+        summary_running = session.scalar(
+            select(func.count()).select_from(CaseSummaryRunRow).where(CaseSummaryRunRow.status == 'running')
+        )
+        if (running or 0) + (summary_running or 0) >= get_settings().import_ai.concurrency:
             return None
         user = session.get(UserRow, row.user_id)
         if user is None:

@@ -11,6 +11,7 @@ import structlog
 from sqlalchemy import or_, select, update
 
 from app.domain.entities.import_job import ImportJobStatus
+from app.infrastructure.adapters.queue.case_ai import enqueue_case_summaries
 from app.infrastructure.adapters.queue.case_events import cleanup_invalid_participants, enqueue_case_events
 from app.infrastructure.adapters.queue.import_ai import enqueue_import_ai_runs, start_automatic_import_ai
 from app.infrastructure.adapters.queue.tasks import process_import_job
@@ -126,6 +127,7 @@ def main() -> None:
             for job_id in automatic:
                 start_automatic_import_ai(job_id)
             enqueue_import_ai_runs()
+            enqueue_case_summaries()
             cleanup_invalid_participants()
             logger.info('case_dispatch_cycle', sent=enqueue_case_events())
         except Exception:

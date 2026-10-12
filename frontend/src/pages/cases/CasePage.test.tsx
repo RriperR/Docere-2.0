@@ -7,6 +7,7 @@ import CasePage from './CasePage'
 vi.mock('../../api/caseUpdates', () => ({ watchChanges: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('./CaseMaterials', () => ({ default: ({ c, onOpen }: { c: ClinicalCase; onOpen: (id: string) => void }) =>
   <button onClick={() => onOpen(c.record_ids[0])}>Открыть документ</button> }))
+vi.mock('./CaseAiSummary', () => ({ default: () => null }))
 vi.mock('./CaseDiscussion', () => ({ default: () => null }))
 vi.mock('./CaseConclusion', () => ({ default: () => null }))
 vi.mock('./CaseDocumentPanel', () => ({ default: ({ recordId }: { recordId: string }) =>

@@ -120,10 +120,23 @@ class ChatCompletionsImportProvider:
         """Отправить только выбранные страницы и проверить ответ.
 
         Returns:
-            Факты и не секретная статистика.
+            Факты и не секретная статистика; сетевые ошибки передаются из общего транспорта.
+        """
+        content, stats = self.complete(pages, SYSTEM_PROMPT)
+        return parse_extraction(content, pages), stats
+
+    def complete(self, pages: tuple[DocumentPage, ...], system_prompt: str) -> tuple[str, dict[str, int]]:
+        """Выполнить общий vision-запрос с ограниченными повторами и проверкой доступа.
+
+        Args:
+            pages: Только явно выбранные страницы одного документа.
+            system_prompt: Версионируемая инструкция прикладного сценария.
+
+        Returns:
+            Текст ответа и статистика без логирования медицинского содержимого.
 
         Raises:
-            ImportAiError: Провайдер недоступен, не авторизован или вернул некорректный ответ.
+            ImportAiError: Отмена, ошибка сети, отказ провайдера или неполный ответ.
         """
         parts: list[dict[str, object]] = []
         for page in pages:
@@ -135,7 +148,7 @@ class ChatCompletionsImportProvider:
             )
         payload: dict[str, object] = {
             'model': self.model,
-            'messages': [{'role': 'system', 'content': SYSTEM_PROMPT}, {'role': 'user', 'content': parts}],
+            'messages': [{'role': 'system', 'content': system_prompt}, {'role': 'user', 'content': parts}],
             'stream': False,
         }
         if self.disable_thinking:
@@ -186,7 +199,7 @@ class ChatCompletionsImportProvider:
                         if isinstance(usage, dict)
                         else {}
                     )
-                    return parse_extraction(content, pages), stats
+                    return content, stats
                 except (ValueError, KeyError, IndexError, TypeError, AttributeError) as exc:
                     raise ImportAiError('invalid_response') from exc
         raise ImportAiError('provider_unavailable', 503)

@@ -13,6 +13,7 @@ from app.application.use_cases.clinical_cases.dtos import (
     PageDTO,
 )
 from app.application.use_cases.clinical_cases.management import ClinicalCasesUseCase
+from app.presentation.rest.public.v1.cases.ai_summary import router as ai_summary_router
 from app.presentation.rest.public.v1.cases.conclusions import router as conclusions_router
 from app.presentation.rest.public.v1.cases.dependencies import case_transaction, cases_dependency
 from app.presentation.rest.public.v1.cases.discussion import router as discussion_router
@@ -280,6 +281,7 @@ def leave(
         return uc.membership(case_id, actor.id, 'leave')
 
 
+router.include_router(ai_summary_router)
 router.include_router(work_drafts_router)
 router.include_router(materials_router)
 router.include_router(discussion_router)

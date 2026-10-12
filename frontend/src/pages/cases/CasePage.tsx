@@ -3,6 +3,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { caseApi, caseError, type CaseView, type Doctor } from '../../api/cases'
 import { watchChanges } from '../../api/caseUpdates'
 import CaseMaterials from './CaseMaterials'
+import CaseAiSummary from './CaseAiSummary'
 import CaseDocumentPanel, { type MaterialReference } from './CaseDocumentPanel'
 import CaseConclusion from './CaseConclusion'
 import CaseDiscussion from './CaseDiscussion'
@@ -20,18 +21,24 @@ function CaseWorkspace({ id }: { id: string }) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [params, setParams] = useSearchParams()
-  const section = ['review', 'conclusion', 'members'].includes(params.get('tab') ?? '') ? params.get('tab')! : 'review'
+  const section = ['review', 'summary', 'conclusion', 'members'].includes(params.get('tab') ?? '') ? params.get('tab')! : 'review'
   const setSection = (value: string) => setParams(previous => { const next = new URLSearchParams(previous); next.set('tab', value); return next })
   const [mobilePane, setMobilePane] = useState('materials')
+  const [summaryPane, setSummaryPane] = useState<'summary' | 'document'>('summary')
   useEffect(() => { if (params.get('opinion')) setMobilePane('discussion') }, [params])
   const [query, setQuery] = useState('')
   const recordId = params.get('record')
   const document = recordId ? { recordId, attachmentId: params.get('attachment') } : null
-  const setDocument = useCallback((value: { recordId: string; attachmentId: string | null } | null) => setParams(previous => { const next = new URLSearchParams(previous); next.delete('record'); next.delete('attachment'); if (value) { next.set('record', value.recordId); if (value.attachmentId) next.set('attachment', value.attachmentId) }; return next }), [setParams])
+  const setDocument = useCallback((value: { recordId: string; attachmentId: string | null } | null) => setParams(previous => { const next = new URLSearchParams(previous); next.delete('record'); next.delete('attachment'); next.delete('page'); if (value) { next.set('record', value.recordId); if (value.attachmentId) next.set('attachment', value.attachmentId) }; return next }), [setParams])
   const [reference, setReference] = useState<MaterialReference | null>(null)
   const openMaterial = useCallback((recordId: string, attachmentId: string | null = null) => {
-    setParams(previous => { const next = new URLSearchParams(previous); next.set('tab', 'review'); next.set('record', recordId); next.delete('attachment'); if (attachmentId) next.set('attachment', attachmentId); return next }); setMobilePane('materials')
+    setParams(previous => { const next = new URLSearchParams(previous); next.set('tab', 'review'); next.set('record', recordId); next.delete('attachment'); next.delete('page'); if (attachmentId) next.set('attachment', attachmentId); return next }); setMobilePane('materials')
   }, [setParams])
+  const openSummarySource = useCallback((recordId: string, attachmentId: string | null, page: number) => {
+    setSummaryPane('document')
+    setParams(previous => { const next = new URLSearchParams(previous); next.set('tab', 'summary'); next.set('record', recordId); next.delete('attachment'); if (attachmentId) next.set('attachment', attachmentId); next.set('page', String(page)); return next })
+  }, [setParams])
+  const documentPage = Math.max(1, Math.min(100, Math.floor(Number(params.get('page'))) || 1))
   const [doctors, setDoctors] = useState<Doctor[]>([])
   const reads = useRef(0)
   const load = useCallback(async () => {
@@ -93,7 +100,7 @@ function CaseWorkspace({ id }: { id: string }) {
         {c.status === 'closed' && <Link to={`/cases/new?patient=${c.patient_id}&previous=${c.id}`}>Создать продолжение</Link>}
       </section>
       <nav aria-label="Разделы клинического случая" className="sticky top-14 z-10 flex flex-wrap gap-2 rounded-xl border border-gray-200 bg-white/95 p-2 shadow-xs backdrop-blur-sm">
-        {[['review', 'Совместный разбор'], ['conclusion', 'Итог'], ['members', 'Участники']].map(([value, label]) =>
+        {[['review', 'Совместный разбор'], ['summary', 'AI-сводка'], ['conclusion', 'Итог'], ['members', 'Участники']].map(([value, label]) =>
           <button key={value} type="button" aria-pressed={section === value} onClick={() => setSection(value)}
             className={`rounded-lg px-4 py-2 text-sm font-semibold ${section === value ? 'bg-primary-50 text-primary-700' : 'text-gray-500 hover:bg-gray-50'}`}>{label}</button>)}
       </nav>
@@ -122,7 +129,7 @@ function CaseWorkspace({ id }: { id: string }) {
         </div>
         <div className="grid items-start gap-5 lg:grid-cols-2">
           <div className={`min-w-0 space-y-4 lg:sticky lg:top-32 lg:max-h-[calc(100vh-9rem)] lg:overflow-y-auto ${mobilePane !== 'materials' ? 'hidden lg:block' : ''}`}>
-            {document && <CaseDocumentPanel key={`${id}-${document.recordId}`} caseId={id} recordId={document.recordId}
+            {document && section === 'review' && <CaseDocumentPanel key={`${id}-${document.recordId}`} caseId={id} recordId={document.recordId}
               attachmentId={document.attachmentId} onClose={() => setDocument(null)} onAccessLost={load}
               onReference={ref => { setReference(ref); setMobilePane('discussion') }} />}
             <CaseMaterials c={c} owner={owner} onChange={load} onOpen={openMaterial} />
@@ -132,6 +139,20 @@ function CaseWorkspace({ id }: { id: string }) {
           </div>
         </div>
       </div>
+      {section === 'summary' && <>
+        <div className="mb-4 flex gap-2 lg:hidden" role="group" aria-label="Панели AI-сводки">
+          {([['summary', 'Сводка'], ['document', 'Оригинал']] as const).map(([value, label]) => <button key={value}
+            aria-pressed={summaryPane === value} disabled={value === 'document' && !document}
+            onClick={() => setSummaryPane(value)} className={`flex-1 rounded-xl border px-4 py-2 text-sm font-semibold ${summaryPane === value ? 'border-primary-200 bg-primary-50 text-primary-700' : 'border-gray-200 bg-white text-gray-600'}`}>{label}</button>)}
+        </div>
+        <div className="grid items-start gap-5 lg:grid-cols-2">
+        <div className={`min-w-0 lg:sticky lg:top-32 ${summaryPane !== 'document' ? 'hidden lg:block' : ''}`}>{document ? <CaseDocumentPanel key={`${id}-${document.recordId}`} caseId={id} recordId={document.recordId}
+          attachmentId={document.attachmentId} page={documentPage} onClose={() => { setDocument(null); setSummaryPane('summary') }} onAccessLost={load}
+          onReference={ref => { setReference(ref); setSection('review'); setMobilePane('discussion') }} />
+          : <div className={cardClass}><h2 className="font-semibold">Источники сводки</h2><p className="text-sm text-gray-500">Выберите ссылку на страницу рядом с фактом — оригинал откроется здесь.</p></div>}</div>
+        <div className={summaryPane !== 'summary' ? 'hidden lg:block' : ''}><CaseAiSummary key={`${id}-${userId}`} c={c} onOpen={openSummarySource} onAccessLost={load} /></div>
+        </div>
+      </>}
       <div hidden={section !== 'conclusion'}><CaseConclusion c={c} owner={owner} onChange={load} onOpen={openMaterial} /></div>
     </>}
   </div>

@@ -36,7 +36,8 @@ SAMPLES = (
         (
             'SYNTHETIC DOCUMENT - NOT A REAL PATIENT\nPatient: Test Person\n'
             'Date of birth: 01.02.1980\n'
-            'Discharge event: 23.08.2024\nDischarge report, page 1 of 3.\nObservation: a scheduled examination was completed.',
+            'Discharge event: 23.08.2024\nDischarge report, page 1 of 3.\n'
+            'Observation: a scheduled examination was completed.',
             'SYNTHETIC DOCUMENT - NOT A REAL PATIENT\nPatient: Test Person\nDischarge event: 23.08.2024\n'
             'Discharge report, page 2 of 3.\nThe document lists TestMedicine, 5 mg once daily.\n'
             'This is a fictional medicine in a test document.',

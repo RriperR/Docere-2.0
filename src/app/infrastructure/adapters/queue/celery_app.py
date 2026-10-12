@@ -20,6 +20,7 @@ def create_celery_app() -> Celery:
             'app.infrastructure.adapters.queue.tasks',
             'app.infrastructure.adapters.queue.case_events',
             'app.infrastructure.adapters.queue.import_ai',
+            'app.infrastructure.adapters.queue.case_ai',
         ],
     )
     app.conf.update(
