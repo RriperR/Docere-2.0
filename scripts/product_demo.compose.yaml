@@ -1,0 +1,24 @@
+services:
+  postgres:
+    ports: !reset []
+  redis:
+    ports: !reset []
+  minio:
+    ports: !reset []
+  gateway:
+    ports: !override ['127.0.0.1:8012:80']
+  api:
+    image: docere-ai-api:local
+    environment: &no_ai
+      APP_IMPORT_AI__ENABLED: 'false'
+      APP_IMPORT_AI__BASE_URL: ''
+      APP_IMPORT_AI__TOKEN: ''
+      APP_IMPORT_AI__MODEL: ''
+  frontend:
+    image: docere-ai-frontend:local
+  celery-worker:
+    image: docere-ai-api:local
+    environment: *no_ai
+  import-dispatcher:
+    image: docere-ai-api:local
+    environment: *no_ai
