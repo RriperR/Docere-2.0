@@ -6,6 +6,10 @@ from datetime import date
 from uuid import UUID
 
 from app.application.ports.repositories.patient_cards.dtos import (
+    PatientPageDTO,
+    PatientPageFilterDTO,
+    PatientRecordPageDTO,
+    PatientRecordPageFilterDTO,
     PatientRecordSummaryDTO,
     PatientSearchResultDTO,
     PatientSummaryDTO,
@@ -80,5 +84,33 @@ class PatientCardRepositoryPort:
 
         Returns:
             Список кратких представлений записей.
+        """
+        raise NotImplementedError
+
+    def list_accessible_patients_page(
+        self,
+        *,
+        user_id: UUID,
+        user_role: str,
+        filters: PatientPageFilterDTO,
+    ) -> PatientPageDTO:
+        """Вернуть страницу и count после применения ACL и поиска.
+
+        Returns:
+            Страница доступных карточек.
+        """
+        raise NotImplementedError
+
+    def list_patient_records_page(
+        self,
+        *,
+        patient_id: UUID,
+        user_id: UUID,
+        filters: PatientRecordPageFilterDTO,
+    ) -> PatientRecordPageDTO:
+        """Вернуть страницу истории и count после применения ACL и фильтров.
+
+        Returns:
+            Страница доступных записей.
         """
         raise NotImplementedError

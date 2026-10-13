@@ -21,6 +21,8 @@ def run_http_server() -> None:
         app=app,
         host=HTTP_HOST,
         port=HTTP_PORT,
+        # Uvicorn access logs include medical search q; structured middleware logs only the path.
+        access_log=False,
         timeout_graceful_shutdown=HTTP_GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS,
     )
     server = GracefulShutdownServer(

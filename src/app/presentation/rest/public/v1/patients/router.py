@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Query, status
 from sqlalchemy.orm import Session
 
 from app.application.ports.repositories.patient_cards.dtos import (
+    PatientPageDTO,
+    PatientPageFilterDTO,
+    PatientRecordPageDTO,
+    PatientRecordPageFilterDTO,
     PatientRecordSummaryDTO,
     PatientSearchResultDTO,
     PatientSummaryDTO,
@@ -25,6 +30,10 @@ from app.application.use_cases.patients.list_patients import ListPatientsUseCase
 from app.application.use_cases.patients.search_patients import SearchPatientsUseCase
 from app.presentation.rest.public.v1.patients.schemas import (
     CreatePatientRequestSchema,
+    PatientPageQuerySchema,
+    PatientPageResponseSchema,
+    PatientRecordPageQuerySchema,
+    PatientRecordPageResponseSchema,
     PatientRecordSummaryResponseSchema,
     PatientSearchResultResponseSchema,
     PatientSummaryResponseSchema,
@@ -54,6 +63,27 @@ def list_patients(
         Список кратких карточек доступных пациентов.
     """
     return use_case.execute(user_id=current_user.id, user_role=current_user.role)
+
+
+@router.get('/page', response_model=PatientPageResponseSchema)
+def list_patients_page(
+    filters: Annotated[PatientPageQuerySchema, Query()],
+    current_user: AuthenticatedUserDTO = current_authenticated_user_dependency,
+    use_case: ListPatientsUseCase = list_patients_use_case_dependency,
+) -> PatientPageDTO:
+    """Вернуть серверную страницу доступных пациентов с буквальным поиском ФИО.
+
+    Поисковый q может содержать медицинские данные: gateway/APM обязаны маскировать
+    query strings в технических логах; клиент хранит q только в памяти сессии.
+
+    Returns:
+        Страница доступных пациентов с общим числом совпадений.
+    """
+    return use_case.execute_page(
+        user_id=current_user.id,
+        user_role=current_user.role,
+        filters=PatientPageFilterDTO(offset=filters.offset, limit=filters.limit, q=filters.q),
+    )
 
 
 @router.get('/search', response_model=list[PatientSearchResultResponseSchema])
@@ -142,5 +172,39 @@ def list_patient_records(
     """
     try:
         return use_case.execute(patient_id=patient_id, user_id=current_user.id, user_role=current_user.role)
+    except PatientCardNotFoundError:
+        raise_not_found('Patient not found')
+
+
+@router.get('/{patient_id}/records/page', response_model=PatientRecordPageResponseSchema)
+def list_patient_records_page(
+    patient_id: UUID,
+    filters: Annotated[PatientRecordPageQuerySchema, Query()],
+    current_user: AuthenticatedUserDTO = current_authenticated_user_dependency,
+    use_case: ListPatientRecordsUseCase = list_patient_records_use_case_dependency,
+) -> PatientRecordPageDTO:
+    """Вернуть серверную страницу истории после проверки доступа к пациенту.
+
+    q ищет только название, clinical_summary и имя вложения записи; query strings
+    необходимо маскировать в gateway/APM логах. Интервал дат включителен.
+
+    Returns:
+        Страница доступной истории с общим числом совпадений.
+    """
+    try:
+        return use_case.execute_page(
+            patient_id=patient_id,
+            user_id=current_user.id,
+            user_role=current_user.role,
+            filters=PatientRecordPageFilterDTO(
+                offset=filters.offset,
+                limit=filters.limit,
+                q=filters.q,
+                record_type=filters.record_type,
+                confirmation_status=filters.confirmation_status,
+                event_date_from=filters.event_date_from,
+                event_date_to=filters.event_date_to,
+            ),
+        )
     except PatientCardNotFoundError:
         raise_not_found('Patient not found')

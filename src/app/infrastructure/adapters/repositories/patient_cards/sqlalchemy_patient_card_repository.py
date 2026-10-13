@@ -6,12 +6,16 @@ from datetime import date
 from difflib import SequenceMatcher
 from uuid import UUID
 
-from sqlalchemy import and_, func, or_, Select, select
+from sqlalchemy import and_, exists, func, or_, Select, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.application.ports.repositories.medical_records.dtos import AccessibleMedicalRecordDTO
 from app.application.ports.repositories.patient_cards.dtos import (
+    PatientPageDTO,
+    PatientPageFilterDTO,
+    PatientRecordPageDTO,
+    PatientRecordPageFilterDTO,
     PatientRecordSummaryDTO,
     PatientSearchResultDTO,
     PatientSummaryDTO,
@@ -23,8 +27,11 @@ from app.infrastructure.adapters.repositories.medical_records.sqlalchemy_medical
     SqlAlchemyMedicalRecordRepositoryAdapter,
 )
 from app.infrastructure.db.models.auth.user import UserRow
+from app.infrastructure.db.models.medical_records.file_attachment import FileAttachmentRow
 from app.infrastructure.db.models.medical_records.medical_record import MedicalRecordRow
 from app.infrastructure.db.models.medical_records.patient_passport import PatientPassportRow
+from app.infrastructure.db.models.medical_records.practitioner_passport import PractitionerPassportRow
+from app.infrastructure.db.models.medical_records.record_comment import RecordCommentRow
 from app.infrastructure.db.models.medical_records.user_record_link import UserRecordLinkRow
 from app.infrastructure.db.record_access import active_record_access
 
@@ -48,6 +55,185 @@ class SqlAlchemyPatientCardRepositoryAdapter(PatientCardRepositoryPort):
         """
         rows = self._session.scalars(self._accessible_patient_passports_query(user_id, user_role)).all()
         return tuple(self._to_patient_summary(row, user_id) for row in rows)
+
+    def list_accessible_patients_page(
+        self,
+        *,
+        user_id: UUID,
+        user_role: str,
+        filters: PatientPageFilterDTO,
+    ) -> PatientPageDTO:
+        """Получить count и страницу доступных пациентов непосредственно в SQL.
+
+        Returns:
+            Пациенты, отсортированные по ФИО и идентификатору.
+        """
+        query = self._accessible_patient_passports_query(user_id, user_role).order_by(None)
+        if filters.q:
+            query = query.where(PatientPassportRow.fio.ilike(self._literal_pattern(filters.q), escape='/'))
+        total = self._session.scalar(select(func.count()).select_from(query.subquery())) or 0
+        rows = self._session.scalars(
+            query.order_by(PatientPassportRow.fio.asc(), PatientPassportRow.id.asc())
+            .offset(filters.offset)
+            .limit(filters.limit),
+        ).all()
+        stats = (
+            self._session.execute(
+                select(
+                    UserRecordLinkRow.patient_passport_id,
+                    func.count(func.distinct(UserRecordLinkRow.record_id)),
+                    func.max(MedicalRecordRow.event_date),
+                )
+                .join(MedicalRecordRow, MedicalRecordRow.id == UserRecordLinkRow.record_id)
+                .where(
+                    UserRecordLinkRow.user_id == user_id,
+                    UserRecordLinkRow.patient_passport_id.in_([row.id for row in rows]),
+                    self._active_access_condition(),
+                )
+                .group_by(UserRecordLinkRow.patient_passport_id),
+            ).all()
+            if rows
+            else ()
+        )
+        stats_by_patient = {patient_id: (int(count), last_date) for patient_id, count, last_date in stats}
+        return PatientPageDTO(
+            items=tuple(
+                self._to_patient_summary(row, user_id, stats_by_patient.get(row.id, (0, None))) for row in rows
+            ),
+            total=int(total),
+            offset=filters.offset,
+            limit=filters.limit,
+        )
+
+    def list_patient_records_page(
+        self,
+        *,
+        patient_id: UUID,
+        user_id: UUID,
+        filters: PatientRecordPageFilterDTO,
+    ) -> PatientRecordPageDTO:
+        """Получить историю с ACL до count и страницы, не размножая записи JOIN вложений.
+
+        Returns:
+            Страница доступных записей, отсортированных по датам и идентификатору.
+        """
+        access = exists(
+            select(UserRecordLinkRow.id).where(
+                UserRecordLinkRow.record_id == MedicalRecordRow.id,
+                UserRecordLinkRow.patient_passport_id == patient_id,
+                UserRecordLinkRow.user_id == user_id,
+                self._active_access_condition(),
+            )
+        )
+        query = select(MedicalRecordRow).where(access)
+        if filters.q:
+            pattern = self._literal_pattern(filters.q)
+            attachment_match = exists(
+                select(FileAttachmentRow.id).where(
+                    FileAttachmentRow.record_id == MedicalRecordRow.id,
+                    FileAttachmentRow.comment_id.is_(None),
+                    FileAttachmentRow.filename.ilike(pattern, escape='/'),
+                )
+            )
+            query = query.where(
+                or_(
+                    MedicalRecordRow.title.ilike(pattern, escape='/'),
+                    MedicalRecordRow.clinical_summary.ilike(pattern, escape='/'),
+                    attachment_match,
+                )
+            )
+        if filters.record_type is not None:
+            query = query.where(MedicalRecordRow.record_type == filters.record_type)
+        if filters.confirmation_status is not None:
+            query = query.where(MedicalRecordRow.status == filters.confirmation_status)
+        if filters.event_date_from is not None:
+            query = query.where(MedicalRecordRow.event_date >= filters.event_date_from)
+        if filters.event_date_to is not None:
+            query = query.where(MedicalRecordRow.event_date <= filters.event_date_to)
+        total = self._session.scalar(select(func.count()).select_from(query.subquery())) or 0
+        comments_count = (
+            select(func.count(RecordCommentRow.id))
+            .where(
+                RecordCommentRow.record_id == MedicalRecordRow.id,
+            )
+            .correlate(MedicalRecordRow)
+            .scalar_subquery()
+        )
+        attachments_count = (
+            select(func.count(FileAttachmentRow.id))
+            .where(
+                FileAttachmentRow.record_id == MedicalRecordRow.id,
+                FileAttachmentRow.comment_id.is_(None),
+            )
+            .correlate(MedicalRecordRow)
+            .scalar_subquery()
+        )
+        rows = self._session.execute(
+            query.add_columns(UserRow.fio, PractitionerPassportRow, comments_count, attachments_count)
+            .join(UserRow, UserRow.id == MedicalRecordRow.creator_user_id)
+            .outerjoin(
+                PractitionerPassportRow, PractitionerPassportRow.id == MedicalRecordRow.author_practitioner_passport_id
+            )
+            .order_by(
+                MedicalRecordRow.event_date.desc().nullslast(),
+                MedicalRecordRow.created_at.desc(),
+                MedicalRecordRow.id.desc(),
+            )
+            .offset(filters.offset)
+            .limit(filters.limit),
+        ).all()
+        return PatientRecordPageDTO(
+            items=tuple(
+                self._page_record_summary(record, fio, practitioner, int(comments), int(attachments))
+                for record, fio, practitioner, comments, attachments in rows
+            ),
+            total=int(total),
+            offset=filters.offset,
+            limit=filters.limit,
+        )
+
+    @staticmethod
+    def _literal_pattern(query: str) -> str:
+        return '%' + query.replace('/', '//').replace('%', '/%').replace('_', '/_') + '%'
+
+    @staticmethod
+    def _page_record_summary(
+        record: MedicalRecordRow,
+        creator_fio: str,
+        practitioner: PractitionerPassportRow | None,
+        comments_count: int,
+        attachments_count: int,
+    ) -> PatientRecordSummaryDTO:
+        return PatientRecordSummaryDTO(
+            id=record.id,
+            status=record.status.value,
+            record_type=record.record_type.value,
+            event_date=record.event_date,
+            title=record.title,
+            appointment_location=record.appointment_location,
+            clinical_summary=record.clinical_summary,
+            confirmed_by_user_id=record.confirmed_by_user_id,
+            confirmed_at=record.confirmed_at,
+            creator_user_id=record.creator_user_id,
+            creator_fio=creator_fio,
+            author_practitioner_passport=PractitionerPassportDTO(
+                id=practitioner.id,
+                user_id=practitioner.user_id,
+                full_name=practitioner.full_name,
+                specialty=practitioner.specialty,
+                organization=practitioner.organization,
+                position=practitioner.position,
+                email=practitioner.email,
+                phone=practitioner.phone,
+                status=practitioner.status.value,
+            )
+            if practitioner is not None
+            else None,
+            comments_count=comments_count,
+            attachments_count=attachments_count,
+            created_at=record.created_at,
+            updated_at=record.updated_at,
+        )
 
     def create_patient_passport(
         self,
@@ -196,8 +382,13 @@ class SqlAlchemyPatientCardRepositoryAdapter(PatientCardRepositoryPort):
             .order_by(PatientPassportRow.updated_at.desc())
         )
 
-    def _to_patient_summary(self, row: PatientPassportRow, user_id: UUID) -> PatientSummaryDTO:
-        record_count, last_record_date = self._patient_record_stats(row.id, user_id)
+    def _to_patient_summary(
+        self,
+        row: PatientPassportRow,
+        user_id: UUID,
+        stats: tuple[int, date | None] | None = None,
+    ) -> PatientSummaryDTO:
+        record_count, last_record_date = stats if stats is not None else self._patient_record_stats(row.id, user_id)
         return PatientSummaryDTO(
             id=row.id,
             fio=row.fio,

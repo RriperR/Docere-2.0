@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from app.application.ports.repositories.patient_cards.dtos import PatientSummaryDTO
+from app.application.ports.repositories.patient_cards.dtos import (
+    PatientPageDTO,
+    PatientPageFilterDTO,
+    PatientSummaryDTO,
+)
 from app.application.ports.repositories.patient_cards.port import PatientCardRepositoryPort
 
 
@@ -30,3 +34,16 @@ class ListPatientsUseCase:
             Доступные карточки пациентов.
         """
         return self._repository.list_accessible_patients(user_id=user_id, user_role=user_role)
+
+    def execute_page(self, *, user_id: UUID, user_role: str, filters: PatientPageFilterDTO) -> PatientPageDTO:
+        """Получить страницу карточек, сохраняя авторизацию в repository.
+
+        Args:
+            user_id: Идентификатор текущего пользователя.
+            user_role: Роль текущего пользователя.
+            filters: Проверенные параметры страницы и поиска.
+
+        Returns:
+            Страница доступных карточек и их общее число.
+        """
+        return self._repository.list_accessible_patients_page(user_id=user_id, user_role=user_role, filters=filters)

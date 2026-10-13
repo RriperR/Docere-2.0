@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
+from pydantic_core import PydanticCustomError
 
+from app.domain.entities.medical_record import MedicalRecordStatus, MedicalRecordType
 from app.presentation.rest.public.v1.records.schemas import PractitionerPassportResponseSchema
 from app.presentation.rest.serialization import MoscowDatetime
 
@@ -66,3 +69,64 @@ class PatientRecordSummaryResponseSchema(BaseModel):
     attachments_count: int
     created_at: MoscowDatetime
     updated_at: MoscowDatetime
+
+
+class PatientPageQuerySchema(BaseModel):
+    """Проверенные параметры серверной страницы пациентов."""
+
+    model_config = ConfigDict(extra='forbid')
+
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=20, ge=1, le=100)
+    q: str | None = Field(
+        default=None, max_length=255, description='Буквальный поиск; маскировать в gateway/APM логах.'
+    )
+
+
+class PatientRecordPageQuerySchema(PatientPageQuerySchema):
+    """Проверенные фильтры истории с включительным интервалом дат."""
+
+    record_type: MedicalRecordType | None = None
+    confirmation_status: MedicalRecordStatus | None = None
+    event_date_from: date | None = None
+    event_date_to: date | None = None
+
+    @model_validator(mode='after')
+    def validate_date_interval(self) -> Self:
+        """Отклонить обратный интервал дат события.
+
+        Returns:
+            Проверенные параметры истории.
+
+        Raises:
+            PydanticCustomError: Если начало интервала позже конца.
+        """
+        if (
+            self.event_date_from is not None
+            and self.event_date_to is not None
+            and self.event_date_from > self.event_date_to
+        ):
+            raise PydanticCustomError('date_interval', 'event_date_from must not be after event_date_to')
+        return self
+
+
+class PatientPageResponseSchema(BaseModel):
+    """Страница пациентов с прежней схемой элемента."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    items: list[PatientSummaryResponseSchema]
+    total: int
+    offset: int
+    limit: int
+
+
+class PatientRecordPageResponseSchema(BaseModel):
+    """Страница истории с прежней схемой элемента."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    items: list[PatientRecordSummaryResponseSchema]
+    total: int
+    offset: int
+    limit: int

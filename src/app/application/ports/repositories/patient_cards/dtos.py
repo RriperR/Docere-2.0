@@ -7,6 +7,7 @@ from datetime import date, datetime
 from uuid import UUID
 
 from app.application.use_cases.medical_records.common.dtos import PractitionerPassportDTO
+from app.domain.entities.medical_record import MedicalRecordStatus, MedicalRecordType
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,3 +53,42 @@ class PatientRecordSummaryDTO:
     attachments_count: int
     created_at: datetime
     updated_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class PatientPageFilterDTO:
+    """Параметры серверной страницы пациентов и буквального поиска ФИО."""
+
+    offset: int = 0
+    limit: int = 20
+    q: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PatientRecordPageFilterDTO(PatientPageFilterDTO):
+    """Фильтры доступной истории пациента без поиска комментариев и текста PDF."""
+
+    record_type: MedicalRecordType | None = None
+    confirmation_status: MedicalRecordStatus | None = None
+    event_date_from: date | None = None
+    event_date_to: date | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PatientPageDTO:
+    """Страница доступных пациентов с общим числом совпадений."""
+
+    items: tuple[PatientSummaryDTO, ...]
+    total: int
+    offset: int
+    limit: int
+
+
+@dataclass(frozen=True, slots=True)
+class PatientRecordPageDTO:
+    """Страница доступных записей с общим числом совпадений."""
+
+    items: tuple[PatientRecordSummaryDTO, ...]
+    total: int
+    offset: int
+    limit: int

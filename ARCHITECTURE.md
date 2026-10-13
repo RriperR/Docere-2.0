@@ -391,6 +391,20 @@ HTTP JSON
 
 Transport errors унифицированы глобальными handlers. Неожиданное исключение логируется на сервере, а клиент получает нейтральное `Internal server error` без stack trace и внутренних деталей.
 
+### Серверные страницы пациентов и истории
+
+`GET /api/patients/page` и `GET /api/patients/{id}/records/page` возвращают
+`{items,total,offset,limit}`. Repository применяет ACL и фильтры до count/offset/limit.
+Буквальный поиск использует ILIKE с bind parameters и escape; вложения проверяются
+через EXISTS без дублирования записей. Пациенты сортируются fio/id ASC, история —
+event_date DESC NULLS LAST, created_at/id DESC. Summary строятся без выгрузки всей истории.
+Прежние массивные endpoints сохранены до переноса UI на страницы в B2.
+
+Свободный медицинский q не записывается structured HTTP middleware, основным nginx
+access log и CLI Uvicorn access log. Nginx error log отключён из-за полного request context;
+подробная диагностика proxy errors остаётся задачей D6. Для другого HTTP runner/APM
+нужно отдельно исключить query strings из логов.
+
 ## 13. Аутентификация, авторизация и аудит
 
 ### Аутентификация
