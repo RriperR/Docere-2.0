@@ -12,7 +12,7 @@ from zipfile import ZipFile, ZipInfo
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from pydicom.dataset import FileDataset, FileMetaDataset
-from pydicom.uid import ExplicitVRLittleEndian, SecondaryCaptureImageStorage
+from pydicom.uid import ExplicitVRLittleEndian, SecondaryCaptureImageStorage, UID
 
 FIXTURES = Path(__file__).resolve().parents[1] / 'tests/fixtures/import_ai'
 MANIFEST = FIXTURES / 'manifest.json'
@@ -242,7 +242,7 @@ def make_dicom() -> bytes:
     """
     meta = FileMetaDataset()
     meta.MediaStorageSOPClassUID = SecondaryCaptureImageStorage
-    meta.MediaStorageSOPInstanceUID = '1.2.826.0.1.3680043.10.543.1'
+    meta.MediaStorageSOPInstanceUID = UID('1.2.826.0.1.3680043.10.543.1')
     meta.TransferSyntaxUID = ExplicitVRLittleEndian
     dataset = FileDataset('synthetic-study.dcm', {}, file_meta=meta, preamble=b'\0' * 128)
     dataset.PatientName = 'Synthetic^Dicom'

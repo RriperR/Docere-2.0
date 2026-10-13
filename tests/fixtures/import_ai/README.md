@@ -73,13 +73,43 @@ PDF/PNG и два вызова управляемого провайдера. В
 .venv/bin/pytest -p no:cacheprovider tests/unit/test_import_ai_dataset_unit.py tests/critical/test_import_ai_dataset.py -q
 ```
 
-`evaluate_import_ai.py` без дополнительных флагов также только генерирует все 24 документа.
-Прежняя оценка пяти примеров требует явного opt-in и настроенного провайдера:
+## Оценка E2
+
+`evaluate_import_ai.py` без `--live-ai` генерирует выбранный E1 split и выполняет
+воспроизводимый evaluator через управляемый adapter, который возвращает эталонные
+фикстуры. Он не распознаёт документы и не измеряет качество реальной модели.
+Настройки провайдера/секреты не читаются, сетевые запросы отсутствуют.
 
 ```bash
-PYTHONPATH=src .venv/bin/python scripts/evaluate_import_ai.py --live-ai --output artifacts/ai-evaluation
+PYTHONPATH=src .venv/bin/python scripts/evaluate_import_ai.py --output artifacts/import-ai-evaluation-e2
+PYTHONPATH=src .venv/bin/python scripts/evaluate_import_ai.py --split holdout --output artifacts/import-ai-evaluation-holdout
 ```
 
-Эта команда отправляет синтетические документы наружу и сохраняет результат в artifacts.
-Полные метрики по manifest и оценка всех 24 документов относятся к E2; E1 не утверждает
-качество реальной модели. Holdout сейчас не отправляется прежним evaluator.
+В выбранном каталоге создаются `results.json`, `manual-review-template.json` и
+`manual-review.md`: точность ограниченных E1 реквизитов, корректные пустые/неоднозначные
+поля, ошибки формата/страниц, безопасные коды отказов и таблица утверждение → источник
+→ ручная оценка. Полноту непустого свободного пересказа размечает человек;
+другой LLM не используется как эталон. Без разметки итоговые пропуски фактов — `null`.
+Офлайн latency/usage/стоимость — «нет данных», статус полного E2 — `prepared_external`.
+
+Внешнее измерение требует явного opt-in и настроенного vision provider:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/evaluate_import_ai.py --live-ai --split development --output artifacts/import-ai-e2-live-development
+PYTHONPATH=src .venv/bin/python scripts/evaluate_import_ai.py --live-ai --split holdout --output artifacts/import-ai-e2-live-holdout
+```
+
+Команды отправляют только сгенерированные синтетические документы выбранного split,
+сохраняют проверенный результат/доступную usage и времена в artifacts. Live запуск
+требует нового каталога; prompt и holdout эталон под результаты не изменяются.
+Для all используется `--split all` (24 документа, включая прежние пять примеров).
+DICOM в evaluator не отправляется; mixed ZIP проверяется отдельным critical gate.
+
+После ручной разметки копии шаблона подсчёт выполняется без повторного AI:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/evaluate_import_ai.py --output artifacts/import-ai-e2-live-holdout --manual-review artifacts/import-ai-e2-live-holdout/manual-review.json
+```
+
+Результаты и правила ручной оценки, тарифов, отказов и продолжения полного E2:
+[профильный отчёт](../../../docs/reviews/import-ai-evaluation-e2.md).
