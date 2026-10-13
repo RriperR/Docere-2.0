@@ -7,6 +7,8 @@ import { Card } from '../../components/common/Card';
 import { Button } from '../../components/common/Button';
 import { UploadJob, useUploadStore } from '../../stores/uploadStore';
 import { getAiCapabilities, AiCapabilities } from '../../api/importAi';
+import { PatientImportContext } from './PatientImportContext'
+import { usePatientImportContext } from './usePatientImportContext';
 import { groupedWarnings } from '../../utils/importWarnings';
 
 type StatusFilter = UploadJob['status'] | 'all';
@@ -23,6 +25,7 @@ const statusLabel: Record<UploadJob['status'], string> = {
 
 const UploadPage = () => {
   const navigate = useNavigate();
+  const context = usePatientImportContext();
   const {
     currentUpload,
     setCurrentUpload,
@@ -90,7 +93,9 @@ const UploadPage = () => {
 
     try {
       const jobId = await uploadFile(documents.length ? documents : [currentUpload], aiRequested);
-      navigate(`/upload/status/${jobId}`);
+      setCurrentUpload(null);
+      setDocuments([]);
+      navigate(`/upload/status/${jobId}${context.query}`);
     } catch {
       // Error is handled by the upload store
     }
@@ -102,6 +107,7 @@ const UploadPage = () => {
 
   const clearUpload = () => {
     setCurrentUpload(null);
+    setDocuments([]);
     setUploadError('');
   };
 
@@ -128,6 +134,8 @@ const UploadPage = () => {
           Загрузите ZIP или отдельные PDF, PNG и JPEG.
         </p>
       </motion.div>
+
+      <PatientImportContext context={context} />
 
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -244,6 +252,7 @@ const UploadPage = () => {
                     type="button"
                     variant="primary"
                     onClick={handleUpload}
+                    disabled={!!context.patientId && !context.patient}
                   >
                     Загрузить
                   </Button>

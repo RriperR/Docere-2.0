@@ -180,3 +180,14 @@ it('preserves a dirty patient form when closing is cancelled and shares one clos
   fireEvent.click(screen.getByRole('button', { name: 'Отмена' }))
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
 })
+
+it('shows accepted shared materials separately from the own history and links each authorized record', async () => {
+  const record = { id: 'allowed', status: 'unconfirmed', record_type: 'other', event_date: '2026-10-13', title: 'Принятый документ', appointment_location: null, clinical_summary: null, confirmed_by_user_id: null, confirmed_at: null, creator_user_id: 'doctor', creator_fio: 'Врач', author_practitioner_passport: null, comments_count: 0, attachments_count: 1, created_at: '2026-10-13', updated_at: '2026-10-13' }
+  vi.mocked(api.get).mockImplementation(async url => ({ data: url === '/patients' ? [patient, { ...patient, id: 'shared', fio: 'Отдельная карточка', access_context: 'shared', record_count: 1 }] : url === '/patients/shared/records' ? [record] : [] }))
+  mount(<PatientDashboard />)
+  await screen.findByRole('heading', { name: 'Принятые материалы' })
+  expect(screen.getByRole('link', { name: /Принятый документ/ })).toHaveAttribute('href', '/patients/shared#record-allowed')
+  expect(screen.getByRole('link', { name: 'Открыть карточку' })).toHaveAttribute('href', '/patients/own')
+  await waitFor(() => expect(screen.getByText('Ваши медицинские записи появятся здесь')).toBeVisible())
+  expect(screen.queryByText('Добавить пациента')).not.toBeInTheDocument()
+})

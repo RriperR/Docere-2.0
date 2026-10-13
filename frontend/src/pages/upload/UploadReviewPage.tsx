@@ -21,6 +21,8 @@ import {
   useUploadStore,
 } from '../../stores/uploadStore'
 import { formatDateForDisplay } from '../../utils/dates'
+import { PatientImportContext } from './PatientImportContext'
+import { usePatientImportContext } from './usePatientImportContext'
 import { groupedWarnings, warningAffectsFile } from '../../utils/importWarnings'
 
 type PatientAction = 'existing' | 'create' | 'skip'
@@ -59,6 +61,7 @@ const recordTypeLabels: Record<string, string> = {
 const UploadReviewPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>()
   const navigate = useNavigate()
+  const context = usePatientImportContext()
   const {
     currentJob,
     error,
@@ -158,7 +161,7 @@ const UploadReviewPage: React.FC = () => {
   if (currentJob.status !== 'needs_review') {
     return (
       <div className="space-y-6">
-        <Link to={`/upload/status/${currentJob.id}`} className="flex items-center text-sm text-primary-600 hover:underline">
+        <Link to={`/upload/status/${currentJob.id}${context.query}`} className="flex items-center text-sm text-primary-600 hover:underline">
           <ArrowLeft className="mr-1 h-4 w-4" />
           Назад к статусу
         </Link>
@@ -207,7 +210,7 @@ const UploadReviewPage: React.FC = () => {
     setFormError('')
     try {
       await resolveJob(jobId, decisions.map(toPayload))
-      navigate(`/upload/status/${jobId}`)
+      navigate(`/upload/status/${jobId}${context.query}`)
     } catch (cause: unknown) {
       const detail: unknown = axios.isAxiosError(cause) ? cause.response?.data?.detail : null
       if (detail && typeof detail === 'object' && 'code' in detail && detail.code === 'duplicate_confirmation_required'
@@ -224,7 +227,7 @@ const UploadReviewPage: React.FC = () => {
   return (
     <div className="space-y-8">
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
-        <Link to={`/upload/status/${currentJob.id}`} className="mb-2 flex items-center text-sm text-primary-600 hover:underline">
+        <Link to={`/upload/status/${currentJob.id}${context.query}`} className="mb-2 flex items-center text-sm text-primary-600 hover:underline">
           <ArrowLeft className="mr-1 h-4 w-4" />
           Назад к статусу
         </Link>
@@ -250,10 +253,12 @@ const UploadReviewPage: React.FC = () => {
         </div>
       </motion.div>
 
+      <PatientImportContext context={context} />
+
       {(formError || error || patientsError || reviewDraftError) && (
         <div className="flex items-start rounded-md border border-error-200 bg-error-50 p-3">
           <AlertTriangle className="mr-2 mt-0.5 h-5 w-5 shrink-0 text-error-500" />
-          <p className="text-sm text-error-700">{formError || error || patientsError || reviewDraftError}</p>
+          <p role="alert" className="text-sm text-error-700">{error === 'Network Error' && !formError ? 'Не удалось подтвердить импорт. Проверьте соединение и повторите. Ваши решения остались в форме.' : formError || error || patientsError || reviewDraftError}</p>
         </div>
       )}
 
@@ -317,9 +322,16 @@ const UploadReviewPage: React.FC = () => {
         const patientCandidate = patientCandidates.find((item) => item.candidate_id === decision.candidate_id)
         if (!patientCandidate) return null
         const patientOptions = buildPatientOptions(accessiblePatients, patientCandidate)
+        if (context.patient && !patientOptions.some(option => option.id === context.patient!.id)) patientOptions.unshift({ id: context.patient.id, label: context.patient.fio, priority: 0 })
 
         return (
           <Card key={decision.candidate_id} title={patientCandidate.fio ?? 'Пациент не распознан'}>
+            {context.patient && <div className="mb-4 rounded-lg border border-primary-100 bg-primary-50 p-3 text-sm">
+              <p>Загрузка начата из карточки «{context.patient.fio}». Сверьте имя и дату рождения в документе; при несовпадении выберите другую карточку или распределите документы ниже.</p>
+              <Button type="button" size="sm" variant="outline" className="mt-2" onClick={() => updatePatient(patientIndex, { action: 'existing', patient_passport_id: context.patient!.id })}>
+                Выбрать {context.patient.fio} для этих документов
+              </Button>
+            </div>}
             <div id={decision.candidate_id} className="scroll-mt-24" />
             <div className="space-y-5">
               <div className="grid gap-4 lg:grid-cols-3">

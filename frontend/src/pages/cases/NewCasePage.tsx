@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import api from '../../api/api'
 import { caseApi, caseError, type CaseView, type Doctor, type Material, type PatientOption } from '../../api/cases'
+import { useAuthStore } from '../../stores/authStore'
 import { useUnsavedWork } from '../../hooks/useUnsavedWork'
 import { buttonClass, cardClass, inputClass, recordTypeLabel, secondaryButtonClass } from './styles'
 
@@ -10,6 +11,11 @@ const steps = ['Пациент', 'Материалы', 'Вопрос и колл
 export default function NewCasePage() {
   const [params] = useSearchParams()
   const navigate = useNavigate()
+  const userId = useAuthStore(state => state.user?.id)
+  const linkedRecords = useRef([...new Set(params.getAll('record'))])
+  const initialPatientId = useRef(params.get('patient'))
+  const [contextError, setContextError] = useState('')
+  const [contextLoading, setContextLoading] = useState(false)
   const [step, setStep] = useState(0)
   const [patientId, setPatientId] = useState(params.get('patient') ?? '')
   const [patient, setPatient] = useState<PatientOption | null>(null)
@@ -34,12 +40,28 @@ export default function NewCasePage() {
   useEffect(() => {
     if (!patientId) return
     const controller = new AbortController()
-    setPatient(null)
-    void api.get<PatientOption>(`/patients/${patientId}`, { signal: controller.signal }).then(result => {
-      if (!controller.signal.aborted) setPatient(result.data)
-    }).catch(cause => { if (!controller.signal.aborted) setError(caseError(cause)) })
+    setPatient(null); setContextError(''); setContextLoading(true); setSelected([])
+    void (async () => {
+      const { data } = await api.get<PatientOption>(`/patients/${encodeURIComponent(patientId)}`, { signal: controller.signal })
+      if (controller.signal.aborted) return
+      if (data.id !== patientId) throw new Error('Карточка недоступна')
+      setPatient(data)
+      if (patientId === initialPatientId.current && linkedRecords.current.length) {
+        if (linkedRecords.current.length > 100) throw new Error('Выберите не более 100 записей')
+        const checked = await Promise.allSettled(linkedRecords.current.map(async id => {
+          const response = await api.get<{ id: string; patient_passport_id: string | null }>(`/records/${encodeURIComponent(id)}`, { signal: controller.signal })
+          if (response.data.id !== id || response.data.patient_passport_id !== patientId) throw new Error('Запись недоступна')
+          return id
+        }))
+        if (controller.signal.aborted) return
+        setSelected(checked.flatMap(result => result.status === 'fulfilled' ? [result.value] : []))
+        if (checked.some(result => result.status === 'rejected')) setContextError('Часть записей из ссылки недоступна или относится к другой карточке. Проверьте доступные материалы и выберите их явно.')
+        linkedRecords.current = []
+      }
+    })().catch(() => { if (!controller.signal.aborted) setContextError('Не удалось проверить карточку или записи из ссылки. Выберите пациента и доступные материалы заново.') })
+      .finally(() => { if (!controller.signal.aborted) setContextLoading(false) })
     return () => controller.abort()
-  }, [patientId])
+  }, [patientId, userId])
   useEffect(() => {
     if (!patientId) return
     let cancelled = false
@@ -73,12 +95,14 @@ export default function NewCasePage() {
     <Link className="text-sm text-gray-500" to="/cases">← Клинические случаи</Link>
     <header><p className="text-xs font-semibold uppercase tracking-widest text-primary-700">Новый совместный разбор</p>
       <h1 className="mt-2 text-3xl font-bold tracking-tight">Создать клинический случай</h1>
-      <p className="mt-2 text-sm text-gray-500">Сначала выберите пациента и контекст, затем сформулируйте вопрос коллеге.</p></header>
+      <p className="mt-2 text-sm text-gray-500">Клинический случай — обсуждение выбранных записей. Проверьте пациента и материалы, затем сформулируйте вопрос коллеге.</p></header>
     <ol aria-label="Шаги создания случая" className="grid grid-cols-3 gap-2">
       {steps.map((label, index) => <li key={label} aria-current={index === step ? 'step' : undefined}
         className={`rounded-xl border p-3 text-sm ${index === step ? 'border-primary-200 bg-primary-50 font-semibold text-primary-700' : 'border-gray-200 bg-white text-gray-500'}`}>
         <span className="mr-2">{index + 1}.</span>{label}</li>)}
     </ol>
+    {contextLoading && <p role="status">Проверяем доступ к карточке и выбранным записям…</p>}
+    {contextError && <p role="alert" className="rounded-xl bg-warning-50 p-4 text-sm text-warning-700">{contextError}</p>}
     {error && <p role="alert" className="rounded-xl bg-error-50 p-4 text-sm text-error-700">{error}
       {created.current && <Link className="ml-2 underline" to={`/cases/${created.current.id}`}>Открыть сохранённый случай</Link>}</p>}
     <section className={cardClass}>
@@ -97,7 +121,7 @@ export default function NewCasePage() {
         {patient && <div className="rounded-xl bg-secondary-50 p-4"><p className="text-xs text-secondary-700">Выбран пациент</p>
           <p className="mt-1 font-semibold">{patient.fio}</p><p className="text-sm text-gray-500">{patient.date_of_birth ? new Date(patient.date_of_birth).toLocaleDateString('ru-RU') : 'Дата рождения не указана'}</p></div>}
         <p className="text-xs text-gray-500">Одинаковые ФИО не объединяют карточки. Выбирайте конкретного пациента.</p>
-        <button className={buttonClass} disabled={!patient || busy} onClick={() => setStep(1)}>Перейти к материалам</button>
+        <button className={buttonClass} disabled={!patient || busy || contextLoading} onClick={() => setStep(1)}>Перейти к материалам</button>
       </>}
       {step === 1 && <>
         <h2 className="text-lg font-semibold">Материалы · {patient?.fio}</h2>

@@ -379,8 +379,9 @@ const PatientDetailsPage: React.FC = () => {
   }
 
   if (error) return <p className="mt-8 text-center text-error-600">{error}</p>
-  if (!currentPatient) return null
+  if (!currentPatient || currentPatient.id !== id) return <p role="status">Загружаем карточку пациента…</p>
 
+  const canCreateRecord = canComment || (user?.role === 'patient' && currentPatient.accessContext === 'own_confirmed')
   const patientInitials = getInitials(currentPatient.fio)
   const selectedShareRecords = patientRecords.filter((record) => selectedShareRecordIds.includes(record.id))
 
@@ -403,7 +404,6 @@ const PatientDetailsPage: React.FC = () => {
               {patientInitials}
             </div>
             <div>
-              {user?.role === 'doctor' && <Link to={`/cases/new?patient=${id}`} className="text-primary-700 underline">Создать клинический случай</Link>}
               <h1 className="text-2xl font-bold text-gray-900">{currentPatient.fio}</h1>
               <div className="mt-1 flex flex-wrap items-center gap-2">
                 <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-medium ${accessContextClasses(currentPatient.accessContext)}`}>
@@ -414,6 +414,10 @@ const PatientDetailsPage: React.FC = () => {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
+            {user?.role === 'doctor' && <Link to={`/cases/new?patient=${id}${selectedShareRecordIds.map(recordId => `&record=${encodeURIComponent(recordId)}`).join('')}`} className="inline-flex items-center rounded-lg border border-primary-200 px-3 py-2 text-sm font-medium text-primary-700">
+              {selectedShareRecordIds.length ? `Обсудить записи (${selectedShareRecordIds.length})` : 'Создать клинический случай'}
+            </Link>}
+            {(user?.role === 'doctor' || user?.role === 'admin') && <Link to={`/upload?patient=${id}`} className="inline-flex items-center rounded-lg bg-primary-600 px-3 py-2 text-sm font-medium text-white">Импорт документов</Link>}
             <Button
               variant="outline"
               icon={<Share2 className="h-4 w-4" />}
@@ -423,9 +427,9 @@ const PatientDetailsPage: React.FC = () => {
             >
               Поделиться ({selectedShareRecordIds.length})
             </Button>
-            <Button onClick={() => setShowAddModal(true)} size="sm">
+            {canCreateRecord && <Button onClick={() => setShowAddModal(true)} size="sm">
               + Добавить запись
-            </Button>
+            </Button>}
           </div>
         </div>
       </motion.div>
@@ -589,7 +593,7 @@ const PatientDetailsPage: React.FC = () => {
           <div>
             <h2 className="font-semibold text-gray-900">Медицинские записи</h2>
             <p className="mt-0.5 text-xs text-gray-400">
-              Нажмите на запись, чтобы раскрыть детали. История сгруппирована по дате события.
+              Нажмите на запись, чтобы раскрыть детали. Отметьте нужные записи для передачи или клинического случая — обсуждения выбранных материалов.
             </p>
           </div>
           {patientRecords.length > 0 && (
@@ -662,7 +666,7 @@ const PatientDetailsPage: React.FC = () => {
               <FileText className="h-6 w-6 text-gray-400" />
             </div>
             <p className="mt-3 text-sm font-medium text-gray-900">Записей пока нет</p>
-            <p className="mt-1 text-xs text-gray-500">Нажмите «Добавить запись» чтобы создать первую</p>
+            <p className="mt-1 text-xs text-gray-500">{canCreateRecord ? 'Карточка — человек, запись — событие или документ. Добавьте первую запись вручную или импортируйте документы.' : 'Здесь появятся записи, которые вам явно передали.'}</p>
           </div>
         ) : filteredRecords.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-xl border border-gray-100 bg-white py-14 text-center shadow-card">

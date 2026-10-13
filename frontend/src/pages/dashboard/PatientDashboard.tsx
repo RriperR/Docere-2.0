@@ -7,7 +7,7 @@ import { format } from 'date-fns'
 import { Button } from '../../components/common/Button'
 import { useAuthStore } from '../../stores/authStore'
 import DoctorRoleStatus from '../roles/DoctorRoleStatus'
-import { usePatientsStore } from '../../stores/patientsStore'
+import { type Patient, type PatientRecordSummary, usePatientsStore } from '../../stores/patientsStore'
 
 const typeColors: Record<string, string> = {
   consultation_result: 'bg-accent-100 text-accent-700',
@@ -25,16 +25,22 @@ const typeLabel: Record<string, string> = {
 
 const PatientDashboard: React.FC = () => {
   const { user } = useAuthStore()
-  const { fetchPatients, patients, patientRecords, fetchPatientRecords } = usePatientsStore()
-  const [loading, setLoading] = useState(true)
+  const { fetchPatients, patients, fetchPatientRecords } = usePatientsStore()
+  const [historyLoading, setLoading] = useState(true)
+  const [loadedUserId, setLoadedUserId] = useState<string | null>(null)
+  const loading = historyLoading || loadedUserId !== (user?.id ?? null)
   const [historyError, setHistoryError] = useState(false)
   const [revision, setRevision] = useState(0)
+  const [ownRecords, setOwnRecords] = useState<PatientRecordSummary[]>([])
+  const [sharedMaterials, setSharedMaterials] = useState<Array<{ patient: Patient; records: PatientRecordSummary[] }>>([])
   const patient = patients.find(item => item.accessContext === 'own_confirmed') ?? null
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     setHistoryError(false)
+    setOwnRecords([])
+    setSharedMaterials([])
     void (async () => {
       await fetchPatients()
       if (cancelled) return
@@ -42,20 +48,31 @@ const PatientDashboard: React.FC = () => {
       const own = usePatientsStore.getState().patients.find(item => item.accessContext === 'own_confirmed')
       if (own) {
         await fetchPatientRecords(own.id)
-        if (!cancelled && usePatientsStore.getState().error) setHistoryError(true)
+        if (cancelled) return
+        if (usePatientsStore.getState().error) { setHistoryError(true); return }
+        setOwnRecords([...usePatientsStore.getState().patientRecords])
       }
-    })().finally(() => { if (!cancelled) setLoading(false) })
+      const shared = usePatientsStore.getState().patients.filter(item => item.accessContext === 'shared')
+      const materials: Array<{ patient: Patient; records: PatientRecordSummary[] }> = []
+      for (const card of shared) {
+        await fetchPatientRecords(card.id)
+        if (cancelled) return
+        if (usePatientsStore.getState().error) { setHistoryError(true); return }
+        materials.push({ patient: card, records: [...usePatientsStore.getState().patientRecords] })
+      }
+      setSharedMaterials(materials)
+    })().finally(() => { if (!cancelled) { setLoadedUserId(user?.id ?? null); setLoading(false) } })
     return () => { cancelled = true }
   }, [user?.id, fetchPatients, fetchPatientRecords, revision])
 
-  const recentRecords = useMemo(() => patient ? patientRecords.slice(0, 5) : [], [patient, patientRecords])
+  const recentRecords = useMemo(() => patient ? [...ownRecords].sort((left, right) => right.eventDate.localeCompare(left.eventDate)).slice(0, 5) : [], [patient, ownRecords])
 
   const lastRecord = recentRecords[0]
   const lastVisitLabel = loading ? 'Загружаем историю…' : historyError ? 'История временно недоступна' : patient?.lastVisit
     ? `Последний визит: ${format(new Date(patient.lastVisit), 'dd.MM.yyyy')}`
     : 'Записей пока нет'
 
-  const displayName = patient
+  const displayName = !loading && !historyError && patient
     ? patient.fio
     : user
       ? `${user.first_name} ${user.last_name}`
@@ -84,18 +101,18 @@ const PatientDashboard: React.FC = () => {
 
         <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3">
           <div className="rounded-lg bg-primary-50 p-4">
-            <p className="text-3xl font-bold text-primary-600">{loading || historyError ? '—' : patient ? patientRecords.length : 0}</p>
+            <p className="text-3xl font-bold text-primary-600">{loading || historyError ? '—' : patient ? ownRecords.length : 0}</p>
             <p className="mt-1 text-sm text-gray-600">Медицинских записей</p>
           </div>
           <div className="rounded-lg bg-secondary-50 p-4">
             <p className="text-3xl font-bold text-secondary-600">
-              {loading || historyError ? '—' : patient ? patientRecords.filter((r) => r.recordType === 'consultation_result').length : 0}
+              {loading || historyError ? '—' : patient ? ownRecords.filter((r) => r.recordType === 'consultation_result').length : 0}
             </p>
             <p className="mt-1 text-sm text-gray-600">Консультаций</p>
           </div>
           <div className="rounded-lg bg-accent-50 p-4 col-span-2 sm:col-span-1">
             <p className="text-3xl font-bold text-accent-600">
-              {loading || historyError ? '—' : patient ? patientRecords.filter((r) => r.recordType === 'lab_result').length : 0}
+              {loading || historyError ? '—' : patient ? ownRecords.filter((r) => r.recordType === 'lab_result').length : 0}
             </p>
             <p className="mt-1 text-sm text-gray-600">Результатов лабораторий</p>
           </div>
@@ -137,6 +154,16 @@ const PatientDashboard: React.FC = () => {
         </motion.div>
       )}
 
+      {!loading && !historyError && sharedMaterials.some(material => material.records.length > 0) && <section aria-labelledby="accepted-materials-title" className="rounded-xl border border-primary-100 bg-white p-6 shadow-card">
+        <h2 id="accepted-materials-title" className="font-semibold text-gray-900">Принятые материалы</h2>
+        <p className="mt-1 text-sm text-gray-500">Записи из принятых приглашений. Карточки показаны отдельно: совпадение имени или email не подтверждает, что они относятся к вам.</p>
+        <p className="mt-2 text-sm text-gray-500">Откройте карточку, отметьте записи и нажмите «Поделиться», чтобы передать их зарегистрированному врачу. Он увидит документы после принятия запроса.</p>
+        <div className="mt-4 space-y-4">{sharedMaterials.filter(material => material.records.length > 0).map(({ patient: card, records }) => <div key={card.id} className="rounded-lg border border-gray-100 p-4">
+          <Link to={`/patients/${card.id}`} className="font-semibold text-primary-700 hover:underline">{card.fio} · открыть карточку</Link>
+          <ul className="mt-2 space-y-2">{records.map(record => <li key={record.id}><Link to={`/patients/${card.id}#record-${record.id}`} className="text-sm text-gray-700 hover:text-primary-700 hover:underline">{record.title || 'Медицинская запись'} · {format(new Date(record.eventDate), 'dd.MM.yyyy')}</Link></li>)}</ul>
+        </div>)}</div>
+      </section>}
+
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
@@ -165,7 +192,7 @@ const PatientDashboard: React.FC = () => {
               {recentRecords.map((record, i) => (
                 <Link
                   key={record.id}
-                  to={patient ? `/patients/${patient.id}` : '/patients'}
+                  to={patient ? `/patients/${patient.id}#record-${record.id}` : '/patients'}
                   className="group relative flex items-start gap-4"
                 >
                   <div className={`relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full ring-2 ring-white ${i === 0 ? 'bg-primary-500' : 'bg-gray-200'}`}>

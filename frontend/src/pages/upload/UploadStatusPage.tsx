@@ -9,6 +9,8 @@ import { ImportResultSummary } from '../../components/imports/ImportResultSummar
 import { watchImport } from '../../api/importProgress'
 import { useAuthStore } from '../../stores/authStore'
 import { useUploadStore } from '../../stores/uploadStore'
+import { PatientImportContext } from './PatientImportContext'
+import { usePatientImportContext } from './usePatientImportContext'
 import { groupedWarnings } from '../../utils/importWarnings'
 
 const statusLabel: Record<string, string> = {
@@ -21,6 +23,7 @@ const statusLabel: Record<string, string> = {
 }
 
 const UploadStatusPage: React.FC = () => {
+  const context = usePatientImportContext()
   const { jobId } = useParams<{ jobId: string }>()
   const { currentJob, error } = useUploadStore()
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
@@ -70,13 +73,15 @@ const UploadStatusPage: React.FC = () => {
   return (
     <div className="space-y-8">
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
-        <Link to="/upload" className="mb-2 flex items-center text-sm text-primary-600 hover:underline">
+        <Link to={`/upload${context.query}`} className="mb-2 flex items-center text-sm text-primary-600 hover:underline">
           <ArrowLeft className="mr-1 h-4 w-4" />
           Назад к загрузке
         </Link>
         <h1 className="text-2xl font-bold">Статус импорта</h1>
         <p className="text-gray-500">Архив разбирается в фоне; найденные данные появятся здесь для проверки.</p>
       </motion.div>
+
+      <PatientImportContext context={context} />
 
       <Card>
         <div className="flex flex-col items-center gap-4 md:flex-row md:items-start">
@@ -92,7 +97,7 @@ const UploadStatusPage: React.FC = () => {
             </div>
             {needsReview && (
               <div className="mt-5">
-                <Link to={`/upload/review/${currentJob.id}`}>
+                <Link to={`/upload/review/${currentJob.id}${context.query}`}>
                   <Button type="button" icon={<FileSearch className="h-4 w-4" />}>
                     Проверить импорт
                   </Button>
@@ -146,7 +151,7 @@ const UploadStatusPage: React.FC = () => {
             <ul className="space-y-2 text-sm text-error-700">
               {report.errors.map((item, index) => <li key={`${item}-${index}`}>{String(item)}</li>)}
             </ul>
-            <Link to="/upload">
+            <Link to={`/upload${context.query}`}>
               <Button type="button" variant="outline">Загрузить исправленный архив</Button>
             </Link>
           </div>
