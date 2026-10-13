@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Calendar, ChevronRight, FileText, Stethoscope } from 'lucide-react'
@@ -6,6 +6,7 @@ import { format } from 'date-fns'
 
 import { Button } from '../../components/common/Button'
 import { useAuthStore } from '../../stores/authStore'
+import DoctorRoleStatus from '../roles/DoctorRoleStatus'
 import { usePatientsStore } from '../../stores/patientsStore'
 
 const typeColors: Record<string, string> = {
@@ -24,23 +25,33 @@ const typeLabel: Record<string, string> = {
 
 const PatientDashboard: React.FC = () => {
   const { user } = useAuthStore()
-  const { fetchPatients, patients, currentPatient, patientRecords, fetchPatientRecords } =
-    usePatientsStore()
-
-  const patient = currentPatient ?? patients[0] ?? null
-
-  useEffect(() => {
-    if (user?.role === 'patient') void fetchPatients()
-  }, [user?.role, fetchPatients])
+  const { fetchPatients, patients, patientRecords, fetchPatientRecords } = usePatientsStore()
+  const [loading, setLoading] = useState(true)
+  const [historyError, setHistoryError] = useState(false)
+  const [revision, setRevision] = useState(0)
+  const patient = patients.find(item => item.accessContext === 'own_confirmed') ?? null
 
   useEffect(() => {
-    if (patient?.id) void fetchPatientRecords(patient.id)
-  }, [patient?.id, fetchPatientRecords])
+    let cancelled = false
+    setLoading(true)
+    setHistoryError(false)
+    void (async () => {
+      await fetchPatients()
+      if (cancelled) return
+      if (usePatientsStore.getState().error) { setHistoryError(true); return }
+      const own = usePatientsStore.getState().patients.find(item => item.accessContext === 'own_confirmed')
+      if (own) {
+        await fetchPatientRecords(own.id)
+        if (!cancelled && usePatientsStore.getState().error) setHistoryError(true)
+      }
+    })().finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [user?.id, fetchPatients, fetchPatientRecords, revision])
 
-  const recentRecords = useMemo(() => patientRecords.slice(0, 5), [patientRecords])
+  const recentRecords = useMemo(() => patient ? patientRecords.slice(0, 5) : [], [patient, patientRecords])
 
   const lastRecord = recentRecords[0]
-  const lastVisitLabel = patient?.lastVisit
+  const lastVisitLabel = loading ? 'Загружаем историю…' : historyError ? 'История временно недоступна' : patient?.lastVisit
     ? `Последний визит: ${format(new Date(patient.lastVisit), 'dd.MM.yyyy')}`
     : 'Записей пока нет'
 
@@ -52,6 +63,7 @@ const PatientDashboard: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      <DoctorRoleStatus />
       <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -63,34 +75,34 @@ const PatientDashboard: React.FC = () => {
             <h1 className="text-2xl font-bold text-gray-900">{displayName}</h1>
             <p className="mt-1 text-sm text-gray-500">{lastVisitLabel}</p>
           </div>
-          {patient?.id && (
-            <Link to={`/patients/${patient.id}`}>
-              <Button size="sm">Открыть карточку</Button>
+          {!loading && !historyError && patient?.id && (
+            <Link className="inline-flex rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary-700" to={`/patients/${patient.id}`}>
+              Открыть карточку
             </Link>
           )}
         </div>
 
         <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3">
           <div className="rounded-lg bg-primary-50 p-4">
-            <p className="text-3xl font-bold text-primary-600">{patientRecords.length}</p>
+            <p className="text-3xl font-bold text-primary-600">{loading || historyError ? '—' : patient ? patientRecords.length : 0}</p>
             <p className="mt-1 text-sm text-gray-600">Медицинских записей</p>
           </div>
           <div className="rounded-lg bg-secondary-50 p-4">
             <p className="text-3xl font-bold text-secondary-600">
-              {patientRecords.filter((r) => r.recordType === 'consultation_result').length}
+              {loading || historyError ? '—' : patient ? patientRecords.filter((r) => r.recordType === 'consultation_result').length : 0}
             </p>
             <p className="mt-1 text-sm text-gray-600">Консультаций</p>
           </div>
           <div className="rounded-lg bg-accent-50 p-4 col-span-2 sm:col-span-1">
             <p className="text-3xl font-bold text-accent-600">
-              {patientRecords.filter((r) => r.recordType === 'lab_result').length}
+              {loading || historyError ? '—' : patient ? patientRecords.filter((r) => r.recordType === 'lab_result').length : 0}
             </p>
             <p className="mt-1 text-sm text-gray-600">Результатов лабораторий</p>
           </div>
         </div>
       </motion.div>
 
-      {lastRecord && (
+      {!loading && !historyError && lastRecord && (
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
@@ -136,8 +148,10 @@ const PatientDashboard: React.FC = () => {
           <p className="text-xs text-gray-500 mt-0.5">Хронология медицинских событий</p>
         </div>
 
-        {recentRecords.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
+        {loading ? <p role="status" className="p-6 text-sm text-gray-500">Загружаем вашу историю…</p>
+          : historyError ? <div role="alert" className="space-y-3 p-6"><p className="text-sm text-error-700">Не удалось загрузить вашу историю.</p><Button variant="outline" onClick={() => setRevision(value => value + 1)}>Повторить загрузку истории</Button></div>
+          : recentRecords.length === 0 ? (
+          <div className="flex flex-col items-center justify-center px-5 py-16 text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gray-100">
               <FileText className="h-6 w-6 text-gray-400" />
             </div>
@@ -190,7 +204,7 @@ const PatientDashboard: React.FC = () => {
           </div>
         )}
 
-        {patient?.id && recentRecords.length > 0 && (
+        {!loading && !historyError && patient?.id && recentRecords.length > 0 && (
           <div className="border-t border-gray-100 px-6 py-3">
             <Link
               to={`/patients/${patient.id}`}

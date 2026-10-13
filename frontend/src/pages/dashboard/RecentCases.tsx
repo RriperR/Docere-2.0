@@ -31,9 +31,9 @@ export default function RecentCases() {
     {loading && <p role="status" className="rounded-2xl border border-gray-200 bg-white p-6 text-sm text-gray-500">Загружаем активные случаи…</p>}
     {error && <p role="alert" className="rounded-2xl border border-error-200 bg-error-50 p-5 text-sm text-error-700">{error}
       <button className="ml-2 font-semibold underline" onClick={() => setRetry(value => value + 1)}>Повторить</button></p>}
-    {!loading && !error && !items.length && <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-dashed border-primary-200 bg-primary-50/40 p-6">
+    {!loading && !error && !items.length && <div className="flex flex-col items-start gap-4 rounded-2xl border border-dashed border-primary-200 bg-primary-50/40 p-6 sm:flex-row sm:items-center">
       <MessagesSquare size={28} className="text-primary-600" aria-hidden="true" />
-      <div className="min-w-0 flex-1"><h3 className="font-semibold">Пригласите коллегу к обсуждению</h3>
+      <div className="w-full min-w-0 sm:flex-1"><h3 className="font-semibold">Пригласите коллегу к обсуждению</h3>
         <p className="mt-1 text-sm text-gray-600">Соберите материалы пациента и вопрос в одном клиническом случае.</p></div>
       <Link to="/cases/new" className={secondaryButtonClass}>Создать случай</Link>
     </div>}

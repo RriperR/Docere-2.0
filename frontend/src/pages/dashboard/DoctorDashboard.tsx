@@ -74,14 +74,18 @@ const DoctorDashboard: React.FC = () => {
   const { jobs, listJobs, error: importsError } = useUploadStore()
   const { inbox, fetchInbox, error: sharesError } = useShareRequestsStore()
 
+  const [revision, setRevision] = useState(0)
   const [loading, setLoading] = useState(true)
   useEffect(() => {
     let cancelled = false
+    setLoading(true)
     void Promise.all([fetchPatients(), listJobs(), fetchInbox()]).finally(() => {
       if (!cancelled) setLoading(false)
     })
     return () => { cancelled = true }
-  }, [fetchPatients, listJobs, fetchInbox])
+  }, [fetchPatients, listJobs, fetchInbox, revision])
+
+  const startingWork = !loading && !patientsError && !patients.some(patient => patient.accessContext !== 'own_confirmed')
 
   const totalRecords = useMemo(
     () => patients.reduce((acc, p) => acc + p.recordCount, 0),
@@ -149,12 +153,12 @@ const DoctorDashboard: React.FC = () => {
         </div>
         <div className="relative mt-6 max-w-2xl">
           <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Здравствуйте, {user?.first_name || 'доктор'}.</h1>
-          <p className="mt-3 max-w-xl text-sm leading-relaxed text-primary-100 sm:text-base">Соберите клинический контекст, обсудите его с коллегами и сохраните итог в истории пациента.</p>
+          <p className="mt-3 max-w-xl text-sm leading-relaxed text-primary-100 sm:text-base">{startingWork ? `Начните с пациента: добавьте его карточку или импортируйте документы.${patients.some(patient => patient.accessContext === 'own_confirmed') ? ' Ваша собственная карточка остаётся доступной ниже.' : ''}` : 'Соберите клинический контекст, обсудите его с коллегами и сохраните итог в истории пациента.'}</p>
           <div className="mt-6 flex flex-wrap gap-3">
-            <Link to="/cases/new" className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-primary-950 shadow-xs hover:bg-primary-50">
-              <Plus size={18} aria-hidden="true" />Новый клинический случай</Link>
+            <Link to={startingWork ? "/patients?create=1" : "/cases/new"} className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-primary-950 shadow-xs hover:bg-primary-50">
+              <Plus size={18} aria-hidden="true" />{startingWork ? 'Добавить пациента' : 'Новый клинический случай'}</Link>
             <Link to="/upload" className="inline-flex items-center gap-2 rounded-xl border border-white/25 px-4 py-3 text-sm font-medium text-white hover:bg-white/10">
-              <UploadCloud size={18} aria-hidden="true" />Импортировать материалы</Link>
+              <UploadCloud size={18} aria-hidden="true" />{startingWork ? 'Импорт документов' : 'Импортировать материалы'}</Link>
           </div>
         </div>
       </section>
@@ -213,7 +217,7 @@ const DoctorDashboard: React.FC = () => {
         </div>
 
         {loading ? <p role="status" className="p-6 text-sm text-gray-500">Загружаем рабочую очередь…</p> : importsError || sharesError ?
-          <p role="alert" className="p-6 text-sm text-error-700">Не удалось загрузить всю очередь. <button className="underline" onClick={() => { void listJobs(); void fetchInbox() }}>Повторить</button></p> : reviewTasks.length === 0 ? (
+          <p role="alert" className="p-6 text-sm text-error-700">Не удалось загрузить всю очередь. <button className="underline" onClick={() => setRevision(value => value + 1)}>Повторить</button></p> : reviewTasks.length === 0 ? (
           <div className="flex items-center gap-3 px-6 py-5">
             <Clock className="h-5 w-5 shrink-0 text-secondary-600" aria-hidden="true" />
             <p className="text-sm text-gray-500">Все входящие разобраны. Новых импортов и приглашений к записям нет.</p>
@@ -249,7 +253,7 @@ const DoctorDashboard: React.FC = () => {
         transition={{ delay: 0.2, duration: 0.4 }}
         className="rounded-xl border border-gray-100 bg-white shadow-card"
       >
-        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-6 py-4">
           <h2 className="font-semibold text-gray-900">Последние активные карточки</h2>
           <Link to="/patients" className="flex items-center gap-1 text-sm font-medium text-primary-600 hover:text-primary-700">
             Все пациенты
@@ -258,14 +262,14 @@ const DoctorDashboard: React.FC = () => {
         </div>
 
         {loading ? <p role="status" className="p-6 text-sm text-gray-500">Загружаем пациентов…</p> : patientsError ?
-          <p role="alert" className="p-6 text-sm text-error-700">{patientsError} <button className="underline" onClick={() => void fetchPatients()}>Повторить</button></p> : recentPatients.length === 0 ? (
+          <p role="alert" className="p-6 text-sm text-error-700">{patientsError} <button className="underline" onClick={() => setRevision(value => value + 1)}>Повторить</button></p> : recentPatients.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gray-100">
               <Users className="h-6 w-6 text-gray-400" />
             </div>
             <p className="mt-3 text-sm font-medium text-gray-900">Пациентов пока нет</p>
             <p className="mt-1 text-xs text-gray-500">Добавьте пациента, чтобы вести историю и начать совместный разбор</p>
-            <Link className={`${secondaryButtonClass} mt-4`} to="/patients">К пациентам <ArrowRight size={16} /></Link>
+            <Link className={`${secondaryButtonClass} mt-4`} to="/patients?create=1">Добавить пациента <ArrowRight size={16} /></Link>
           </div>
         ) : (
           <div className="divide-y divide-gray-50">

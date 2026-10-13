@@ -10,6 +10,10 @@ import {
   XCircle,
 } from 'lucide-react'
 
+import { Link } from 'react-router-dom'
+import { useMyDoctorApplications } from './useMyDoctorApplications'
+import { RejectedApplication } from './DoctorRoleStatus'
+import { secondaryButtonClass } from '../cases/styles'
 import { Button } from '../../components/common/Button'
 import { useAuthStore } from '../../stores/authStore'
 import {
@@ -34,13 +38,11 @@ const DoctorRequestPage: React.FC = () => {
   const {
     specialties,
     reviewers,
-    mine,
     isLoading,
     isSubmitting,
     error,
     fetchSpecialties,
     fetchReviewers,
-    fetchMine,
     createApplication,
     clearReviewers,
     clearError,
@@ -50,12 +52,12 @@ const DoctorRequestPage: React.FC = () => {
   const [formError, setFormError] = useState<string | null>(null)
   const refreshUser = useAuthStore((state) => state.refreshUser)
 
+  const { mine, current, loading: loadingMine, error: mineError, retry: fetchMine } = useMyDoctorApplications()
   const pendingApplication = mine.find((application) => application.status === 'pending')
 
   useEffect(() => {
-    void fetchMine()
     void fetchSpecialties()
-  }, [fetchMine, fetchSpecialties])
+  }, [fetchSpecialties])
 
   useEffect(() => {
     if (!pendingApplication) return
@@ -107,13 +109,19 @@ const DoctorRequestPage: React.FC = () => {
       return
     }
     setFormError(null)
-    await createApplication(specialty, selectedReviewerIds)
+    try {
+      await createApplication(specialty, selectedReviewerIds)
+      fetchMine()
+    } catch {
+      // The store displays the server error; also reload conflicts before offering another submission.
+      fetchMine()
+    }
   }
 
   return (
     <div className="space-y-6">
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
-        <div className="flex items-center gap-2">
+        <div className="flex items-start gap-2">
           <Stethoscope className="h-6 w-6 text-primary-600" />
           <h1 className="text-2xl font-bold text-gray-900">Заявка на роль врача</h1>
         </div>
@@ -121,20 +129,24 @@ const DoctorRequestPage: React.FC = () => {
       </motion.div>
 
       {(formError || error) && (
-        <div className="flex items-start rounded-lg border border-error-200 bg-error-50 p-4">
+        <div role="alert" className="flex flex-wrap items-start gap-2 rounded-lg border border-error-200 bg-error-50 p-4">
           <AlertTriangle className="mr-2 mt-0.5 h-5 w-5 shrink-0 text-error-500" />
-          <p className="text-sm text-error-700">{formError || error}</p>
+          <p className="text-sm text-error-700">{formError || error}</p>{error && <button className="text-sm font-semibold underline" onClick={() => { void fetchSpecialties(); if (specialty.trim().length >= 2) void fetchReviewers(specialty) }}>Повторить</button>}
         </div>
       )}
 
-      {pendingApplication ? (
-        <ApplicationProgress application={pendingApplication} />
+      {loadingMine ? <p role="status" className="rounded-lg border border-gray-200 bg-white p-5">Загружаем ваши заявки…</p>
+        : mineError ? <div role="alert" className="space-y-3 rounded-lg border border-error-200 bg-white p-5"><p>Не удалось загрузить ваши заявки.</p><button onClick={fetchMine} className={secondaryButtonClass}>Повторить загрузку заявок</button></div>
+        : current?.status === 'approved' ? <section className="space-y-3 rounded-lg border border-success-200 bg-white p-5"><h2 className="font-semibold">Заявка одобрена</h2><p>Обновляем вашу роль для перехода к работе врача.</p><Button variant="outline" onClick={() => void refreshUser()}>Обновить роль</Button><Link to="/dashboard" className={secondaryButtonClass}>Открыть рабочий стол</Link></section>
+        : pendingApplication ? (
+        <div className="space-y-3"><p className="text-sm text-gray-600">Дождитесь решения выбранного администратора или двух врачей вашей специализации. Повторная заявка не требуется.</p><ApplicationProgress application={pendingApplication} /><button className={secondaryButtonClass} onClick={fetchMine}>Обновить статус заявки</button></div>
       ) : (
         <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
           <div className="border-b border-gray-100 px-5 py-4">
             <h2 className="font-semibold text-gray-900">Новая заявка</h2>
           </div>
           <div className="space-y-6 p-5">
+            {current?.status === 'rejected' && <RejectedApplication application={current} />}
             <label className="block space-y-1.5">
               <span className="text-sm font-medium text-gray-700">Специализация</span>
               <input
@@ -160,9 +172,9 @@ const DoctorRequestPage: React.FC = () => {
                 </div>
 
                 {isLoading && reviewers.length === 0 && (
-                  <p className="rounded-lg border border-gray-200 p-4 text-sm text-gray-500">Загрузка проверяющих...</p>
+                  <p role="status" className="rounded-lg border border-gray-200 p-4 text-sm text-gray-500">Загрузка проверяющих...</p>
                 )}
-                {!isLoading && reviewers.length === 0 && (
+                {!isLoading && !error && reviewers.length === 0 && (
                   <p className="rounded-lg border border-warning-200 bg-warning-50 p-4 text-sm text-warning-700">
                     Для этой специализации пока нет доступных врачей или администраторов
                   </p>
@@ -203,7 +215,7 @@ const DoctorRequestPage: React.FC = () => {
               <Button
                 type="button"
                 onClick={() => void submit()}
-                disabled={!quorumReady || specialty.trim().length < 2}
+                disabled={!quorumReady || specialty.trim().length < 2 || isLoading || !!error}
                 isLoading={isSubmitting}
                 icon={<UserCheck className="h-4 w-4" />}
               >

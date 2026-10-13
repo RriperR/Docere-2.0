@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Calendar, FileText, Grid3X3, LayoutList, Plus, Search, X } from 'lucide-react'
 import { format } from 'date-fns'
@@ -71,6 +71,8 @@ function EmptyState({ onAdd, canCreate }: { onAdd: () => void; canCreate: boolea
 
 const PatientListPage: React.FC = () => {
   const { user } = useAuthStore()
+  const [params, setParams] = useSearchParams()
+  const modalRef = useRef<HTMLDivElement>(null)
   const { filteredPatients, fetchPatients, createPatient, searchPatients, filterPatientsByDate, isLoading, error } =
     usePatientsStore()
 
@@ -89,13 +91,51 @@ const PatientListPage: React.FC = () => {
 
   const canCreatePatient = user?.role === 'doctor' || user?.role === 'admin'
 
-  const closeModal = () => {
+  useEffect(() => {
+    if (params.get('create') !== '1' || !canCreatePatient) return
+    setModalOpen(true)
+    const next = new URLSearchParams(params)
+    next.delete('create')
+    setParams(next, { replace: true })
+  }, [params, setParams, canCreatePatient])
+
+  const resetAndClose = useCallback(() => {
     setModalOpen(false)
     setFormError(null)
     setForm({ lastName: '', firstName: '', middleName: '', email: '', phone: '', birthday: '' })
-  }
+  }, [])
+
+  const closeModal = useCallback(() => {
+    if (isSubmitting) return
+    const dirty = Object.values(form).some(value => value.trim().length > 0)
+    if (dirty && !window.confirm('Закрыть создание пациента? Введённые данные будут потеряны.')) return
+    resetAndClose()
+  }, [form, isSubmitting, resetAndClose])
+
+  useEffect(() => {
+    if (!isModalOpen) return
+    const previous = document.activeElement as HTMLElement | null
+    modalRef.current?.querySelector<HTMLInputElement>('input')?.focus()
+    return () => { previous?.focus() }
+  }, [isModalOpen])
+
+  useEffect(() => {
+    if (!isModalOpen) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { closeModal(); event.preventDefault() }
+      if (event.key !== 'Tab') return
+      const controls = modalRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex="0"]')
+      if (!controls?.length) return
+      const first = controls[0], last = controls[controls.length - 1]
+      if (event.shiftKey && document.activeElement === first) { last.focus(); event.preventDefault() }
+      if (!event.shiftKey && document.activeElement === last) { first.focus(); event.preventDefault() }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [isModalOpen, closeModal])
 
   const handleCreatePatient = async () => {
+    if (!form.firstName.trim() || !form.lastName.trim()) return
     setFormError(null)
     setSubmitting(true)
     try {
@@ -105,7 +145,7 @@ const PatientListPage: React.FC = () => {
         phone: form.phone || undefined,
         date_of_birth: form.birthday || undefined,
       })
-      closeModal()
+      resetAndClose()
     } catch (err: unknown) {
       const apiError = err as ApiError
       setFormError(apiError.response?.data?.detail || 'Не удалось создать карточку пациента')
@@ -147,7 +187,7 @@ const PatientListPage: React.FC = () => {
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <DateInput
               icon={<Calendar className="h-4 w-4" />}
               value={startDate}
@@ -304,6 +344,7 @@ const PatientListPage: React.FC = () => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            onClick={event => { if (event.target === event.currentTarget) closeModal() }}
             className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 p-4 backdrop-blur-xs"
           >
             <motion.div
@@ -311,33 +352,39 @@ const PatientListPage: React.FC = () => {
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.96, y: 10 }}
               transition={{ duration: 0.2 }}
-              className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
+              ref={modalRef}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="new-patient-title"
+              className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"
             >
               <div className="mb-5 flex items-center justify-between">
-                <h2 className="text-lg font-bold text-gray-900">Новый пациент</h2>
-                <button onClick={closeModal} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100">
+                <h2 id="new-patient-title" className="text-lg font-bold text-gray-900">Новый пациент</h2>
+                <button type="button" aria-label="Закрыть создание пациента" disabled={isSubmitting} onClick={closeModal} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100">
                   <X className="h-5 w-5" />
                 </button>
               </div>
               {formError && (
-                <div className="mb-4 rounded-lg bg-error-50 px-3 py-2 text-sm text-error-700">
+                <div role="alert" className="mb-4 rounded-lg bg-error-50 px-3 py-2 text-sm text-error-700">
                   {formError}
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-3">
-                <Input label="Фамилия *" value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} />
-                <Input label="Имя *" value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} />
-                <Input label="Отчество" className="col-span-2" value={form.middleName} onChange={(e) => setForm({ ...form, middleName: e.target.value })} />
-                <Input label="Email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-                <Input label="Телефон" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-                <DateInput label="Дата рождения" className="col-span-2" value={form.birthday} onChange={(value) => setForm({ ...form, birthday: value ?? '' })} />
-              </div>
-              <div className="mt-5 flex justify-end gap-2">
-                <Button variant="outline" onClick={closeModal}>Отмена</Button>
-                <Button onClick={handleCreatePatient} isLoading={isSubmitting} disabled={!form.firstName.trim() || !form.lastName.trim()}>
-                  Создать
-                </Button>
-              </div>
+              <form onSubmit={event => { event.preventDefault(); if (!isSubmitting) void handleCreatePatient() }}>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <Input id="new-patient-last" required label="Фамилия *" value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} />
+                  <Input id="new-patient-first" required label="Имя *" value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} />
+                  <Input id="new-patient-middle" label="Отчество" className="sm:col-span-2" value={form.middleName} onChange={(e) => setForm({ ...form, middleName: e.target.value })} />
+                  <Input id="new-patient-email" label="Email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+                  <Input id="new-patient-phone" label="Телефон" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+                  <DateInput id="new-patient-birthday" label="Дата рождения" className="sm:col-span-2" value={form.birthday} onChange={(value) => setForm({ ...form, birthday: value ?? '' })} />
+                </div>
+                <div className="mt-5 flex justify-end gap-2">
+                  <Button type="button" variant="outline" disabled={isSubmitting} onClick={closeModal}>Отмена</Button>
+                  <Button type="submit" isLoading={isSubmitting} disabled={!form.firstName.trim() || !form.lastName.trim()}>
+                    Создать
+                  </Button>
+                </div>
+              </form>
             </motion.div>
           </motion.div>
         )}
