@@ -1,5 +1,5 @@
 #!/bin/sh
-# Изолированный локальный стенд. Никогда не читает .env и не сбрасывает данные.
+# Изолированный локальный стенд. Только ai-up читает AI-настройки .env; данные не сбрасываются.
 set -eu
 project_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$project_root"
@@ -28,6 +28,27 @@ case "${1:-check}" in
         compose up -d api frontend gateway celery-worker import-dispatcher
         echo 'Дождитесь готовности: sh scripts/product_demo_stand.sh check'
         ;;
+    ai-up)
+        # Import only AI settings: database/storage configuration stays isolated.
+        .venv/bin/python - <<'PYTHON'
+import os
+import subprocess
+from dotenv import dotenv_values
+
+settings = dotenv_values('.env')
+env = {**os.environ, **{
+    key: value for key, value in settings.items()
+    if key.startswith('APP_IMPORT_AI__') and value is not None
+}}
+subprocess.run([
+    'docker', 'compose', '--env-file', '/dev/null', '--project-directory', os.getcwd(),
+    '-p', env.get('PRODUCT_DEMO_PROJECT', 'docere-roadmap-a2-20261013'),
+    '-f', 'docker-compose.yml', '-f', 'scripts/product_demo.compose.yaml',
+    '-f', 'scripts/product_demo_ai.compose.yaml',
+    'up', '-d', 'api', 'celery-worker', 'import-dispatcher', 'frontend', 'gateway',
+], env=env, check=True)
+PYTHON
+        ;;
     create-admin)
         compose exec -T api python -m app.presentation.cli create-admin \
             --email product-admin@docere.demo --password ProductDemo123 \
@@ -37,5 +58,5 @@ case "${1:-check}" in
         cd frontend
         DOCERE_DEV_API_URL=http://localhost:8012 npm run dev -- --host 127.0.0.1 --port 4174 --strictPort
         ;;
-    *) echo 'Использование: sh scripts/product_demo_stand.sh {check|up|create-admin|dev}' >&2; exit 2 ;;
+    *) echo 'Использование: sh scripts/product_demo_stand.sh {check|up|ai-up|create-admin|dev}' >&2; exit 2 ;;
 esac

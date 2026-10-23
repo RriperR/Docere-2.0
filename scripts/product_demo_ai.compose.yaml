@@ -1,0 +1,12 @@
+# Explicit opt-in overlay; credentials are supplied through the process environment.
+services:
+  api:
+    environment: &demo_ai
+      APP_IMPORT_AI__ENABLED: 'true'
+      APP_IMPORT_AI__BASE_URL: ${APP_IMPORT_AI__BASE_URL:?AI base URL required}
+      APP_IMPORT_AI__TOKEN: ${APP_IMPORT_AI__TOKEN:?AI token required}
+      APP_IMPORT_AI__MODEL: ${APP_IMPORT_AI__MODEL:?AI model required}
+  celery-worker:
+    environment: *demo_ai
+  import-dispatcher:
+    environment: *demo_ai
