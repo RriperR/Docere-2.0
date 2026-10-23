@@ -20,7 +20,7 @@ dependencies = [
   'python-multipart==0.0.31',
   'pydicom==3.0.2',
   'pypdfium2==5.14.0',
-  'pillow==12.3.0',
+  'pillow==13.0.0',
 ]
 
 [dependency-groups]
