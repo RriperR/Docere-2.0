@@ -4,6 +4,21 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // До загрузки CSS/React: тот же ключ и значения, что в themeStore.ts.
+      (() => {
+        let preference = 'system';
+        try {
+          const stored = localStorage.getItem('docere.theme');
+          if (stored === 'light' || stored === 'dark') preference = stored;
+        } catch { /* Хранилище может быть недоступно в приватном режиме. */ }
+        const theme = preference === 'system'
+          ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+          : preference;
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.style.colorScheme = theme;
+      })();
+    </script>
     <title>Docere — пространство совместной работы врачей</title>
   </head>
   <body>

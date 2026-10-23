@@ -82,6 +82,9 @@ const UploadReviewPage: React.FC = () => {
   const [formError, setFormError] = useState('')
   const [previewFile, setPreviewFile] = useState<string | null>(null)
   const [previewPage, setPreviewPage] = useState(1)
+  const previewPanel = useRef<HTMLDivElement>(null)
+  const previewTrigger = useRef<HTMLElement | null>(null)
+  const restorePreviewTrigger = useRef(false)
   const [mobileTab, setMobileTab] = useState<'fields' | 'document'>('fields')
   const [aiSelection, setAiSelection] = useState<string[]>([])
   const [regrouping, setRegrouping] = useState(false)
@@ -94,6 +97,20 @@ const UploadReviewPage: React.FC = () => {
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null)
   const lastSavedSnapshot = useRef('')
   const lastAttemptedSnapshot = useRef('')
+
+  useEffect(() => {
+    if (restorePreviewTrigger.current && (!previewFile || mobileTab === 'fields')) {
+      restorePreviewTrigger.current = false
+      if (previewTrigger.current?.isConnected) {
+        previewTrigger.current.scrollIntoView?.({ block: 'center', behavior: 'instant' })
+        previewTrigger.current.focus({ preventScroll: true })
+      }
+      return
+    }
+    if (!previewFile || mobileTab !== 'document') return
+    previewPanel.current?.scrollIntoView?.({ block: 'start', behavior: 'instant' })
+    previewPanel.current?.focus({ preventScroll: true })
+  }, [previewFile, previewPage, mobileTab])
 
   useEffect(() => {
     if (jobId) void getJobById(jobId)
@@ -314,9 +331,16 @@ const UploadReviewPage: React.FC = () => {
         {!!ai.history.length && <div className="mt-3 flex flex-wrap items-center gap-3"><label className="text-sm">Версия предложений<select className="ml-2 rounded-md border p-2" value={ai.run?.id ?? ''} onChange={e => { const run = ai.history.find(r => r.id === e.target.value); if (run) ai.selectRun(run) }}><option value="">Последний запуск</option>{ai.history.map(run => <option key={run.id} value={run.id}>{new Date(run.created_at).toLocaleString('ru-RU')} · {aiStatusLabels[run.status] ?? run.status}</option>)}</select></label>{ai.hasOlder && <Button size="sm" variant="outline" onClick={() => void ai.loadOlder()}>Предыдущие запуски</Button>}</div>}
         {(ai.error || currentJob.report_json.ai_error_code) && <p role="alert" className="mt-3 text-sm text-red-700">{ai.error || aiErrorLabels[currentJob.report_json.ai_error_code ?? ''] || 'Автоматический анализ недоступен.'}</p>}
       </Card>
-      {previewFile && <div className="flex gap-2 lg:hidden"><Button variant={mobileTab === 'document' ? 'primary' : 'outline'} onClick={() => setMobileTab('document')}>Документ</Button><Button variant={mobileTab === 'fields' ? 'primary' : 'outline'} onClick={() => setMobileTab('fields')}>Поля</Button></div>}
+      {previewFile && <div className="flex flex-wrap gap-2 lg:hidden" aria-label="Сверка документа и полей">
+        <Button aria-pressed={mobileTab === 'document'} variant={mobileTab === 'document' ? 'primary' : 'outline'} onClick={() => setMobileTab('document')}>Документ</Button>
+        <Button aria-pressed={mobileTab === 'fields'} variant={mobileTab === 'fields' ? 'primary' : 'outline'} onClick={returnToFields}>Поля записи</Button>
+      </div>}
       <div className={previewFile ? 'grid min-w-0 gap-6 lg:grid-cols-2' : ''}>
-        {previewFile && jobId && <div className={`${mobileTab === 'document' ? '' : 'hidden lg:block'} min-w-0 self-start lg:sticky lg:top-4`}><DocumentViewer importJobId={jobId} page={previewPage} recordId={jobId} attachmentId={previewFile} onClose={() => setPreviewFile(null)} onAccessLost={accessLost} /></div>}
+        {previewFile && jobId && <div ref={previewPanel} tabIndex={-1} aria-label="Сверка с исходным документом" className={`${mobileTab === 'document' ? '' : 'hidden lg:block'} min-h-[calc(100svh-6rem)] min-w-0 scroll-mt-24 self-start space-y-3 lg:sticky lg:top-20`}>
+          <p className="text-sm text-gray-600">Сверьте поля записи с исходным документом. Просмотр не изменяет введённые данные.</p>
+          <DocumentViewer importJobId={jobId} page={previewPage} recordId={jobId} attachmentId={previewFile} onClose={closeSource} onAccessLost={accessLost} />
+          <Button className="lg:hidden" variant="outline" onClick={returnToFields}>Вернуться к полям записи</Button>
+        </div>}
         <div className={`${previewFile && mobileTab === 'document' ? 'hidden lg:block' : ''} min-w-0 space-y-6`}>
       {decisions.map((decision, patientIndex) => {
         const patientCandidate = patientCandidates.find((item) => item.candidate_id === decision.candidate_id)
@@ -642,14 +666,14 @@ const UploadReviewPage: React.FC = () => {
                               return (
                                 <div key={file.path} className="rounded-sm border border-gray-100 bg-gray-50 px-3 py-2 text-xs">
                                   <div className="flex items-center justify-between gap-2">
-                                    {file.id ? <button className="truncate font-medium text-primary-700 underline" onClick={() => openSource(file.id!, 1)}>{file.filename}</button> : <span className="truncate font-medium text-gray-800">{file.filename}</span>}
+                                    <span className="min-w-0 break-all font-medium text-gray-800">{file.filename}</span>
                                     <span className="shrink-0 text-gray-500">{formatFileSize(file.size_bytes)}</span>
                                   </div>
                                   <div className="mt-1 flex flex-wrap gap-2 text-gray-500">
                                     <span>{file.is_dicom ? 'DICOM' : file.mime_type}</span>
-                                    {hasWarning && <span className="text-warning-700">есть warning</span>}
+                                    {hasWarning && <span className="text-warning-700">Требует проверки</span>}
                                   </div>
-                                  <p className="mt-1 break-all text-gray-400">{file.path}</p>
+                                  {file.id && <button type="button" aria-label={`Открыть документ ${file.filename}`} className="mt-2 font-medium text-primary-700 underline" onClick={() => openSource(file.id!, 1)}>Открыть документ</button>}
                                 </div>
                               )
                             })}
@@ -697,7 +721,23 @@ const UploadReviewPage: React.FC = () => {
   )
 
   function openSource(fileId: string, page: number) {
+    previewTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     setPreviewFile(fileId); setPreviewPage(page); setMobileTab('document')
+    if (previewFile === fileId && previewPage === page && mobileTab === 'document') {
+      previewPanel.current?.scrollIntoView?.({ block: 'start', behavior: 'instant' })
+      previewPanel.current?.focus({ preventScroll: true })
+    }
+  }
+
+  function returnToFields() {
+    restorePreviewTrigger.current = true
+    setMobileTab('fields')
+  }
+
+  function closeSource() {
+    restorePreviewTrigger.current = true
+    setPreviewFile(null)
+    setMobileTab('fields')
   }
 
   function applyAi(patientIndex: number, groupIndex: number, name: AiFieldName, value: string, reference: AppliedAi, emptyOnly = false) {

@@ -86,12 +86,12 @@ export default function DocumentViewer({ caseId, patientId, importJobId, page = 
     } catch (e) { await fail(e) }
   }
   const content = <aside aria-label="Просмотр документа" className="flex min-w-0 flex-col rounded-2xl border border-primary-200 bg-white p-5 shadow-card">
-    <div className="flex flex-wrap justify-between gap-3"><h2 className="min-w-0 break-words text-xl font-semibold">{record?.title ?? 'Материал случая'}</h2>
-      <div className="flex gap-3"><button ref={expandButton} onClick={() => setExpanded(value => !value)}>{expanded ? 'Вернуть в панель' : 'На весь экран'}</button><button aria-label="Закрыть просмотр" onClick={onClose}>✕</button></div></div>
+    <div className="flex flex-wrap justify-between gap-3"><h2 className="min-w-0 break-words text-xl font-semibold">{importJobId ? record?.attachments.find(file => file.id === selected)?.filename ?? 'Исходный документ' : record?.title ?? 'Материал случая'}</h2>
+      <div className="flex gap-3"><button ref={expandButton} onClick={() => setExpanded(value => !value)}>{expanded ? 'Вернуть в панель' : 'На весь экран'}</button><button aria-label="Закрыть просмотр" onClick={onClose}>Закрыть</button></div></div>
     {!record && !error && <p role="status" className="py-4 text-sm text-gray-500">Загружаем материал…</p>}
     {error && <p role="alert" className="text-red-700">{error} <button className="underline" onClick={() => setRevision(value => value + 1)}>Повторить</button></p>}
     <div className="mt-4 flex-1 overflow-auto space-y-3">
-      {record && <><p className="text-xs text-gray-500">{record.event_date} · {recordTypeLabel[record.record_type] ?? 'Медицинская запись'} · {recordStatusLabel[record.status] ?? 'Статус неизвестен'}</p><p className="whitespace-pre-wrap">{record.clinical_summary}</p>
+      {record && <>{!importJobId && <><p className="text-xs text-gray-500">{record.event_date} · {recordTypeLabel[record.record_type] ?? 'Медицинская запись'} · {recordStatusLabel[record.status] ?? 'Статус неизвестен'}</p><p className="whitespace-pre-wrap">{record.clinical_summary}</p></>}
         {onReference && <button className="text-primary-700 underline" onClick={() => onReference({ recordId, attachmentId: null,
           label: record.title ?? 'Медицинская запись' })}>Сослаться на запись в сообщении</button>}
         <label className="block">Вложение<select aria-label="Вложение" className={inputClass} value={selected} onChange={e => setSelected(e.target.value)}>

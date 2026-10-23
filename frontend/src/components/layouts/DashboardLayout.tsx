@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import {
   ActivitySquare,
   Bell,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   LayoutDashboard,
@@ -21,6 +22,7 @@ import {
 } from 'lucide-react'
 
 import api from '../../api/api'
+import { ThemeSelector } from '../common/ThemeSelector'
 import { useInboxStore } from '../../stores/inboxStore'
 import { getBreadcrumbs } from '../../utils/navigation'
 import { useNotificationsStore } from '../../stores/notificationsStore'
@@ -34,12 +36,6 @@ const roleLabel: Record<string, string> = {
   doctor: 'Врач',
   patient: 'Пациент',
   admin: 'Администратор',
-}
-
-const roleColor: Record<string, string> = {
-  doctor: 'bg-accent-100 text-accent-700',
-  patient: 'bg-secondary-100 text-secondary-700',
-  admin: 'bg-primary-100 text-primary-700',
 }
 
 function getInitials(firstName?: string, lastName?: string, email?: string): string {
@@ -104,6 +100,32 @@ export const DashboardLayout = () => {
   const notificationButton = useRef<HTMLButtonElement>(null)
   const profileButton = useRef<HTMLButtonElement>(null)
   const mobileMenuButton = useRef<HTMLButtonElement>(null)
+  const mobileMenuPanel = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!isMobileMenuOpen) return
+    const panel = mobileMenuPanel.current
+    const trigger = mobileMenuButton.current
+    const focusable = () => Array.from(panel?.querySelectorAll<HTMLElement>('button, a[href]') ?? [])
+    focusable()[0]?.focus()
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') return
+      const elements = focusable()
+      const first = elements[0]
+      const last = elements[elements.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last?.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first?.focus()
+      }
+    }
+    panel?.addEventListener('keydown', trapFocus)
+    return () => {
+      panel?.removeEventListener('keydown', trapFocus)
+      trigger?.focus()
+    }
+  }, [isMobileMenuOpen])
   useEffect(() => {
     const dismiss = (event: PointerEvent) => {
       if (!popovers.current?.contains(event.target as Node)) {
@@ -242,24 +264,6 @@ export const DashboardLayout = () => {
         )}
       </div>
 
-      {!collapsed && user && (
-        <div className="mx-3 mt-4 rounded-xl bg-gray-50 px-3 py-3">
-          <div className="flex items-center gap-3">
-            <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white ${avatarColor}`}>
-              {initials}
-            </div>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-gray-900">
-                {user.first_name} {user.last_name}
-              </p>
-              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${roleColor[user.role] ?? 'bg-gray-100 text-gray-700'}`}>
-                {roleLabel[user.role] ?? user.role}
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
-
       <nav aria-label="Основная навигация" onClick={event => {
         if ((event.target as HTMLElement).closest('a')) setIsMobileMenuOpen(false)
       }} className="mt-4 flex-1 space-y-0.5 overflow-y-auto px-3 scrollbar-thin">
@@ -297,27 +301,6 @@ export const DashboardLayout = () => {
           </Link>
         ))}
 
-        <div className="mt-4 border-t border-gray-100 pt-4">
-          {!collapsed && (
-            <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-gray-400">Настройки</p>
-          )}
-          <Link
-            to="/settings"
-            className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 transition-all duration-150 hover:bg-gray-50 hover:text-gray-900 ${collapsed ? 'justify-center' : ''}`}
-            title={collapsed ? 'Настройки аккаунта' : undefined}
-          >
-            <Settings className="h-5 w-5 text-gray-400 group-hover:text-gray-600" />
-            {!collapsed && 'Настройки аккаунта'}
-          </Link>
-          <button
-            onClick={handleLogout}
-            className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-gray-600 transition-all duration-150 hover:bg-error-50 hover:text-error-700 ${collapsed ? 'justify-center' : ''}`}
-            title={collapsed ? 'Выйти' : undefined}
-          >
-            <LogOut className="h-5 w-5 text-gray-400 group-hover:text-error-500" />
-            {!collapsed && 'Выйти'}
-          </button>
-        </div>
       </nav>
     </div>
   )
@@ -358,6 +341,10 @@ export const DashboardLayout = () => {
               onClick={() => setIsMobileMenuOpen(false)}
             />
             <motion.div
+              ref={mobileMenuPanel}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Навигация по Docere"
               initial={{ x: -280 }}
               animate={{ x: 0 }}
               exit={{ x: -280 }}
@@ -386,7 +373,7 @@ export const DashboardLayout = () => {
               ref={mobileMenuButton}
               aria-label="Открыть меню"
               aria-expanded={isMobileMenuOpen}
-              onClick={() => setIsMobileMenuOpen(true)}
+              onClick={() => { setIsMobileMenuOpen(true); setIsProfileOpen(false); setIsNotificationsOpen(false) }}
               className="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 lg:hidden"
             >
               <Menu className="h-5 w-5" />
@@ -472,11 +459,15 @@ export const DashboardLayout = () => {
               </AnimatePresence>
             </div>
 
-            {/* Profile */}
-            <div className="relative">
+            {/* Account controls live here on both desktop and mobile. */}
+            <div className="relative" onBlur={event => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setIsProfileOpen(false)
+            }}>
               <button
                 ref={profileButton}
+                type="button"
                 aria-label="Меню аккаунта"
+                aria-controls="account-panel"
                 aria-expanded={isProfileOpen}
                 onClick={() => {
                   setIsProfileOpen((o) => !o)
@@ -487,14 +478,15 @@ export const DashboardLayout = () => {
                 <div className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold text-white ${avatarColor}`}>
                   {initials}
                 </div>
-                <div className="hidden text-left md:block">
-                  <p className="text-sm font-medium text-gray-900 leading-tight">
+                <div className="hidden max-w-48 text-left md:block">
+                  <p className="truncate text-sm font-medium text-gray-900 leading-tight">
                     {user?.first_name} {user?.last_name}
                   </p>
                   <p className="text-xs text-gray-500 leading-tight">
                     {user?.role ? (roleLabel[user.role] ?? user.role) : ''}
                   </p>
                 </div>
+                <ChevronDown aria-hidden="true" className="h-4 w-4 text-gray-500" />
               </button>
               <AnimatePresence>
                 {isProfileOpen && (
@@ -503,16 +495,25 @@ export const DashboardLayout = () => {
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 6, scale: 0.97 }}
                     transition={{ duration: 0.15 }}
-                    className="absolute right-0 mt-1 w-48 overflow-hidden rounded-xl border border-gray-100 bg-white shadow-lg"
+                    id="account-panel"
+                    className="absolute right-0 mt-1 w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-gray-100 bg-white shadow-lg"
                   >
+                    <div className="border-b border-gray-100 px-4 py-3">
+                      <p className="break-words text-sm font-semibold text-gray-900 md:hidden">{user?.first_name} {user?.last_name}</p>
+                      <p className="text-xs text-gray-500 md:hidden">{user?.role ? (roleLabel[user.role] ?? user.role) : ''}</p>
+                      <p className="break-all text-sm text-gray-600">{user?.email}</p>
+                    </div>
                     <Link
                       to="/settings"
                       onClick={() => setIsProfileOpen(false)}
                       className="flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
                     >
                       <Settings className="h-4 w-4 text-gray-400" />
-                      Настройки
+                      Профиль и настройки
                     </Link>
+                    <div className="border-y border-gray-100 px-4 py-3">
+                      <ThemeSelector />
+                    </div>
                     <button
                       onClick={handleLogout}
                       className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-error-600 hover:bg-error-50"

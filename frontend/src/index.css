@@ -148,14 +148,14 @@
 }
 
 @utility skeleton-shimmer {
-  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background: linear-gradient(90deg, var(--color-gray-100) 25%, var(--color-gray-200) 50%, var(--color-gray-100) 75%);
   background-size: 1000px 100%;
   @apply animate-shimmer rounded-sm;
 }
 
 @utility scrollbar-thin {
   scrollbar-width: thin;
-  scrollbar-color: #d1d5db transparent;
+  scrollbar-color: var(--color-gray-300) transparent;
 
   &::-webkit-scrollbar {
     width: 4px;
@@ -166,7 +166,7 @@
   }
 
   &::-webkit-scrollbar-thumb {
-    background-color: #d1d5db;
+    background-color: var(--color-gray-300);
     border-radius: 2px;
   }
 }
@@ -218,5 +218,168 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+/* Общие поверхности переиспользуют текущие utilities. Белый текст на кнопках и
+   тёмные брендовые блоки сохраняются; медицинские изображения не фильтруются. */
+@layer base {
+  :root { color-scheme: light; }
+  :root[data-theme='dark'] {
+    color-scheme: dark;
+    --color-gray-50: #101923;
+    --color-gray-100: #1c2937;
+    --color-gray-200: #334457;
+    --color-gray-300: #52657b;
+    --color-gray-400: #a4b3c5;
+    --color-gray-500: #b1bfd0;
+    --color-gray-600: #c2cedd;
+    --color-gray-700: #d4dfeb;
+    --color-gray-800: #e3ebf4;
+    --color-gray-900: #f0f5fb;
+    --color-gray-950: #f8fafc;
+    --docere-surface: #162230;
+    --shadow-card: 0 1px 3px rgb(0 0 0 / 0.24);
+    --shadow-card-hover: 0 10px 25px -5px rgb(0 0 0 / 0.35);
+    --shadow-sidebar: 0 4px 6px -1px rgb(0 0 0 / 0.3);
+    --color-primary-50: #142d43;
+    --color-primary-100: #1a3b55;
+    --color-primary-200: #29516f;
+    --color-primary-300: #407293;
+    --docere-primary-ink: #9bd1ff;
+    --color-secondary-50: #102f2e;
+    --color-secondary-100: #17413e;
+    --color-secondary-200: #285b55;
+    --color-secondary-300: #407a71;
+    --docere-secondary-ink: #8de1d4;
+    --color-accent-50: #182b49;
+    --color-accent-100: #203d63;
+    --color-accent-200: #335580;
+    --color-accent-300: #4876a9;
+    --docere-accent-ink: #a8ccff;
+    --color-success-50: #142e24;
+    --color-success-100: #1e4030;
+    --color-success-200: #315b40;
+    --color-success-300: #44805b;
+    --docere-success-ink: #9de1b2;
+    --color-warning-50: #352c17;
+    --color-warning-100: #473a1c;
+    --color-warning-200: #685329;
+    --color-warning-300: #8e713b;
+    --docere-warning-ink: #f5d58a;
+    --color-error-50: #382127;
+    --color-error-100: #4a2930;
+    --color-error-200: #6a3c43;
+    --color-error-300: #92545c;
+    --docere-error-ink: #ffb0b4;
+    --color-red-50: #382127;
+    --color-red-100: #4a2930;
+    --color-red-200: #6a3c43;
+    --color-red-300: #92545c;
+    --docere-red-ink: #ffb0b4;
+    --color-amber-50: #352c17;
+    --color-amber-100: #473a1c;
+    --color-amber-200: #685329;
+    --color-amber-300: #8e713b;
+    --docere-amber-ink: #f5d58a;
+  }
+}
+
+@layer utilities {
+  :root[data-theme='dark'] {
+    .bg-white, .focus\:bg-white:focus { background-color: var(--docere-surface); }
+    .bg-white\/95 { background-color: rgb(22 34 48 / 0.95); }
+    .bg-gray-900\/60 { background-color: rgb(3 7 18 / 0.7); }
+    .bg-gray-900\/50 { background-color: rgb(3 7 18 / 0.65); }
+    .ring-white { --tw-ring-color: var(--docere-surface); }
+    .border-white { border-color: var(--docere-surface); }
+    /* У полей граница контрастнее разделителей карточек. Цвет ошибки не меняем. */
+    :is(input, textarea, select):not(:focus):is(.border-gray-200, .border-gray-300) {
+      border-color: #667d98;
+    }
+    .text-primary-400, .text-primary-500, .text-primary-600, .text-primary-700, .text-primary-800, .text-primary-900, .text-primary-950 {
+      color: var(--docere-primary-ink);
+    }
+    .text-secondary-400, .text-secondary-500, .text-secondary-600, .text-secondary-700, .text-secondary-800, .text-secondary-900, .text-secondary-950 {
+      color: var(--docere-secondary-ink);
+    }
+    .text-accent-400, .text-accent-500, .text-accent-600, .text-accent-700, .text-accent-800, .text-accent-900, .text-accent-950 {
+      color: var(--docere-accent-ink);
+    }
+    .text-success-400, .text-success-500, .text-success-600, .text-success-700, .text-success-800, .text-success-900, .text-success-950 {
+      color: var(--docere-success-ink);
+    }
+    .text-warning-400, .text-warning-500, .text-warning-600, .text-warning-700, .text-warning-800, .text-warning-900, .text-warning-950 {
+      color: var(--docere-warning-ink);
+    }
+    .text-error-400, .text-error-500, .text-error-600, .text-error-700, .text-error-800, .text-error-900, .text-error-950 {
+      color: var(--docere-error-ink);
+    }
+    .text-red-400, .text-red-500, .text-red-600, .text-red-700, .text-red-800, .text-red-900, .text-red-950 {
+      color: var(--docere-red-ink);
+    }
+    .text-amber-400, .text-amber-500, .text-amber-600, .text-amber-700, .text-amber-800, .text-amber-900, .text-amber-950 {
+      color: var(--docere-amber-ink);
+    }
+    .text-primary-100, .text-primary-200, .text-primary-300 {
+      color: var(--docere-primary-ink);
+    }
+    .text-secondary-100, .text-secondary-200, .text-secondary-300 {
+      color: var(--docere-secondary-ink);
+    }
+    @media (hover: hover) {
+      .hover\:bg-white:hover { background-color: var(--docere-surface); }
+      .hover\:text-primary-500:hover, .hover\:text-primary-600:hover, .hover\:text-primary-700:hover, .hover\:text-primary-800:hover, .hover\:text-primary-900:hover, .hover\:text-primary-950:hover {
+        color: var(--docere-primary-ink);
+      }
+      .hover\:text-secondary-500:hover, .hover\:text-secondary-600:hover, .hover\:text-secondary-700:hover, .hover\:text-secondary-800:hover, .hover\:text-secondary-900:hover, .hover\:text-secondary-950:hover {
+        color: var(--docere-secondary-ink);
+      }
+      .hover\:text-accent-500:hover, .hover\:text-accent-600:hover, .hover\:text-accent-700:hover, .hover\:text-accent-800:hover, .hover\:text-accent-900:hover, .hover\:text-accent-950:hover {
+        color: var(--docere-accent-ink);
+      }
+      .hover\:text-success-500:hover, .hover\:text-success-600:hover, .hover\:text-success-700:hover, .hover\:text-success-800:hover, .hover\:text-success-900:hover, .hover\:text-success-950:hover {
+        color: var(--docere-success-ink);
+      }
+      .hover\:text-warning-500:hover, .hover\:text-warning-600:hover, .hover\:text-warning-700:hover, .hover\:text-warning-800:hover, .hover\:text-warning-900:hover, .hover\:text-warning-950:hover {
+        color: var(--docere-warning-ink);
+      }
+      .hover\:text-error-500:hover, .hover\:text-error-600:hover, .hover\:text-error-700:hover, .hover\:text-error-800:hover, .hover\:text-error-900:hover, .hover\:text-error-950:hover {
+        color: var(--docere-error-ink);
+      }
+      .hover\:text-red-500:hover, .hover\:text-red-600:hover, .hover\:text-red-700:hover, .hover\:text-red-800:hover, .hover\:text-red-900:hover, .hover\:text-red-950:hover {
+        color: var(--docere-red-ink);
+      }
+      .hover\:text-amber-500:hover, .hover\:text-amber-600:hover, .hover\:text-amber-700:hover, .hover\:text-amber-800:hover, .hover\:text-amber-900:hover, .hover\:text-amber-950:hover {
+        color: var(--docere-amber-ink);
+      }
+    }
+  }
+}
+
+/* Календарь поставляется со своим CSS вне Tailwind layers. */
+:root[data-theme='dark'] .docere-date-picker {
+  .react-datepicker, .react-datepicker__header,
+  .react-datepicker__month-dropdown, .react-datepicker__year-dropdown {
+    background: var(--docere-surface);
+    border-color: var(--color-gray-300);
+    color: var(--color-gray-900);
+  }
+  .react-datepicker__current-month, .react-datepicker__day-name,
+  .react-datepicker__day, .react-datepicker__time-name {
+    color: var(--color-gray-900);
+  }
+  .react-datepicker__day--outside-month, .react-datepicker__day--disabled {
+    color: var(--color-gray-400);
+  }
+  .react-datepicker__day:hover, .react-datepicker__day--keyboard-selected {
+    background: var(--color-gray-200);
+  }
+  .react-datepicker__day--selected {
+    background: var(--color-primary-600);
+    color: white;
+  }
+  .react-datepicker__day--selected:hover {
+    background: var(--color-primary-700);
   }
 }
