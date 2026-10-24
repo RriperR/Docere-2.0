@@ -10,7 +10,8 @@
 
 Текущие документы проекта:
 
-- продукт и запуск - [`README.md`](../../README.md);
+- знакомство с продуктом — [`README.md`](../../README.md);
+- карта текущих руководств — [`docs/README.md`](../README.md);
 - техническая архитектура и компромиссы - [`ARCHITECTURE.md`](../../ARCHITECTURE.md);
 - процесс разработки - [`CONTRIBUTING.md`](../../CONTRIBUTING.md);
 - инструкции для coding agents - [`AGENTS.md`](../../AGENTS.md).
