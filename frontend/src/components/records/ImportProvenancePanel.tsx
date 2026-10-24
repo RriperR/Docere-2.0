@@ -7,23 +7,23 @@ export const ImportProvenancePanel = ({ payloadJson }: ImportProvenancePanelProp
   if (!provenance) return null
 
   return (
-    <div className="rounded-xl border border-primary-100 bg-primary-50 px-4 py-3">
-      <p className="text-xs font-bold uppercase tracking-wider text-primary-600">Источник записи</p>
+    <details className="rounded-xl border border-primary-100 bg-primary-50 px-4 py-3">
+      <summary className="cursor-pointer text-sm font-medium text-primary-700">Источник и сведения об импорте</summary>
       <div className="mt-2 grid gap-2 text-sm text-primary-900 md:grid-cols-3">
         <div>
           <span className="block text-xs text-primary-600">Архив</span>
-          <span className="font-medium">{provenance.sourceArchive || 'archive.zip'}</span>
+          <span className="font-medium">{provenance.sourceArchive && provenance.sourceArchive !== 'documents.zip' ? provenance.sourceArchive : 'Загруженные документы'}</span>
         </div>
         <div>
           <span className="block text-xs text-primary-600">Файлов</span>
           <span className="font-medium">{provenance.filesCount}</span>
         </div>
         <div>
-          <span className="block text-xs text-primary-600">Import job</span>
+          <span className="block text-xs text-primary-600">Задание импорта</span>
           <span className="font-mono text-xs">{provenance.importJobId}</span>
         </div>
       </div>
-    </div>
+    </details>
   )
 }
 

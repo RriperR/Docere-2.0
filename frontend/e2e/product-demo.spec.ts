@@ -54,8 +54,8 @@ test('synthetic product demo: source documents, chronology, colleague response a
     await colleague.goto(`/cases/${state!.cases.active}`)
     await expect(colleague.getByRole('heading', { name: 'Нужен ответ · дневник и мониторирование' })).toBeVisible()
     await colleague.getByRole('button', { name: 'Ответить на запрос', exact: true }).click()
-    await colleague.getByLabel('Сообщение', { exact: true }).fill(state!.texts.reply)
-    await colleague.getByRole('button', { name: 'Отправить сообщение', exact: true }).click()
+    await colleague.getByLabel('Ответ на запрос мнения', { exact: true }).fill(state!.texts.reply)
+    await colleague.getByRole('button', { name: 'Отправить ответ на запрос', exact: true }).click()
     await expect(colleague.getByText(state!.texts.reply, { exact: true })).toBeVisible()
     await expect(colleague.getByRole('button', { name: 'Ответить на запрос', exact: true })).toHaveCount(0)
 
@@ -75,6 +75,6 @@ test('synthetic product demo: source documents, chronology, colleague response a
 
     await page.goto(`/cases/${state!.cases.complete}?tab=conclusion`)
     await expect(page.getByText(state!.texts.summary, { exact: true })).toBeVisible()
-    await expect(page.getByRole('link', { name: 'Открыть историю пациента', exact: true })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Открыть опубликованную запись', exact: true })).toBeVisible()
   } finally { await context.close() }
 })

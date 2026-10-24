@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
 import { caseApi, type CaseView, type ClinicalCase } from '../../api/cases'
@@ -13,7 +13,7 @@ vi.mock('./CaseConclusion', () => ({ default: () => null }))
 vi.mock('./CaseDocumentPanel', () => ({ default: ({ recordId }: { recordId: string }) =>
   <aside role="dialog">{recordId}</aside> }))
 
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 function view(id: string): CaseView {
   return { id, status: 'active', membership_status: 'accepted', coordinator_id: 'doctor', coordinator_name: 'Doctor',
@@ -38,4 +38,15 @@ it('does not carry an open document into another patient case', async () => {
   fireEvent.click(screen.getByText('Другой случай'))
   await screen.findByText('Case second')
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+})
+
+
+it('opens an incoming request once without forcing later tab navigation back to discussion', async () => {
+  vi.spyOn(caseApi, 'get').mockResolvedValue(view('first'))
+  render(<MemoryRouter initialEntries={['/cases/first?opinion=request']}><Routes>
+    <Route path="/cases/:id" element={<CasePage />} />
+  </Routes></MemoryRouter>)
+  await screen.findByText('Case first')
+  fireEvent.click(screen.getByRole('button', { name: 'AI-сводка' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'AI-сводка' })).toHaveAttribute('aria-pressed', 'true'))
 })

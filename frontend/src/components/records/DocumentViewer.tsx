@@ -1,3 +1,4 @@
+import { formatDateForDisplay } from '../../utils/dates'
 import { ImportPatientDraft } from '../../stores/uploadStore'
 import axios from 'axios'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -95,7 +96,7 @@ export default function DocumentViewer({ caseId, patientId, importJobId, page = 
     {!record && !error && <p role="status" className="py-4 text-sm text-gray-500">Загружаем материал…</p>}
     {error && <p role="alert" className="text-red-700">{error} <button className="underline" onClick={() => setRevision(value => value + 1)}>Повторить</button></p>}
     <div className="mt-4 flex-1 overflow-auto space-y-3">
-      {record && <>{!importJobId && <><p className="text-xs text-gray-500">{record.event_date} · {recordTypeLabel[record.record_type] ?? 'Медицинская запись'} · {recordStatusLabel[record.status] ?? 'Статус неизвестен'}</p><p className="whitespace-pre-wrap">{record.clinical_summary}</p></>}
+      {record && <>{!importJobId && <><p className="text-xs text-gray-500">{formatDateForDisplay(record.event_date)} · {recordTypeLabel[record.record_type] ?? 'Медицинская запись'} · {recordStatusLabel[record.status] ?? 'Статус неизвестен'}</p><p className="whitespace-pre-wrap">{record.clinical_summary}</p></>}
         {onReference && <button className="text-primary-700 underline" onClick={() => onReference({ recordId, attachmentId: null,
           label: record.title ?? 'Медицинская запись' })}>Сослаться на запись в сообщении</button>}
         <label className="block">Вложение<select aria-label="Вложение" className={inputClass} value={selected} onChange={e => { if (onAttachmentChange) onAttachmentChange(e.target.value); else setSelected(e.target.value) }}>

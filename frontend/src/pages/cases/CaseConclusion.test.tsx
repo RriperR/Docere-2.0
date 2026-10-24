@@ -19,7 +19,7 @@ it('requires an explicit choice when closing with a different private draft', as
   const c = { id: 'c1', version: 8, status: 'active' } as ClinicalCase
   render(<MemoryRouter><CaseConclusion c={c} owner onChange={vi.fn(async () => undefined)} /></MemoryRouter>)
   await screen.findByText('Сохранённый итог')
-  expect(screen.getByRole('button', { name: 'Анализ · 2026-09-01' })).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Анализ · 01.09.2026' })).toBeVisible()
   await userEvent.click(screen.getByRole('button', { name: 'Составить новую версию итога' }))
   await userEvent.clear(screen.getByLabelText('Краткое резюме'))
   await userEvent.type(screen.getByLabelText('Краткое резюме'), 'Личный новый итог')
@@ -30,4 +30,24 @@ it('requires an explicit choice when closing with a different private draft', as
   await userEvent.click(screen.getByRole('checkbox', { name: /Завершить с сохранённой версией/ }))
   await userEvent.click(screen.getByRole('button', { name: 'Подтвердить завершение' }))
   await waitFor(() => expect(post).toHaveBeenCalledWith('/cases/c1/close', { version: 8, cancel_open_requests: false }))
+})
+
+it('keeps the latest saved version visible while older versions load on demand', async () => {
+  const version = (number: number) => ({ id: `v${number}`, number, summary: `Итог ${number}`, findings: '', next_actions: '', source_ids: [], sources: [], created_at: '2026-10-01' })
+  const get = vi.spyOn(api, 'get').mockImplementation(async (_url, config) => {
+    const params = config?.params as { offset?: number } | undefined
+    const offset = params?.offset ?? 0
+    return { data: { total: 12, items: offset === 0 ? [version(12)] : offset === 1 ? [version(11), version(10)] : [version(1)] } }
+  })
+  render(<MemoryRouter><CaseConclusion c={{ id: 'case', status: 'active', version: 1 } as ClinicalCase} owner onChange={vi.fn(async () => undefined)} /></MemoryRouter>)
+  await screen.findByText('Итог 12')
+  expect(get).toHaveBeenCalledTimes(1)
+  expect(screen.queryByText('Итог 11')).not.toBeInTheDocument()
+  await userEvent.click(screen.getByText('Предыдущие версии (11)'))
+  await screen.findByText('Итог 11')
+  expect(screen.getByText('Итог 12')).toBeVisible()
+  await userEvent.click(screen.getByRole('button', { name: 'Ранее' }))
+  await screen.findByText('Итог 1')
+  expect(screen.getByText('Итог 12')).toBeVisible()
+  expect(get).toHaveBeenLastCalledWith('/cases/case/conclusions', expect.objectContaining({ params: { offset: 11, limit: 10 } }))
 })

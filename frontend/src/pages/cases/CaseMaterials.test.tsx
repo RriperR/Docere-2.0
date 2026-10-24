@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import api from '../../api/api'
 import type { ClinicalCase } from '../../api/cases'
@@ -29,4 +29,17 @@ it('keeps the latest search result when an earlier request completes afterwards'
   })
   await waitFor(() => expect(screen.queryByText(/Stale result/)).not.toBeInTheDocument())
   expect(screen.getByText(/Latest result/)).toBeInTheDocument()
+})
+
+it('keeps filters secondary and exposes the count and a reset action', async () => {
+  cleanup()
+  vi.spyOn(api, 'get').mockResolvedValue({ data: { items: [], total: 0 } })
+  const c = { id: 'case', status: 'closed', sequence: 1 } as ClinicalCase
+  render(<CaseMaterials c={c} owner={false} onChange={vi.fn()} onOpen={vi.fn()} />)
+  fireEvent.click(screen.getByText('Фильтры (0)'))
+  fireEvent.change(screen.getByRole('combobox', { name: 'Тип записи' }), { target: { value: 'lab_result' } })
+  expect(screen.getByText('Фильтры (1)')).toBeVisible()
+  await waitFor(() => expect(api.get).toHaveBeenCalledWith('/cases/case/materials', expect.objectContaining({ params: expect.objectContaining({ record_type: 'lab_result' }) })))
+  fireEvent.click(screen.getByRole('button', { name: 'Сбросить фильтры' }))
+  expect(screen.getByText('Фильтры (0)')).toBeVisible()
 })

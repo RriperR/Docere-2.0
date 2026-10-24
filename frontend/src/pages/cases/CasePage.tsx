@@ -20,12 +20,21 @@ function CaseWorkspace({ id }: { id: string }) {
   const [view, setView] = useState<CaseView | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [savedVersion, setSavedVersion] = useState<number | null>(null)
   const [params, setParams] = useSearchParams()
   const section = ['review', 'summary', 'conclusion', 'members'].includes(params.get('tab') ?? '') ? params.get('tab')! : 'review'
   const setSection = (value: string) => setParams(previous => { const next = new URLSearchParams(previous); next.set('tab', value); return next })
   const [mobilePane, setMobilePane] = useState('materials')
   const [summaryPane, setSummaryPane] = useState<'summary' | 'document'>('summary')
-  useEffect(() => { if (params.get('opinion')) setMobilePane('discussion') }, [params])
+  const targetOpinionId = params.get('opinion')
+  const navigatedOpinion = useRef<string | null>(null)
+  useEffect(() => {
+    if (!targetOpinionId) { navigatedOpinion.current = null; return }
+    if (navigatedOpinion.current === targetOpinionId) return
+    navigatedOpinion.current = targetOpinionId
+    setMobilePane('discussion')
+    setParams(previous => { const next = new URLSearchParams(previous); next.set('tab', 'review'); return next }, { replace: true })
+  }, [targetOpinionId, setParams])
   const [query, setQuery] = useState('')
   const recordId = params.get('record')
   const document = recordId ? { recordId, attachmentId: params.get('attachment') } : null
@@ -96,6 +105,15 @@ function CaseWorkspace({ id }: { id: string }) {
         <div className="rounded-xl border-l-4 border-primary-500 bg-primary-50/60 p-4">
           <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-primary-700">Вопрос для коллег</p><p className="whitespace-pre-wrap leading-relaxed">{c.question}</p>
         </div>
+        <div className="rounded-xl border border-gray-200 p-3 text-sm text-gray-700" aria-label="Следующий шаг разбора">
+          {c.status === 'draft' ? <><p>Черновик виден только координатору. Проверьте материалы и пригласите коллег для начала обсуждения.</p>
+            {owner && <button className="mt-2 text-primary-700 underline" onClick={() => setSection('members')}>Пригласить коллег</button>}</>
+            : c.status === 'closed' ? <><p>{c.published_record_id ? 'Разбор завершён, итог опубликован в медицинской истории.' : 'Разбор завершён. Материалы, обсуждение и сохранённый итог доступны для чтения.'}</p>
+              {c.published_record_id ? section !== 'conclusion' && <Link className="mt-2 inline-block text-primary-700 underline" to={`/patients/${c.patient_id}?record=${c.published_record_id}`}>Открыть опубликованную запись</Link>
+                : owner && <button className="mt-2 text-primary-700 underline" onClick={() => setSection('conclusion')}>Перейти к публикации итога</button>}</>
+            : <><p>{savedVersion ? `Сохранена версия итога ${savedVersion}. Обсудите оставшиеся вопросы перед завершением.` : 'Разбор продолжается: изучите материалы и ответьте на адресованные вам запросы. Итог фиксирует координатор.'}</p>
+              {owner && <button className="mt-2 text-primary-700 underline" onClick={() => setSection('conclusion')}>{savedVersion ? 'Проверить итог и завершить разбор' : 'Перейти к составлению итога'}</button>}</>}
+        </div>
         {c.previous_case_id && <Link to={`/cases/${c.previous_case_id}`}>Предыдущий случай (доступ проверяется отдельно)</Link>}
         {c.status === 'closed' && <Link to={`/cases/new?patient=${c.patient_id}&previous=${c.id}`}>Создать продолжение</Link>}
       </section>
@@ -153,7 +171,7 @@ function CaseWorkspace({ id }: { id: string }) {
         <div className={summaryPane !== 'summary' ? 'hidden lg:block' : ''}><CaseAiSummary key={`${id}-${userId}`} c={c} onOpen={openSummarySource} onAccessLost={load} /></div>
         </div>
       </>}
-      <div hidden={section !== 'conclusion'}><CaseConclusion c={c} owner={owner} onChange={load} onOpen={openMaterial} /></div>
+      <div hidden={section !== 'conclusion'}><CaseConclusion c={c} owner={owner} onChange={load} onOpen={openMaterial} onSavedVersionChange={setSavedVersion} /></div>
     </>}
   </div>
 }

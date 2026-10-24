@@ -48,7 +48,7 @@ const getErrorMessage = (error: unknown, fallback: string): string => {
 }
 
 const accessContextLabel = (ctx: string) =>
-  ctx === 'shared' ? 'Общий доступ' : ctx === 'created' ? 'Локальная карточка' : 'Моя карточка'
+  ctx === 'shared' ? 'Получена от коллеги' : ctx === 'created' ? 'Карточка пациента' : 'Моя карточка'
 
 const accessContextClasses = (ctx: string) =>
   ctx === 'shared'
@@ -409,15 +409,15 @@ const PatientDetailsPage: React.FC = () => {
                 <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-medium ${accessContextClasses(currentPatient.accessContext)}`}>
                   {accessContextLabel(currentPatient.accessContext)}
                 </span>
-                <span className="text-xs text-gray-400">ID: {currentPatient.id}</span>
+                <span className="text-xs text-gray-500">{currentPatient.birthday ? `Дата рождения: ${format(new Date(currentPatient.birthday), 'dd.MM.yyyy')}` : 'Дата рождения не указана'}</span>
               </div>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
             {user?.role === 'doctor' && <Link to={`/cases/new?patient=${id}${selectedShareRecordIds.map(recordId => `&record=${encodeURIComponent(recordId)}`).join('')}`} className="inline-flex items-center rounded-lg border border-primary-200 px-3 py-2 text-sm font-medium text-primary-700">
-              {selectedShareRecordIds.length ? `Обсудить записи (${selectedShareRecordIds.length})` : 'Создать клинический случай'}
+              {selectedShareRecordIds.length ? `Обсудить записи (${selectedShareRecordIds.length})` : 'Создать разбор'}
             </Link>}
-            {(user?.role === 'doctor' || user?.role === 'admin') && <Link to={`/upload?patient=${id}`} className="inline-flex items-center rounded-lg bg-primary-600 px-3 py-2 text-sm font-medium text-white">Импорт документов</Link>}
+            {(user?.role === 'doctor' || user?.role === 'admin') && <Link to={`/upload?patient=${id}`} className="inline-flex items-center rounded-lg bg-primary-600 px-3 py-2 text-sm font-medium text-white">Добавить документы</Link>}
             <Button
               variant="outline"
               icon={<Share2 className="h-4 w-4" />}
@@ -427,7 +427,7 @@ const PatientDetailsPage: React.FC = () => {
             >
               Поделиться ({selectedShareRecordIds.length})
             </Button>
-            {canCreateRecord && <Button onClick={() => setShowAddModal(true)} size="sm">
+            {canCreateRecord && <Button variant="outline" onClick={() => setShowAddModal(true)} size="sm">
               + Добавить запись
             </Button>}
           </div>
@@ -436,11 +436,13 @@ const PatientDetailsPage: React.FC = () => {
 
       {currentPatient.accessContext === 'shared' && (
         <div className="rounded-xl border border-warning-200 bg-warning-50 px-4 py-3 text-sm text-warning-800">
-          Эта карточка доступна вам по sharing. Она может относиться к другому пациенту.
+          Вам доступны переданные записи этой карточки. Она не объединяется с вашей собственной историей. Доступ к записям не означает участие в клиническом разборе.
         </div>
       )}
 
-      {/* Patient info cards */}
+      {/* Patient details stay available without displacing the timeline. */}
+      <details className="rounded-xl border border-gray-200 bg-white p-4">
+        <summary className="cursor-pointer font-medium">Сведения о пациенте и карточке</summary>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-card">
           <div className="mb-3 flex items-center gap-2 text-primary-600">
@@ -487,7 +489,7 @@ const PatientDetailsPage: React.FC = () => {
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-gray-500">Статус</span>
-              <span className="font-medium capitalize">{currentPatient.status}</span>
+              <span className="font-medium">{currentPatient.status === 'confirmed' ? 'Подтверждённая карточка' : currentPatient.status === 'draft' ? 'Черновая карточка' : 'Карточка пациента'}</span>
             </div>
           </div>
         </div>
@@ -504,7 +506,12 @@ const PatientDetailsPage: React.FC = () => {
         </div>
       </div>
 
-      <section aria-labelledby="patient-sharing-title">
+        <p className="mt-4 break-all text-xs text-gray-500">Идентификатор карточки: {currentPatient.id}</p>
+      </details>
+
+      <details className="rounded-xl border border-gray-200 bg-white p-4">
+        <summary className="cursor-pointer font-medium">Управление доступом к записям</summary>
+      <section aria-labelledby="patient-sharing-title" className="mt-4">
         <div className="mb-3 flex flex-col gap-2 px-1 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 id="patient-sharing-title" className="font-semibold text-gray-900">Выданные доступы</h2>
@@ -513,7 +520,7 @@ const PatientDetailsPage: React.FC = () => {
             </p>
           </div>
           <Link to="/share-requests" className="text-xs font-medium text-primary-700 hover:text-primary-800">
-            Вся история sharing
+            Вся история передачи доступа
           </Link>
         </div>
 
@@ -541,7 +548,7 @@ const PatientDetailsPage: React.FC = () => {
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="font-medium text-gray-900">{request.to_user.fio || request.to_user.email}</p>
                       <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
-                        {request.to_user.role}
+                        {{ doctor: 'Врач', patient: 'Пациент', admin: 'Администратор' }[request.to_user.role] ?? 'Пользователь'}
                       </span>
                       <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${
                         pending
@@ -586,6 +593,7 @@ const PatientDetailsPage: React.FC = () => {
           </div>
         )}
       </section>
+      </details>
 
       {/* Records */}
       <div>
@@ -637,8 +645,8 @@ const PatientDetailsPage: React.FC = () => {
                 className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-primary-300 focus:outline-hidden focus:ring-2 focus:ring-primary-100"
               >
                 <option value="all">Все статусы</option>
-                <option value="confirmed">Подтверждённые</option>
-                <option value="unconfirmed">Неподтверждённые</option>
+                <option value="confirmed">Подтверждены врачом</option>
+                <option value="unconfirmed">Не подтверждены</option>
               </select>
             </label>
             <label className="space-y-1">
@@ -704,7 +712,7 @@ const PatientDetailsPage: React.FC = () => {
                 >
                   <label
                     className="absolute left-4 top-5 z-10 flex cursor-pointer items-center"
-                    title="Выбрать запись для sharing"
+                    title="Выбрать запись для передачи доступа"
                   >
                     <input
                       type="checkbox"
@@ -730,9 +738,10 @@ const PatientDetailsPage: React.FC = () => {
                           <Calendar className="h-3 w-3" />
                           {format(new Date(record.eventDate), 'dd.MM.yyyy')}
                         </span>
-                        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs capitalize text-gray-600">
-                          {record.status}
+                        <span className={`rounded-full px-2 py-0.5 text-xs ${record.status === 'confirmed' ? 'bg-success-50 text-success-700' : 'bg-gray-100 text-gray-600'}`}>
+                          {record.status === 'confirmed' ? 'Подтверждена врачом' : 'Не подтверждена'}
                         </span>
+                        {currentPatient.accessContext === 'shared' && <span className="rounded-full bg-primary-50 px-2 py-0.5 text-xs text-primary-700">Получена от коллеги</span>}
                         {record.confirmedAt && (
                           <span className="rounded-full bg-success-50 px-2 py-0.5 text-xs text-success-700">
                             подтверждено {format(new Date(record.confirmedAt), 'dd.MM.yyyy')}

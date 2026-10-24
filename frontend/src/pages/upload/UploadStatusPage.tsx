@@ -12,6 +12,7 @@ import { useUploadStore } from '../../stores/uploadStore'
 import { PatientImportContext } from './PatientImportContext'
 import { usePatientImportContext } from './usePatientImportContext'
 import { groupedWarnings } from '../../utils/importWarnings'
+import { importTitle } from '../../utils/importDisplay'
 
 const statusLabel: Record<string, string> = {
   queued: 'В очереди',
@@ -78,7 +79,7 @@ const UploadStatusPage: React.FC = () => {
           Назад к загрузке
         </Link>
         <h1 className="text-2xl font-bold">Статус импорта</h1>
-        <p className="text-gray-500">Архив разбирается в фоне; найденные данные появятся здесь для проверки.</p>
+        <p className="text-gray-500">Документы обрабатываются в фоне; найденные данные появятся здесь для проверки.</p>
       </motion.div>
 
       <PatientImportContext context={context} />
@@ -87,19 +88,19 @@ const UploadStatusPage: React.FC = () => {
         <div className="flex flex-col items-center gap-4 md:flex-row md:items-start">
           <div className="p-2">{icon}</div>
           <div className="flex-1 text-center md:text-left">
-            <h3 className="text-lg font-medium">{statusLabel[currentJob.status] ?? currentJob.status}</h3>
+            <h3 className="text-lg font-medium">{statusLabel[currentJob.status] ?? 'Состояние импорта'}</h3>
             <p className="text-gray-500">{String(report.message ?? 'Ожидание обработки')}</p>
             <div className="mt-4 flex flex-wrap gap-4 text-sm">
-              <Info label="Файл" value={currentJob.original_filename ?? currentJob.file?.name ?? '-'} />
+              <Info label="Материалы" value={importTitle(currentJob)} />
               <Info label="Размер" value={currentJob.size_bytes ? `${Math.ceil(currentJob.size_bytes / 1024)} КБ` : '-'} />
-              <Info label="Загружено" value={new Date(currentJob.created_at).toLocaleString()} />
-              {currentJob.finished_at && <Info label="Завершено" value={new Date(currentJob.finished_at).toLocaleString()} />}
+              <Info label="Загружено" value={new Date(currentJob.created_at).toLocaleString('ru-RU')} />
+              {currentJob.finished_at && <Info label="Завершено" value={new Date(currentJob.finished_at).toLocaleString('ru-RU')} />}
             </div>
             {needsReview && (
               <div className="mt-5">
                 <Link to={`/upload/review/${currentJob.id}${context.query}`}>
                   <Button type="button" icon={<FileSearch className="h-4 w-4" />}>
-                    Проверить импорт
+                    Проверить документы
                   </Button>
                 </Link>
               </div>

@@ -1,3 +1,4 @@
+import { formatDateForDisplay } from '../../utils/dates'
 import { useEffect, useState } from 'react'
 import api from '../../api/api'
 import { caseError, type Material, type Page } from '../../api/cases'
@@ -29,7 +30,7 @@ export default function CaseMaterialPicker({ caseId, sequence, selected, multipl
       <input type={multiple ? 'checkbox' : 'radio'} name={`reference-${caseId}-${multiple ? 'conclusion' : 'message'}`}
         checked={selected.includes(m.id)} onChange={e => onChange(multiple
           ? e.target.checked ? [...selected, m.id] : selected.filter(id => id !== m.id) : [m.id])} />
-      {' '}{m.event_date} · {m.title ?? 'Медицинская запись'}
+      {' '}{formatDateForDisplay(m.event_date)} · {m.title ?? 'Медицинская запись'}
     </label>)}
     <div className="flex flex-wrap gap-4"><button type="button" disabled={!offset} onClick={() => setOffset(offset - 20)}>Предыдущие материалы</button>
       <span>{selected.length} выбрано · {page.total} материалов</span>

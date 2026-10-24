@@ -7,6 +7,7 @@ import { secondaryButtonClass } from '../cases/styles'
 import { useAuthStore } from '../../stores/authStore'
 import { usePatientsStore } from '../../stores/patientsStore'
 import { useUploadStore } from '../../stores/uploadStore'
+import { importTitle } from '../../utils/importDisplay'
 
 function getInitials(fio: string): string {
   return fio.trim().split(/\s+/).slice(0, 2).map(part => part[0] ?? '').join('').toUpperCase() || '?'
@@ -96,7 +97,7 @@ export default function DoctorDashboard() {
       <div className="flex flex-wrap items-center justify-between gap-2"><h2 id="import-issues-title" className="font-semibold text-gray-900">Проверьте результат импорта</h2><Link to="/upload" className="text-sm font-semibold text-primary-700">Все импорты →</Link></div>
       {importsError ? <p role="alert" className="mt-3 text-sm text-error-700">Не удалось загрузить импорты. <button className="font-semibold underline" onClick={() => setRevision(value => value + 1)}>Повторить загрузку импортов</button></p> :
         <div className="mt-3 space-y-2">{importIssues.map(job => <Link key={job.id} to={`/upload/status/${job.id}`} className="flex items-center justify-between gap-3 rounded-xl bg-white p-3 text-sm hover:bg-warning-50">
-          <div className="min-w-0"><p className="font-semibold text-gray-900">{job.status === 'failed' ? 'Разобрать ошибку импорта' : 'Импорт с предупреждениями'}</p><p className="mt-1 break-words text-gray-500">{job.original_filename ?? 'Архив документов'}</p></div><ChevronRight size={16} className="shrink-0 text-gray-400" aria-hidden="true" /></Link>)}</div>}
+          <div className="min-w-0"><p className="font-semibold text-gray-900">{job.status === 'failed' ? 'Разобрать ошибку импорта' : 'Импорт с предупреждениями'}</p><p className="mt-1 break-words text-gray-500">{importTitle(job)}</p></div><ChevronRight size={16} className="shrink-0 text-gray-400" aria-hidden="true" /></Link>)}</div>}
     </section>}
   </div>
 }

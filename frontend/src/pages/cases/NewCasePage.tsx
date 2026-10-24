@@ -1,3 +1,4 @@
+import { formatDateForDisplay } from '../../utils/dates'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import api from '../../api/api'
@@ -134,7 +135,7 @@ export default function NewCasePage() {
         {materials.map(material => <label key={material.id} className={`flex items-start gap-3 rounded-xl border p-4 ${selected.includes(material.id) ? 'border-primary-200 bg-primary-50/50' : 'border-gray-200'}`}>
           <input type="checkbox" className="mt-1" checked={selected.includes(material.id)} disabled={!selected.includes(material.id) && selected.length >= 100}
             onChange={event => setSelected(current => event.target.checked ? [...current, material.id] : current.filter(id => id !== material.id))} />
-          <span><span className="block text-sm font-semibold">{material.title ?? 'Медицинская запись'}</span><span className="block text-xs text-gray-500">{material.event_date} · {recordTypeLabel[material.record_type]}</span></span>
+          <span><span className="block text-sm font-semibold">{material.title ?? 'Медицинская запись'}</span><span className="block text-xs text-gray-500">{formatDateForDisplay(material.event_date)} · {recordTypeLabel[material.record_type]}</span></span>
         </label>)}
         {total > 20 && <div className="flex justify-between gap-3"><button disabled={!offset} onClick={() => setOffset(offset - 20)}>Предыдущие материалы</button>
           <button disabled={offset + 20 >= total} onClick={() => setOffset(offset + 20)}>Следующие материалы</button></div>}

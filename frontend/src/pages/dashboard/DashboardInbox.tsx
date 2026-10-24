@@ -5,6 +5,7 @@ import { getTasks, taskActions, taskLabels, taskPath, type InboxTask, type TaskK
 import { caseError } from '../../api/cases'
 import { useInboxStore } from '../../stores/inboxStore'
 import { useAuthStore } from '../../stores/authStore'
+import { importTaskContext } from '../../utils/importDisplay'
 
 const icons: Record<TaskKind, typeof Inbox> = {
   invitation: Users, opinion_requested: MessageSquare, share_request: Share2, import_review: FileCheck2,
@@ -58,7 +59,7 @@ export default function DashboardInbox() {
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-600"><Icon size={18} aria-hidden="true" /></div>
             <div className="min-w-0 flex-1">
               <h3 className="text-sm font-semibold text-gray-900">{taskLabels[task.kind]}</h3>
-              <p className="mt-1 break-words text-sm leading-relaxed text-gray-600">{task.actor_name}{task.actor_name && task.context ? ' · ' : ''}{task.context}</p>
+              <p className="mt-1 break-words text-sm leading-relaxed text-gray-600">{task.actor_name}{task.actor_name && task.context ? ' · ' : ''}{task.kind === 'import_review' ? importTaskContext(task.context) : task.context}</p>
               <time dateTime={task.created_at} className="mt-1 block text-xs text-gray-500">{new Date(task.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}</time>
               <span className="mt-3 flex items-center gap-2 text-sm font-semibold text-primary-700">{taskActions[task.kind]}<ArrowRight size={15} aria-hidden="true" /></span>
             </div>

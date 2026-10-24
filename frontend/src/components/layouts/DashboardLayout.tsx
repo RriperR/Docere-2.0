@@ -202,10 +202,10 @@ export const DashboardLayout = () => {
 
     const roleLinks: Record<string, Array<{ path: string; label: string; icon: ReactNode; badge: number }>> = {
       doctor: [
-        { path: '/cases', label: 'Клинические случаи', icon: <MessagesSquare className="h-5 w-5" />, badge: 0 },
         { path: '/patients', label: 'Пациенты', icon: <Users className="h-5 w-5" />, badge: 0 },
-        { path: '/upload', label: 'Импорт документов', icon: <UploadCloud className="h-5 w-5" />, badge: 0 },
+        { path: '/cases', label: 'Клинические случаи', icon: <MessagesSquare className="h-5 w-5" />, badge: 0 },
         { path: '/notifications', label: 'Входящие', icon: <Bell className="h-5 w-5" />, badge: clinicalUnread },
+        { path: '/upload', label: 'Импорт документов', icon: <UploadCloud className="h-5 w-5" />, badge: 0 },
         { path: '/doctor-role-reviews', label: 'Заявки врачей', icon: <UserCheck className="h-5 w-5" />, badge: pendingRoleApplicationCount },
       ],
       admin: [
@@ -220,7 +220,9 @@ export const DashboardLayout = () => {
       ],
     }
 
-    return [commonLinks[0], ...(user?.role ? roleLinks[user.role] ?? [] : []), commonLinks[1]]
+    const links = user?.role ? roleLinks[user.role] ?? [] : []
+    const roleApplications = links.filter(link => link.path === '/doctor-role-reviews')
+    return [commonLinks[0], ...links.filter(link => link.path !== '/doctor-role-reviews'), commonLinks[1], ...roleApplications]
   }
 
   const breadcrumbs = getBreadcrumbs(location.pathname)
@@ -271,7 +273,9 @@ export const DashboardLayout = () => {
           {!collapsed && 'Меню'}
         </p>
         {getNavLinks().map((link) => (
-          <Link
+          <div key={link.path}>
+            {link.path === '/share-requests' && !collapsed && <p className="mb-2 mt-5 border-t border-gray-100 px-3 pt-4 text-xs font-semibold uppercase tracking-wider text-gray-400">Другие действия</p>}
+            <Link
             key={link.path}
             to={link.path}
             aria-label={link.label}
@@ -298,7 +302,8 @@ export const DashboardLayout = () => {
             {collapsed && link.badge > 0 && (
               <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-error-500" />
             )}
-          </Link>
+            </Link>
+          </div>
         ))}
 
       </nav>

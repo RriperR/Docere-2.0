@@ -1,3 +1,4 @@
+import { formatDateForDisplay } from '../../utils/dates'
 import axios from 'axios'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { caseAiApi, type CaseSummaryRun, type SummaryCapabilities } from '../../api/caseAi'
@@ -93,14 +94,14 @@ export default function CaseAiSummary({ c, onOpen, onAccessLost }: {
         <input className="mt-1" type="checkbox" checked={selection.includes(material.id)} onChange={e => {
           pendingKey.current = null
           setSelection(previous => e.target.checked ? [...previous, material.id] : previous.filter(id => id !== material.id))
-        }} /><span className="min-w-0 break-words">{material.event_date} · {material.title ?? 'Медицинская запись'}</span>
+        }} /><span className="min-w-0 break-words">{formatDateForDisplay(material.event_date)} · {material.title ?? 'Медицинская запись'}</span>
       </label>)}
       <div className="flex flex-wrap gap-4 text-sm"><button disabled={!offset} onClick={() => setOffset(value => Math.max(0, value - 20))}>Предыдущие материалы</button>
         <span>{total} материалов · выбрано {selection.length}</span><button disabled={offset + 20 >= total} onClick={() => setOffset(value => value + 20)}>Следующие материалы</button></div>
       {caps && <p className="text-xs text-gray-500">PDF/PNG/JPEG: до {caps.max_documents} документов, {caps.max_pages} страниц всего, {caps.max_pages_per_document} страниц в документе. DICOM и файлы комментариев не анализируются.</p>}
       <label className="flex items-start gap-3 rounded-xl bg-amber-50 p-3 text-sm"><input className="mt-1" type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} />
         <span>Разрешаю отправить документы выбранных записей внешнему сервису {caps?.provider ?? 'AI'} для подготовки сводки.</span></label>
-      <button className={buttonClass} disabled={!caps?.enabled || !consent || !selection.length || selection.length > caps.max_documents || loading} onClick={() => void start()}>Подготовить сводку</button>
+      <button className={buttonClass} disabled={!caps?.enabled || !consent || !selection.length || selection.length > caps.max_documents || loading} onClick={() => void start()}>Составить сводку материалов · AI</button>
     </fieldset>
     {run && <div className="space-y-4 border-t pt-4">
       <div className="flex flex-wrap items-center justify-between gap-3"><p role="status" className="font-semibold">{statusLabel[run.status] ?? 'Состояние анализа'} · {run.documents.filter(d => d.status !== 'queued').length}/{run.documents.length}</p>
@@ -109,7 +110,7 @@ export default function CaseAiSummary({ c, onOpen, onAccessLost }: {
       {documents.map(doc => <article key={`${doc.record_id}-${doc.attachment_id ?? 'none'}`} className="space-y-3 rounded-xl border p-4">
         <h3 className="break-words font-semibold">{doc.record_date} · {doc.title}</h3>
         <button className="break-words text-sm text-primary-700 underline" onClick={() => onOpen(doc.record_id, doc.attachment_id, 1)}>{doc.filename || 'Открыть запись'}</button>
-        <p className="text-xs text-gray-500">Дата в заголовке — дата записи в истории.{doc.document_date && ` Из документа извлечена дата: ${doc.document_date}.`}</p>
+        <p className="text-xs text-gray-500">Дата в заголовке — дата записи в истории.{doc.document_date && ` Из документа извлечена дата: ${formatDateForDisplay(doc.document_date)}.`}</p>
         {doc.error_code && <p className="rounded-lg bg-amber-50 p-3 text-sm">{errorLabel[doc.error_code] ?? 'Документ не удалось обработать. Изучите оригинал.'}</p>}
         {doc.status === 'queued' && <p className="text-sm text-gray-500">Ожидает анализа</p>}
         {(['fact', 'mentioned_care'] as const).map(category => {

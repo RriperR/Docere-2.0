@@ -20,8 +20,8 @@ const lost = vi.fn().mockResolvedValue(undefined)
 it('requires explicit selection and consent before sending documents', async () => {
   const start = vi.spyOn(caseAiApi, 'start').mockResolvedValue({ ...completed, status: 'queued' })
   render(<CaseAiSummary c={c} onOpen={vi.fn()} onAccessLost={lost} />)
-  await screen.findByText('2026-10-11 · Synthetic record')
-  const button = screen.getByRole('button', { name: 'Подготовить сводку' })
+  await screen.findByText('11.10.2026 · Synthetic record')
+  const button = screen.getByRole('button', { name: 'Составить сводку материалов · AI' })
   expect(button).toBeDisabled()
   const boxes = screen.getAllByRole('checkbox')
   expect(boxes[1]).not.toBeChecked()
@@ -55,10 +55,10 @@ it('lets the doctor choose new materials after a stale result conflict', async (
   error.response = { status: 409, data: { detail: 'Материалы изменились' } } as typeof error.response
   vi.mocked(caseAiApi.latest).mockRejectedValue(error)
   render(<CaseAiSummary c={c} onOpen={vi.fn()} onAccessLost={lost} />)
-  await screen.findByText('2026-10-11 · Synthetic record')
+  await screen.findByText('11.10.2026 · Synthetic record')
   expect(screen.getByRole('alert')).toHaveTextContent('Материалы изменились')
   fireEvent.click(screen.getAllByRole('checkbox')[0]); fireEvent.click(screen.getAllByRole('checkbox')[1])
-  expect(screen.getByRole('button', { name: 'Подготовить сводку' })).toBeEnabled()
+  expect(screen.getByRole('button', { name: 'Составить сводку материалов · AI' })).toBeEnabled()
 })
 
 it('aborts outstanding requests when the workspace is closed', async () => {

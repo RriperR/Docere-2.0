@@ -43,9 +43,6 @@ export default function CaseDiscussion({ c, userId, onChange, onOpen, reference 
     }).catch(e => { if (!controller.signal.aborted) setError(caseError(e)) })
     return () => controller.abort()
   }, [c.id, c.sequence, targetOpinion])
-  useEffect(() => {
-    if (linkedOpinion) document.getElementById(`opinion-${linkedOpinion.id}`)?.scrollIntoView({ block: 'center' })
-  }, [linkedOpinion])
   const formId = useId()
   const [messages, setMessages] = useState<Message[]>([])
   const [opinions, setOpinions] = useState<Opinion[]>([])
@@ -58,6 +55,8 @@ export default function CaseDiscussion({ c, userId, onChange, onOpen, reference 
   const [actTotal, setActTotal] = useState(0)
   const [body, setBody] = useState('')
   const messageInput = useRef<HTMLTextAreaElement>(null)
+  const targetPanel = useRef<HTMLDivElement>(null)
+  const activatedTarget = useRef<string | null>(null)
   const [parent, setParent] = useState<Message | null>(null)
   const [replyOpinion, setReplyOpinion] = useState<Opinion | null>(null)
   const [record, setRecord] = useState('')
@@ -87,6 +86,27 @@ export default function CaseDiscussion({ c, userId, onChange, onOpen, reference 
     assignee_id: assignee || null, record_ids: opinionRecord ? [opinionRecord] : [] }, value => {
     setQuestion(value.text); setAssignee(value.assignee_id ?? ''); setOpinionRecord(value.record_ids[0] ?? '')
   }, busy)
+  const answerTarget = replyOpinion?.id ?? restoredOpinion
+  useEffect(() => {
+    if (!linkedOpinion || !messageDraft.ready || activatedTarget.current === linkedOpinion.id) return
+    activatedTarget.current = linkedOpinion.id
+    targetPanel.current?.scrollIntoView?.({ block: 'start' })
+    // Существующий текст и назначение черновика не меняются при переходе из входящих.
+    if (writable && linkedOpinion.status === 'open' && linkedOpinion.assignee_id === userId
+      && !body.trim() && !parent && !restoredParent && !replyOpinion && !restoredOpinion) {
+      setReplyOpinion(linkedOpinion); setRecord(linkedOpinion.record_id ?? ''); setAttachment(null)
+      messageInput.current?.focus({ preventScroll: true })
+    } else if (writable && linkedOpinion.status === 'open' && linkedOpinion.assignee_id === userId && answerTarget === linkedOpinion.id) {
+      messageInput.current?.focus({ preventScroll: true })
+    } else targetPanel.current?.focus({ preventScroll: true })
+  }, [linkedOpinion, messageDraft.ready, writable, userId, body, parent, restoredParent, replyOpinion, restoredOpinion, answerTarget])
+  function startOpinionReply(opinion: Opinion) {
+    if (body.trim() && (answerTarget !== opinion.id || parent || restoredParent)
+      && !window.confirm('Использовать текущий текст как ответ на этот запрос? Текст сохранится, связь ответа изменится.')) return
+    setReplyOpinion(opinion); setParent(null); setRestoredParent(null); setRestoredOpinion(null)
+    setRecord(opinion.record_id ?? ''); setAttachment(null)
+    messageInput.current?.scrollIntoView?.({ block: 'center' }); messageInput.current?.focus({ preventScroll: true })
+  }
   const doctors = [{ user_id: c.coordinator_id, name: 'Координатор' }, ...c.members.filter(m => m.status === 'accepted')]
   const name = (id: string) => doctors.find(d => d.user_id === id)?.name ?? 'Врач'
   const activeRead = useRef<AbortController | null>(null)
@@ -131,8 +151,35 @@ export default function CaseDiscussion({ c, userId, onChange, onOpen, reference 
       await messageDraft.refresh()
     }
   }
+  const composer = (
+    <div className="space-y-2 rounded-xl border border-primary-100 p-3">
+        {(restoredParent || restoredOpinion) && <p className="text-sm text-primary-700">Восстановлен ответ {restoredOpinion ? 'на запрос мнения' : 'на сообщение'}. <button onClick={() => { setRestoredParent(null); setRestoredOpinion(null) }}>Убрать связь ответа</button></p>}
+        {parent && <p>Ответ: {parent.body} <button onClick={() => setParent(null)}>Отмена</button></p>}
+        {replyOpinion && <p>Ответ на запрос: {replyOpinion.question} <button onClick={() => setReplyOpinion(null)}>Отмена</button></p>}
+        <label className="block" htmlFor={`${formId}-message`}>{answerTarget ? 'Ответ на запрос мнения' : parent || restoredParent ? 'Ответ на сообщение' : 'Новое сообщение'}</label><textarea id={`${formId}-message`} ref={messageInput} disabled={!messageDraft.ready || busy} rows={3} className={inputClass} maxLength={10000} value={body} onChange={e => setBody(e.target.value)} />
+        <details open={!!record} className="rounded-xl border border-gray-200 p-3"><summary className="cursor-pointer text-sm font-medium text-primary-700">Связать сообщение с материалом{record ? ' · выбран' : ' (необязательно)'}</summary>
+        <CaseMaterialPicker caseId={c.id} sequence={c.sequence} selected={record ? [record] : []}
+          onAccessLost={onChange} onChange={ids => { setRecord(ids[0] ?? ''); setAttachment(null) }} />
+        </details>
+        {attachment && <p>Ссылка на вложение: {reference?.label} <button onClick={() => setAttachment(null)}>Убрать вложение</button></p>}
+        <p className="text-sm text-gray-500">Сообщения неизменяемы. Исправление отправьте новым ответом.</p>
+        <button className={buttonClass} disabled={busy || !body.trim() || !messageDraft.ready || messageDraft.conflict} onClick={() => void send()}>{answerTarget ? 'Отправить ответ на запрос' : parent || restoredParent ? 'Отправить ответ на сообщение' : 'Отправить сообщение'}</button>
+        <DraftStatus draft={messageDraft} />
+      </div>
+  )
   return <>
     {error && <p role="alert" className="text-red-700">{error}</p>}
+    {linkedOpinion && <section ref={targetPanel} tabIndex={-1} aria-label="Запрос из входящих" className={`${cardClass} scroll-mt-36 border-primary-200`}>
+      <h2 className="text-lg font-semibold">Запрос мнения от {name(linkedOpinion.requester_id)}</h2>
+      <p className="text-sm text-gray-500">Адресат: {name(linkedOpinion.assignee_id)} · {opinionLabel[linkedOpinion.status] ?? 'Запрос мнения'}</p>
+      <p className="whitespace-pre-wrap">{linkedOpinion.question}</p>
+      {linkedOpinion.record_id && <button className="text-primary-700 underline" onClick={() => onOpen?.(linkedOpinion.record_id!, null)}>Открыть материал запроса</button>}
+      {writable && linkedOpinion.status === 'open' && linkedOpinion.assignee_id === userId && answerTarget !== linkedOpinion.id && <div className="space-y-2">
+        <p className="text-sm text-gray-600">Текущий черновик сохранён отдельно от этого запроса. Выберите, использовать ли его для ответа.</p>
+        <button className={buttonClass} disabled={!messageDraft.ready} onClick={() => startOpinionReply(linkedOpinion)}>Ответить на этот запрос</button>
+      </div>}
+      {writable && composer}
+    </section>}
     <section id="discussion" className={cardClass}><h2 className="text-lg font-semibold">Обсуждение</h2>
       <div className="max-h-[45vh] space-y-3 overflow-y-auto overscroll-contain pr-1">
       {[...messages].reverse().map(m => <article key={m.id} className={`rounded-lg bg-gray-50 p-3 ${m.parent_id ? 'ml-6' : ''}`}>
@@ -145,6 +192,7 @@ export default function CaseDiscussion({ c, userId, onChange, onOpen, reference 
         {m.record_id && <button className="text-primary-700 underline"
           onClick={() => onOpen?.(m.record_id!, m.attachment_id)}>Открыть связанный материал</button>}
         {writable && !m.parent_id && <button className="ml-4 text-primary-700" onClick={() => {
+          if (body.trim() && (answerTarget || parent?.id !== m.id) && !window.confirm('Использовать текущий текст как ответ на это сообщение?')) return
           setParent(m); setReplyOpinion(null); setRestoredParent(null); setRestoredOpinion(null); messageInput.current?.focus()
         }}>Ответить</button>}
       </article>)}
@@ -154,35 +202,22 @@ export default function CaseDiscussion({ c, userId, onChange, onOpen, reference 
         <span>{total} сообщений</span><button disabled={offset + 20 >= total} onClick={() => setOffset(offset + 20)}>Ранее</button></div>
       {parentContext && <div className="rounded-lg border p-3"><p>{parentContext.author_name}: {parentContext.body}</p>
         <button onClick={() => setParentContext(null)}>Скрыть исходное сообщение</button></div>}
-      {writable && <div className="space-y-2">
-        {(restoredParent || restoredOpinion) && <p className="text-sm text-primary-700">Восстановлен ответ {restoredOpinion ? 'на запрос мнения' : 'на сообщение'}. <button onClick={() => { setRestoredParent(null); setRestoredOpinion(null) }}>Убрать связь ответа</button></p>}
-        {parent && <p>Ответ: {parent.body} <button onClick={() => setParent(null)}>Отмена</button></p>}
-        {replyOpinion && <p>Ответ на запрос: {replyOpinion.question} <button onClick={() => setReplyOpinion(null)}>Отмена</button></p>}
-        <label className="block" htmlFor={`${formId}-message`}>Сообщение</label><textarea id={`${formId}-message`} ref={messageInput} disabled={!messageDraft.ready || busy} rows={3} className={inputClass} maxLength={10000} value={body} onChange={e => setBody(e.target.value)} />
-        <details open={!!record} className="rounded-xl border border-gray-200 p-3"><summary className="cursor-pointer text-sm font-medium text-primary-700">Связать сообщение с материалом{record ? ' · выбран' : ' (необязательно)'}</summary>
-        <CaseMaterialPicker caseId={c.id} sequence={c.sequence} selected={record ? [record] : []}
-          onAccessLost={onChange} onChange={ids => { setRecord(ids[0] ?? ''); setAttachment(null) }} />
-        </details>
-        {attachment && <p>Ссылка на вложение: {reference?.label} <button onClick={() => setAttachment(null)}>Убрать вложение</button></p>}
-        <p className="text-sm text-gray-500">Сообщения неизменяемы. Исправление отправьте новым ответом.</p>
-        <button className={buttonClass} disabled={busy || !body.trim() || !messageDraft.ready || messageDraft.conflict} onClick={() => void send()}>Отправить сообщение</button>
-        <DraftStatus draft={messageDraft} />
-      </div>}
+      {!linkedOpinion && writable && composer}
     </section>
     <section id="opinions" className={cardClass}><h2 className="text-lg font-semibold">Запросы мнения</h2>
-      {[...(linkedOpinion && !opinions.some(item => item.id === linkedOpinion.id) ? [linkedOpinion] : []), ...opinions].map(o => <article id={`opinion-${o.id}`} key={o.id} className={`rounded-lg bg-gray-50 p-3 space-y-2 ${o.id === targetOpinion ? 'ring-2 ring-primary-300' : ''}`}>
+      {opinions.filter(opinion => opinion.id !== linkedOpinion?.id).map(o => <article id={`opinion-${o.id}`} key={o.id} className={`rounded-lg bg-gray-50 p-3 space-y-2 ${o.id === targetOpinion ? 'ring-2 ring-primary-300' : ''}`}>
         <p>{name(o.requester_id)} → {name(o.assignee_id)} · {opinionLabel[o.status] ?? 'Запрос мнения'}</p><p>{o.question}</p>
         {o.reason && <p className="text-sm">Причина отмены: {o.reason === 'assignee_left' ? 'Адресат вышел из случая' : o.reason}</p>}
         {o.record_id && <button onClick={() => onOpen?.(o.record_id!, null)}>Открыть материал</button>}
         {writable && o.status === 'open' && o.assignee_id === userId && <button className="text-primary-700" onClick={() => {
-          setReplyOpinion(o); setParent(null); setRestoredParent(null); setRestoredOpinion(null); setRecord(o.record_id ?? ''); setAttachment(null); messageInput.current?.focus()
+          startOpinionReply(o)
         }}>Ответить на запрос</button>}
         {writable && o.status === 'open' && [o.requester_id, c.coordinator_id].includes(userId) && <button className="ml-4" disabled={busy}
           onClick={() => void mutate(`opinions/${o.id}/cancel`)}>Отменить запрос</button>}
       </article>)}
       <div className="flex gap-4"><button disabled={!opOffset} onClick={() => setOpOffset(opOffset - 20)}>Назад</button>
         <span>{opTotal} запросов</span><button disabled={opOffset + 20 >= opTotal} onClick={() => setOpOffset(opOffset + 20)}>Далее</button></div>
-      {writable && <div className="space-y-2">
+      {writable && <details className="rounded-xl border border-gray-200 p-3"><summary className="cursor-pointer font-medium">Запросить мнение коллеги</summary><div className="mt-3 space-y-2">
         <label>Адресат<select className={inputClass} value={assignee} onChange={e => setAssignee(e.target.value)}>
           <option value="">Выберите врача</option>{doctors.filter(d => d.user_id !== userId).map(d =>
             <option key={d.user_id} value={d.user_id}>{d.name}</option>)}</select></label>
@@ -196,7 +231,7 @@ export default function CaseDiscussion({ c, userId, onChange, onOpen, reference 
           if (await mutate('opinions', { assignee_id: assignee, question, record_id: opinionRecord || null })) await opinionDraft.refresh()
         }}>Запросить мнение</button>
         <DraftStatus draft={opinionDraft} />
-      </div>}
+      </div></details>}
     </section>
     <details className={cardClass}><summary className="font-semibold">Журнал действий</summary>
       {activity.map(a => <p key={a.id}>{new Date(a.created_at).toLocaleString('ru-RU')} · {a.actor_name} · {labels[a.event_type] ?? a.event_type}</p>)}

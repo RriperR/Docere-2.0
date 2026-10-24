@@ -10,6 +10,7 @@ import { getAiCapabilities, AiCapabilities } from '../../api/importAi';
 import { PatientImportContext } from './PatientImportContext'
 import { usePatientImportContext } from './usePatientImportContext';
 import { groupedWarnings } from '../../utils/importWarnings';
+import { importTitle } from '../../utils/importDisplay';
 
 type StatusFilter = UploadJob['status'] | 'all';
 type SortOrder = 'newest' | 'oldest';
@@ -324,14 +325,14 @@ const UploadPage = () => {
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="truncate text-sm font-medium text-gray-900">
-                        {job.original_filename ?? 'archive.zip'}
+                        {importTitle(job)}
                       </p>
                       <span className={`rounded-sm border px-2 py-0.5 text-xs font-medium ${statusTone(job.status)}`}>
                         {statusLabel[job.status]}
                       </span>
                     </div>
                     <p className="text-xs text-gray-500">
-                      {new Date(job.created_at).toLocaleString()}
+                      {new Date(job.created_at).toLocaleString('ru-RU')}
                     </p>
                     <p className="mt-1 text-xs text-gray-500">
                       Пациентов: {getPatientCount(job)} · Записей: {getRecordCount(job)} · Вложений: {getAttachmentCount(job)}
@@ -359,7 +360,7 @@ const UploadPage = () => {
                     icon={job.status === 'needs_review' ? <FileSearch className="h-4 w-4" /> : <FileText className="h-4 w-4" />}
                     onClick={() => openJob(job)}
                   >
-                    {job.status === 'needs_review' ? 'Проверить импорт' : job.status === 'failed' ? 'Открыть ошибку' : 'Статус'}
+                    {job.status === 'needs_review' ? 'Проверить документы' : job.status === 'failed' ? 'Открыть ошибку' : 'Статус'}
                   </Button>
                 </div>
               ))}

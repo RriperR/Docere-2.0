@@ -2,7 +2,7 @@ import type { Page } from './cases'
 import api from './api'
 export type TaskKind = 'invitation' | 'opinion_requested' | 'share_request' | 'import_review'
 export interface InboxTask { key: string; kind: TaskKind; id: string; case_id: string | null; actor_name: string | null; context: string | null; created_at: string }
-export const taskLabels: Record<TaskKind, string> = { invitation: 'Приглашение в разбор', opinion_requested: 'Запрос мнения', share_request: 'Доступ к записям', import_review: 'Архив на проверке' }
+export const taskLabels: Record<TaskKind, string> = { invitation: 'Приглашение в разбор', opinion_requested: 'Запрос мнения', share_request: 'Доступ к записям', import_review: 'Документы на проверке' }
 export const taskActions: Record<TaskKind, string> = { invitation: 'Рассмотреть приглашение', opinion_requested: 'Ответить коллеге', share_request: 'Рассмотреть доступ', import_review: 'Проверить материалы' }
 export function taskPath(task: InboxTask): string {
   if (task.kind === 'import_review') return `/upload/review/${task.id}`

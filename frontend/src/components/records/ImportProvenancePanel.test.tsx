@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 import { ImportProvenancePanel } from './ImportProvenancePanel'
@@ -17,7 +17,9 @@ describe('ImportProvenancePanel', () => {
       />,
     )
 
-    expect(screen.getByText('demo.zip')).toBeInTheDocument()
+    expect(screen.getByText('demo.zip')).not.toBeVisible()
+    fireEvent.click(screen.getByText('Источник и сведения об импорте'))
+    expect(screen.getByText('demo.zip')).toBeVisible()
     expect(screen.getByText('job-1')).toBeInTheDocument()
     expect(screen.getByText('2')).toBeInTheDocument()
   })

@@ -52,10 +52,19 @@ it('contains keyboard focus in mobile navigation and returns it on Escape', asyn
   const panel = screen.getByRole('dialog', { name: 'Навигация по Docere' })
   expect(within(panel).getByRole('button', { name: 'Закрыть меню' })).toHaveFocus()
   await user.tab({ shift: true })
-  expect(within(panel).getByRole('link', { name: 'Доступ к записям' })).toHaveFocus()
+  expect(within(panel).getByRole('link', { name: 'Заявки врачей' })).toHaveFocus()
   await user.tab()
   expect(within(panel).getByRole('button', { name: 'Закрыть меню' })).toHaveFocus()
   await user.keyboard('{Escape}')
   expect(trigger).toHaveFocus()
   expect(trigger).toHaveAttribute('aria-expanded', 'false')
+})
+
+
+it('prioritizes clinical navigation and retains doctor applications in auxiliary actions', () => {
+  render(<MemoryRouter><DashboardLayout /></MemoryRouter>)
+  const navigation = screen.getByRole('navigation', { name: 'Основная навигация' })
+  const links = within(navigation).getAllByRole('link').map(link => link.getAttribute('aria-label'))
+  expect(links).toEqual(['Рабочий стол', 'Пациенты', 'Клинические случаи', 'Входящие', 'Импорт документов', 'Доступ к записям', 'Заявки врачей'])
+  expect(within(navigation).getByText('Другие действия')).toBeVisible()
 })

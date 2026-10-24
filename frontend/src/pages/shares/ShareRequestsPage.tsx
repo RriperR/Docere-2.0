@@ -82,7 +82,7 @@ const ShareRequestsPage = () => {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Доступ к записям</h1>
           <p className="mt-0.5 text-sm text-gray-500">
-            Управляйте входящими запросами и доступами, которые вы выдали другим пользователям.
+            Передавайте отдельные медицинские записи и управляйте их доступностью. Приглашения в совместный разбор находятся во «Входящих» и открывают только материалы случая.
           </p>
         </div>
       </motion.div>
@@ -206,7 +206,7 @@ const ShareRequestsPage = () => {
                 mode={tab}
                 onAccept={() => acceptRequest(request.id)}
                 onDecline={() => confirmAction('Отклонить sharing-запрос?') ? declineRequest(request.id) : Promise.resolve()}
-                onCancel={() => confirmAction('Отменить исходящий sharing-запрос?') ? cancelRequest(request.id) : Promise.resolve()}
+                onCancel={() => confirmAction('Отменить исходящий запрос доступа?') ? cancelRequest(request.id) : Promise.resolve()}
                 onRevoke={() => confirmAction('Отозвать доступ к записям?') ? revokeRequest(request.id) : Promise.resolve()}
               />
             ))}
