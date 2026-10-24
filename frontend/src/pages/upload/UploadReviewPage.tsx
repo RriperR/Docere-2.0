@@ -1,66 +1,36 @@
 import axios from 'axios'
 import api from '../../api/api'
-import { AiFieldName, AppliedAi, aiErrorLabels, aiStatusLabels } from '../../api/importAi'
-import AiSuggestions from './AiSuggestions'
+import { AiFieldName, AppliedAi } from '../../api/importAi'
+import RecordGroupEditor from './RecordGroupEditor'
 import { useImportAi } from './useImportAi'
 import { UploadJob } from '../../stores/uploadStore'
 import DocumentViewer from '../../components/records/DocumentViewer'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { AlertTriangle, ArrowLeft, Check, FileText, RotateCcw, UserCheck } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Check, RotateCcw, UserCheck } from 'lucide-react'
 
 import { Button } from '../../components/common/Button'
 import { Card } from '../../components/common/Card'
 import { DateInput } from '../../components/common/DateInput'
-import { Patient, usePatientsStore } from '../../stores/patientsStore'
+import { usePatientsStore } from '../../stores/patientsStore'
 import {
-  ImportPatientDecision,
   ImportPatientDraft,
-  ImportRecordGroupDecision,
   useUploadStore,
 } from '../../stores/uploadStore'
 import { formatDateForDisplay } from '../../utils/dates'
 import { PatientImportContext } from './PatientImportContext'
 import { usePatientImportContext } from './usePatientImportContext'
-import { groupedWarnings, warningAffectsFile } from '../../utils/importWarnings'
-
-type PatientAction = 'existing' | 'create' | 'skip'
-
-type GroupDecisionState = ImportRecordGroupDecision & {
-  action: 'create' | 'skip'
-}
-
-type PatientDecisionState = {
-  candidate_id: string
-  action: PatientAction
-  patient_passport_id: string
-  fio: string
-  date_of_birth: string
-  record_groups: GroupDecisionState[]
-}
-
-type PatientOption = {
-  id: string
-  label: string
-  priority: number
-}
-
-type BulkPatchState = {
-  record_type: string
-  event_date: string
-}
-
-const recordTypeLabels: Record<string, string> = {
-  exam_result: 'Обследование',
-  lab_result: 'Анализ',
-  consultation_result: 'Консультация',
-  other: 'Другое',
-}
+import { groupedWarnings } from '../../utils/importWarnings'
+import { buildPatientOptions, toInitialDecision, restoreDecisions, validateDecisions, toPayload, recordTypeLabels, type PatientAction, type PatientDecisionState, type GroupDecisionState, type BulkPatchState } from './reviewState'
+import ReviewDocumentList from './ReviewDocumentList'
+import ImportAiControls from './ImportAiControls'
+import { buildReviewDocuments } from './reviewState'
 
 const UploadReviewPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const context = usePatientImportContext()
   const {
     currentJob,
@@ -80,8 +50,7 @@ const UploadReviewPage: React.FC = () => {
   } = usePatientsStore()
   const [decisions, setDecisions] = useState<PatientDecisionState[]>([])
   const [formError, setFormError] = useState('')
-  const [previewFile, setPreviewFile] = useState<string | null>(null)
-  const [previewPage, setPreviewPage] = useState(1)
+  const [previewClosed, setPreviewClosed] = useState(false)
   const previewPanel = useRef<HTMLDivElement>(null)
   const previewTrigger = useRef<HTMLElement | null>(null)
   const restorePreviewTrigger = useRef(false)
@@ -89,7 +58,7 @@ const UploadReviewPage: React.FC = () => {
   const [aiSelection, setAiSelection] = useState<string[]>([])
   const [regrouping, setRegrouping] = useState(false)
   const ai = useImportAi(currentJob)
-  const accessLost = React.useCallback(async () => { setPreviewFile(null); if (jobId) await getJobById(jobId) }, [jobId, getJobById])
+  const accessLost = React.useCallback(async () => { setPreviewClosed(true); if (jobId) await getJobById(jobId) }, [jobId, getJobById])
   const [serverDuplicates, setServerDuplicates] = useState<string[]>([])
   const [selectedGroupsByPatient, setSelectedGroupsByPatient] = useState<Record<string, string[]>>({})
   const [bulkPatchByPatient, setBulkPatchByPatient] = useState<Record<string, BulkPatchState>>({})
@@ -97,6 +66,32 @@ const UploadReviewPage: React.FC = () => {
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null)
   const lastSavedSnapshot = useRef('')
   const lastAttemptedSnapshot = useRef('')
+
+  useEffect(() => {
+    if (jobId) void getJobById(jobId)
+  }, [jobId, getJobById])
+
+  useEffect(() => {
+    void fetchPatients()
+  }, [fetchPatients])
+
+  const patientCandidates = useMemo(() => currentJob?.report_json.patients ?? [], [currentJob?.report_json.patients])
+  const warnings = currentJob?.report_json.warnings ?? []
+  const warningViews = groupedWarnings(warnings)
+
+  const reviewDocuments = buildReviewDocuments(patientCandidates, decisions, serverDuplicates, ai.run?.documents)
+  const requestedGroup = searchParams.get('group')
+  const selectedGroupId = reviewDocuments.some(item => item.groupId === requestedGroup)
+    ? requestedGroup : reviewDocuments[0]?.groupId ?? null
+  const selectedSource = patientCandidates.flatMap(patient => patient.record_groups).find(group => group.group_id === selectedGroupId)
+  const requestedFile = searchParams.get('file')
+  const selectedFile = selectedSource?.files.find(file => file.id === requestedFile)?.id ?? selectedSource?.files.find(file => file.id)?.id ?? null
+  const previewFile = previewClosed ? null : selectedFile
+  const rawPage = Number(searchParams.get('page') ?? 1)
+  const previewPage = Number.isSafeInteger(rawPage) && rawPage > 0 ? rawPage : 1
+  const editorPanel = useRef<HTMLDivElement>(null)
+
+  useEffect(() => { setPreviewClosed(false) }, [selectedGroupId])
 
   useEffect(() => {
     if (restorePreviewTrigger.current && (!previewFile || mobileTab === 'fields')) {
@@ -111,18 +106,6 @@ const UploadReviewPage: React.FC = () => {
     previewPanel.current?.scrollIntoView?.({ block: 'start', behavior: 'instant' })
     previewPanel.current?.focus({ preventScroll: true })
   }, [previewFile, previewPage, mobileTab])
-
-  useEffect(() => {
-    if (jobId) void getJobById(jobId)
-  }, [jobId, getJobById])
-
-  useEffect(() => {
-    void fetchPatients()
-  }, [fetchPatients])
-
-  const patientCandidates = useMemo(() => currentJob?.report_json.patients ?? [], [currentJob?.report_json.patients])
-  const warnings = currentJob?.report_json.warnings ?? []
-  const warningViews = groupedWarnings(warnings)
 
   useEffect(() => {
     if (!jobId || currentJob?.id !== jobId || initializedJobId === jobId) return
@@ -189,41 +172,38 @@ const UploadReviewPage: React.FC = () => {
     )
   }
 
-  const reviewTotals = patientCandidates.reduce((totals, patient) => {
-    const decision = decisions.find((item) => item.candidate_id === patient.candidate_id)
-    const summary = reviewSummary(patient, decision)
-    const hasPatientIssue = !decision
-      || (decision.action === 'existing' && !decision.patient_passport_id)
-      || (decision.action === 'create' && !decision.fio.trim())
-    return {
-      ready: totals.ready + summary.ready,
-      unresolved: totals.unresolved + summary.needsDate + summary.needsDuplicate + (hasPatientIssue ? 1 : 0)
-        + (decision?.record_groups.filter(group => serverDuplicates.includes(group.group_id)
-          && group.action === 'create' && !group.allow_possible_duplicate
-          && !getRelevantDuplicateCandidates(patient.record_groups.find(source => source.group_id === group.group_id), decision).length).length ?? 0),
-      skipped: totals.skipped + summary.skipped,
-    }
-  }, { ready: 0, unresolved: 0, skipped: 0 })
-  const firstReviewIssueAnchor = findFirstReviewIssueAnchor(patientCandidates, decisions)
+  const reviewTotals = {
+    ready: reviewDocuments.filter(item => item.status === 'ready').length,
+    unresolved: reviewDocuments.filter(item => item.status === 'needs_data').length,
+    skipped: reviewDocuments.filter(item => item.status === 'skipped').length,
+  }
+  const firstReviewIssue = reviewDocuments.find(item => item.status === 'needs_data')
+  const selectedRecords = reviewDocuments.filter(item => item.status !== 'skipped').length
 
   const submit = async () => {
     if (!jobId) return
     const validationError = validateDecisions(decisions, patientCandidates)
     if (validationError) {
       setFormError(validationError)
+      if (firstReviewIssue) selectDocument(firstReviewIssue.groupId, true)
       return
     }
     if (decisions.some(patient => patient.action !== 'skip' && patient.record_groups.some(group =>
       serverDuplicates.includes(group.group_id) && group.action === 'create' && !group.allow_possible_duplicate))) {
       setFormError('Решите, импортировать найденный сервером дубль или пропустить запись.')
+      if (firstReviewIssue) selectDocument(firstReviewIssue.groupId, true)
       return
     }
-    const selectedPatients = decisions.filter((decision) => decision.action !== 'skip').length
-    const selectedRecords = decisions.reduce(
-      (count, decision) => count + decision.record_groups.filter((group) => group.action === 'create').length,
-      0,
-    )
-    if (!window.confirm(`Подтвердить импорт: пациентов — ${selectedPatients}, записей — ${selectedRecords}?`)) return
+    if (firstReviewIssue) {
+      setFormError(firstReviewIssue.issue ?? 'Проверьте обязательные поля документа.')
+      selectDocument(firstReviewIssue.groupId, true)
+      return
+    }
+    const selectedPatients = decisions.filter(decision => decision.action !== 'skip' && decision.record_groups.some(group => group.action === 'create')).length
+    const confirmation = selectedRecords === 0
+      ? 'Завершить импорт без создания записей? Все документы будут пропущены.'
+      : `Подтвердить импорт: пациентов — ${selectedPatients}, записей — ${selectedRecords}?`
+    if (!window.confirm(confirmation)) return
     setFormError('')
     try {
       await resolveJob(jobId, decisions.map(toPayload))
@@ -235,7 +215,7 @@ const UploadReviewPage: React.FC = () => {
         const groupId = detail.group_id
         setServerDuplicates(current => [...new Set([...current, groupId])])
         setFormError('Сервер нашёл похожую запись после изменения данных. Проверьте отмеченную группу.')
-        document.getElementById(`review-group-${groupId}`)?.scrollIntoView?.({ block: 'center' })
+        selectDocument(groupId, true)
       }
       // Store показывает остальные ошибки. Решения и текст формы остаются на месте.
     }
@@ -248,8 +228,8 @@ const UploadReviewPage: React.FC = () => {
           <ArrowLeft className="mr-1 h-4 w-4" />
           Назад к статусу
         </Link>
-        <h1 className="text-2xl font-bold">Проверка импорта</h1>
-        <p className="text-gray-500">Подтвердите, к каким карточкам пациентов добавить найденные записи.</p>
+        <h1 className="text-2xl font-bold">Проверка документов</h1>
+        <p className="text-gray-500">Выберите документ, сверьте оригинал и поля записи. Правки сохраняются в черновике автоматически.</p>
         <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-gray-500">
           <span>
             {isSavingReviewDraft
@@ -282,69 +262,39 @@ const UploadReviewPage: React.FC = () => {
       <Card>
         <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
           <div className="flex flex-wrap gap-4">
-            <span className="font-medium text-success-700">Готово: {reviewTotals.ready}</span>
+            <span className="font-medium text-success-700">Можно сохранить: {reviewTotals.ready} записей</span>
             <span className={reviewTotals.unresolved > 0 ? 'font-medium text-warning-700' : 'text-gray-500'}>
-              Требуют решения: {reviewTotals.unresolved}
+              Нужны данные: {reviewTotals.unresolved} документов
             </span>
-            <span className="text-gray-500">Пропущено: {reviewTotals.skipped}</span>
+            <span className="text-gray-500">Пропущено: {reviewTotals.skipped} документов</span>
           </div>
-          {firstReviewIssueAnchor && (
-            <a className="font-medium text-primary-700 hover:underline" href={`#${firstReviewIssueAnchor}`}>
+          {firstReviewIssue && (
+            <button type="button" className="font-medium text-primary-700 hover:underline" onClick={() => selectDocument(firstReviewIssue.groupId, true)}>
               Перейти к следующему вопросу
-            </a>
+            </button>
           )}
         </div>
       </Card>
 
-      {patientCandidates.length > 0 && (
-        <div className="sticky top-0 z-10 rounded-md border border-gray-100 bg-white/95 p-3 shadow-xs backdrop-blur-sm">
-          <div className="flex flex-wrap gap-2">
-            {patientCandidates.map((patient) => {
-              const decision = decisions.find((item) => item.candidate_id === patient.candidate_id)
-              const summary = reviewSummary(patient, decision)
-              return (
-                <a
-                  key={patient.candidate_id}
-                  href={`#${patient.candidate_id}`}
-                  className="rounded-sm border border-gray-200 px-3 py-2 text-sm hover:border-primary-300"
-                >
-                  <span className="font-medium text-gray-900">{patient.fio ?? 'Пациент не распознан'}</span>
-                  <span className="ml-2 text-xs text-gray-500">
-                    готово {summary.ready} · даты {summary.needsDate} · дубли {summary.needsDuplicate} · пропущено {summary.skipped}
-                  </span>
-                </a>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      <Card title="AI-помощник импорта">
-        <p className="mb-3 text-sm text-gray-600">Выберите документы для передачи внешнему сервису. AI предлагает факты; вы проверяете оригиналы и решаете, какие поля применить.</p>
-        {ai.capabilities?.enabled && <p className="text-xs text-gray-500">До {ai.capabilities.max_documents} документов и {ai.capabilities.max_pages} страниц за запуск; до {ai.capabilities.max_pages_per_document} страниц в одном документе.</p>}
-        {!ai.capabilities?.enabled && <p className="text-sm text-gray-500">AI-сервис пока не настроен. Обычный импорт доступен.</p>}
-        <div className="my-3 grid gap-2 md:grid-cols-2">{patientCandidates.flatMap(p => p.record_groups.flatMap(g => g.files)).filter(f => f.id && !f.is_dicom && ['application/pdf', 'image/png', 'image/jpeg'].includes(f.mime_type)).map(file => <label key={file.id} className="flex min-w-0 items-center gap-2 text-sm"><input type="checkbox" disabled={ai.active} checked={aiSelection.includes(file.id!)} onChange={e => setAiSelection(current => e.target.checked ? [...current, file.id!] : current.filter(id => id !== file.id))} /><span className="break-all">{file.filename}</span></label>)}</div>
-        <div className="flex flex-wrap items-center gap-3"><Button disabled={!ai.capabilities?.enabled || !aiSelection.length || ai.active || isSavingReviewDraft} isLoading={ai.busy} onClick={() => void ai.start(aiSelection)}>Проанализировать выбранные</Button>
-          {ai.active && <><p role="status" className="text-sm">Анализ выполняется…</p><Button variant="outline" onClick={() => void ai.cancel()}>Отменить анализ</Button></>}
-          {ai.run && <span className="text-xs text-gray-500">{ai.run.provider} · {ai.run.model} · обработано {ai.run.documents.filter(d => d.status !== 'queued').length} из {ai.run.documents.length}</span>}
-        </div>
-        {!!ai.history.length && <div className="mt-3 flex flex-wrap items-center gap-3"><label className="text-sm">Версия предложений<select className="ml-2 rounded-md border p-2" value={ai.run?.id ?? ''} onChange={e => { const run = ai.history.find(r => r.id === e.target.value); if (run) ai.selectRun(run) }}><option value="">Последний запуск</option>{ai.history.map(run => <option key={run.id} value={run.id}>{new Date(run.created_at).toLocaleString('ru-RU')} · {aiStatusLabels[run.status] ?? run.status}</option>)}</select></label>{ai.hasOlder && <Button size="sm" variant="outline" onClick={() => void ai.loadOlder()}>Предыдущие запуски</Button>}</div>}
-        {(ai.error || currentJob.report_json.ai_error_code) && <p role="alert" className="mt-3 text-sm text-red-700">{ai.error || aiErrorLabels[currentJob.report_json.ai_error_code ?? ''] || 'Автоматический анализ недоступен.'}</p>}
-      </Card>
+      <ImportAiControls ai={ai} patientCandidates={patientCandidates} selection={aiSelection} onSelectionChange={setAiSelection} saving={isSavingReviewDraft} errorCode={currentJob.report_json.ai_error_code} />
+      <section aria-label="Проверка выбранного документа" className="grid min-w-0 gap-4 xl:grid-cols-[15rem_minmax(0,1fr)]">
+      <ReviewDocumentList documents={reviewDocuments} selectedId={selectedGroupId} onSelect={selectDocument} disabled={regrouping} />
+      <div className="min-w-0 space-y-4">
+      <p className="break-words text-sm font-medium text-gray-900">Выбран документ: {selectedSource?.files.find(file => file.id === selectedFile)?.filename ?? selectedSource?.title ?? 'Нет документов'}</p>
       {previewFile && <div className="flex flex-wrap gap-2 lg:hidden" aria-label="Сверка документа и полей">
         <Button aria-pressed={mobileTab === 'document'} variant={mobileTab === 'document' ? 'primary' : 'outline'} onClick={() => setMobileTab('document')}>Документ</Button>
         <Button aria-pressed={mobileTab === 'fields'} variant={mobileTab === 'fields' ? 'primary' : 'outline'} onClick={returnToFields}>Поля записи</Button>
       </div>}
-      <div className={previewFile ? 'grid min-w-0 gap-6 lg:grid-cols-2' : ''}>
-        {previewFile && jobId && <div ref={previewPanel} tabIndex={-1} aria-label="Сверка с исходным документом" className={`${mobileTab === 'document' ? '' : 'hidden lg:block'} min-h-[calc(100svh-6rem)] min-w-0 scroll-mt-24 self-start space-y-3 lg:sticky lg:top-20`}>
-          <p className="text-sm text-gray-600">Сверьте поля записи с исходным документом. Просмотр не изменяет введённые данные.</p>
-          <DocumentViewer importJobId={jobId} page={previewPage} recordId={jobId} attachmentId={previewFile} onClose={closeSource} onAccessLost={accessLost} />
+      <div className={previewFile ? 'grid min-w-0 gap-4 lg:grid-cols-2' : ''}>
+        {previewFile && jobId && <div ref={previewPanel} tabIndex={-1} aria-label="Сверка с исходным документом" className={`${mobileTab === 'document' ? '' : 'hidden lg:block'} min-w-0 scroll-mt-24 self-start space-y-3 lg:sticky lg:top-20`}>
+
+          <DocumentViewer key={`${jobId}-${selectedGroupId}`} importJobId={jobId} page={previewPage} recordId={jobId} attachmentId={previewFile} importFiles={selectedSource?.files} onAttachmentChange={fileId => openSource(fileId, 1)} onClose={closeSource} onAccessLost={accessLost} />
           <Button className="lg:hidden" variant="outline" onClick={returnToFields}>Вернуться к полям записи</Button>
         </div>}
-        <div className={`${previewFile && mobileTab === 'document' ? 'hidden lg:block' : ''} min-w-0 space-y-6`}>
+        <div ref={editorPanel} tabIndex={-1} className={`${previewFile && mobileTab === 'document' ? 'hidden lg:block' : ''} min-w-0 space-y-6 focus:outline-none`}>
       {decisions.map((decision, patientIndex) => {
         const patientCandidate = patientCandidates.find((item) => item.candidate_id === decision.candidate_id)
-        if (!patientCandidate) return null
+        if (!patientCandidate || !decision.record_groups.some(group => group.group_id === selectedGroupId)) return null
         const patientOptions = buildPatientOptions(accessiblePatients, patientCandidate)
         if (context.patient && !patientOptions.some(option => option.id === context.patient!.id)) patientOptions.unshift({ id: context.patient.id, label: context.patient.fio, priority: 0 })
 
@@ -358,7 +308,8 @@ const UploadReviewPage: React.FC = () => {
             </div>}
             <div id={decision.candidate_id} className="scroll-mt-24" />
             <div className="space-y-5">
-              <div className="grid gap-4 lg:grid-cols-3">
+              <p className="text-xs text-gray-500">Выбор карточки и пропуск пациента применяются ко всем его документам: {decision.record_groups.length}.</p>
+              <div className="grid gap-4 2xl:grid-cols-2">
                 <label className="min-w-0 space-y-1">
                   <span className="text-sm font-medium text-gray-700">Решение</span>
                   <select
@@ -439,6 +390,10 @@ const UploadReviewPage: React.FC = () => {
               )}
 
               <div className="space-y-3">
+                <details className="rounded-lg border border-gray-200 p-3">
+                  <summary className="cursor-pointer text-sm font-medium">Действия с несколькими документами</summary>
+                  <p className="my-2 text-xs text-gray-500">Эти действия относятся ко всем документам этого кандидата пациента. Выбор здесь не меняет включение в импорт.</p>
+                  <div className="my-3 space-y-2">{decision.record_groups.map(item => <label key={item.group_id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={getSelectedGroupIds(decision.candidate_id).includes(item.group_id)} onChange={event => toggleGroupSelection(decision.candidate_id, item.group_id, event.target.checked)} />{patientCandidate.record_groups.find(source => source.group_id === item.group_id)?.files[0]?.filename ?? item.title ?? 'Документ'}</label>)}</div>
                 <div className="flex flex-wrap gap-2">
                   <Button type="button" size="sm" variant="outline" onClick={() => updateAllGroups(patientIndex, { action: 'create' })}>
                     Импортировать все
@@ -492,197 +447,13 @@ const UploadReviewPage: React.FC = () => {
                     Применить дату
                   </Button>
                 </div>
-                {decision.record_groups.map((group, groupIndex) => {
-                  const sourceGroup = patientCandidate.record_groups.find((item) => item.group_id === group.group_id)
-                  const needsDate = group.action === 'create' && !group.event_date
-                  const duplicateCandidates = getRelevantDuplicateCandidates(sourceGroup, decision)
-                  const hasDuplicates = duplicateCandidates.length > 0 || serverDuplicates.includes(group.group_id)
-                  const needsDuplicateConfirmation = hasDuplicates && group.action === 'create' && !group.allow_possible_duplicate
-                  const isSelected = getSelectedGroupIds(decision.candidate_id).includes(group.group_id)
-                  return (
-                    <div
-                      key={group.group_id}
-                      id={`review-group-${group.group_id}`}
-                      className="scroll-mt-28 rounded-lg border border-gray-100 p-4"
-                    >
-                      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                        <div className="flex min-w-0 flex-wrap items-center gap-2">
-                          <FileText className="h-4 w-4 text-primary-600" />
-                          <p className="min-w-0 break-words font-medium text-gray-900">{group.title || sourceGroup?.title || 'Запись'}</p>
-                          <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${group.action === 'skip' ? 'border-gray-200 bg-gray-50 text-gray-600' : needsDate || needsDuplicateConfirmation ? 'border-warning-200 bg-warning-50 text-warning-700' : 'border-success-200 bg-success-50 text-success-700'}`}>
-                            {group.action === 'skip' ? 'Пропущено' : needsDate ? 'Нужно выбрать дату' : needsDuplicateConfirmation ? 'Нужно решить по дублю' : 'Готово'}
-                          </span>
-                          {hasDuplicates && (
-                            <span className="rounded-full border border-warning-200 bg-warning-50 px-2 py-0.5 text-xs font-medium text-warning-700">
-                              {group.allow_possible_duplicate ? 'Дубль подтверждён' : 'Возможный дубль'}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex flex-wrap items-center gap-3">
-                          <label className="flex items-center gap-2 text-sm text-gray-700">
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={(event) => toggleGroupSelection(decision.candidate_id, group.group_id, event.target.checked)}
-                            />
-                            Выбрано
-                          </label>
-                          <label className="flex items-center gap-2 text-sm text-gray-700">
-                            <input
-                              type="checkbox"
-                              checked={group.action === 'create'}
-                              disabled={decision.action === 'skip'}
-                              onChange={(event) => updateGroup(patientIndex, groupIndex, { action: event.target.checked ? 'create' : 'skip' })}
-                            />
-                            Импортировать
-                          </label>
-                        </div>
-                      </div>
-
-                      {hasDuplicates && (
-                        <div className="mb-3 rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-800">
-                          <p className="font-medium">Похожие записи уже есть у пациента</p>
-                          {serverDuplicates.includes(group.group_id) && <p className="mt-2">Сервер обнаружил дубль при окончательной проверке. Сравните запись с историей перед подтверждением.</p>}
-                          {serverDuplicates.includes(group.group_id) && decision.patient_passport_id && <Link className="font-medium underline" to={`/patients/${decision.patient_passport_id}`} target="_blank" rel="noopener noreferrer">Проверить историю пациента в новой вкладке</Link>}
-                          <div className="mt-2 space-y-1">
-                            {duplicateCandidates.map((candidate) => (
-                              <div key={candidate.record_id} className="flex flex-wrap items-center gap-2 text-xs">
-                                <span>{candidate.title || 'Медицинская запись'}</span>
-                                <span>{recordTypeLabels[candidate.record_type] ?? candidate.record_type}</span>
-                                <span>{formatDateForDisplay(candidate.event_date)}</span>
-                                <span className="text-warning-700">
-                                  совпадают дата и название
-                                </span>
-                                <Link
-                                  to={`/patients/${candidate.patient_passport_id}`}
-                                  className="font-medium text-primary-700 hover:underline"
-                                >
-                                  Открыть карточку
-                                </Link>
-                              </div>
-                            ))}
-                          </div>
-                          {group.action === 'create' && (
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant={group.allow_possible_duplicate ? 'outline' : 'primary'}
-                                onClick={() => updateGroup(patientIndex, groupIndex, { allow_possible_duplicate: !group.allow_possible_duplicate })}
-                              >
-                                {group.allow_possible_duplicate ? 'Отменить подтверждение' : 'Импортировать всё равно'}
-                              </Button>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                onClick={() => updateGroup(patientIndex, groupIndex, { action: 'skip' })}
-                              >
-                                Пропустить запись
-                              </Button>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      <div className="grid gap-3 md:grid-cols-3">
-                        <label className="min-w-0 space-y-1">
-                          <span className="text-xs font-medium text-gray-500">Тип</span>
-                          <select
-                            className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm"
-                            value={group.record_type ?? 'other'}
-                            disabled={decision.action === 'skip' || group.action === 'skip'}
-                            onChange={(event) => updateGroup(patientIndex, groupIndex, { record_type: event.target.value })}
-                          >
-                            {Object.entries(recordTypeLabels).map(([value, label]) => (
-                              <option key={value} value={value}>
-                                {label}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className="min-w-0 space-y-1">
-                          <span className="text-xs font-medium text-gray-500">Дата события</span>
-                          <DateInput
-                            className={`w-full rounded-md border px-3 py-2 text-sm ${
-                              needsDate ? 'border-warning-300 bg-warning-50' : 'border-gray-200'
-                            }`}
-                            value={group.event_date ?? ''}
-                            disabled={decision.action === 'skip' || group.action === 'skip'}
-                            onChange={(value) => updateGroup(patientIndex, groupIndex, { event_date: value })}
-                          />
-                          {sourceGroup && sourceGroup.event_date_candidates.length > 1 && (
-                            <div className="flex flex-wrap gap-1.5 pt-1">
-                              {sourceGroup.event_date_candidates.map((candidate) => {
-                                const selected = group.event_date === candidate
-                                return (
-                                  <button
-                                    type="button"
-                                    key={`${group.group_id}-${candidate}`}
-                                    disabled={decision.action === 'skip' || group.action === 'skip'}
-                                    className={[
-                                      'rounded-sm border px-2 py-1 text-xs transition-colors',
-                                      selected
-                                        ? 'border-primary-500 bg-primary-50 text-primary-700'
-                                        : 'border-gray-200 bg-white text-gray-600 hover:border-primary-300',
-                                    ].join(' ')}
-                                    onClick={() => updateGroup(patientIndex, groupIndex, { event_date: candidate })}
-                                  >
-                                    {formatDateForDisplay(candidate)}
-                                  </button>
-                                )
-                              })}
-                            </div>
-                          )}
-                        </label>
-                        <label className="min-w-0 space-y-1">
-                          <span className="text-xs font-medium text-gray-500">Название</span>
-                          <input
-                            className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm"
-                            value={group.title ?? ''}
-                            disabled={decision.action === 'skip' || group.action === 'skip'}
-                            onChange={(event) => updateGroup(patientIndex, groupIndex, { title: event.target.value })}
-                          />
-                        </label>
-                      </div>
-
-                      <label className="mt-3 block text-sm">Пациент этого документа<select className="mt-1 w-full rounded-md border border-gray-200 p-2" value={decision.candidate_id} disabled={regrouping || isSavingReviewDraft} onChange={e => void moveGroup(group.group_id, e.target.value === '__new' ? null : e.target.value)}><option value={decision.candidate_id}>Текущий пациент</option>{patientCandidates.filter(p => p.candidate_id !== decision.candidate_id).map(p => <option key={p.candidate_id} value={p.candidate_id}>{p.fio ?? 'Другой кандидат пациента'}</option>)}<option value="__new">Отдельный пациент</option></select></label>
-                      <label className="mt-3 block text-sm">Клиническое описание<textarea className="mt-1 w-full rounded-md border border-gray-200 p-3" maxLength={10000} value={group.clinical_summary ?? ''} onChange={e => updateGroup(patientIndex, groupIndex, { clinical_summary: e.target.value })} /></label>
-                      {ai.run && sourceGroup?.files.map(file => {
-                        const document = ai.run?.documents.find(d => d.file_id === file.id)
-                        if (!document) return null
-                        const needsIdentity = document.result.patient_conflict || document.result.fields?.fio || document.result.fields?.date_of_birth
-                        return <React.Fragment key={file.id}><AiSuggestions document={document} runId={ai.run!.id} canApplyIdentity={decision.action === 'create'} onSource={openSource} onApply={(name, value, reference, emptyOnly) => applyAi(patientIndex, groupIndex, name, value, reference, emptyOnly)} />
-                          {needsIdentity && !document.result.multiple_patients && <label className="mt-2 flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 p-3 text-sm"><input type="checkbox" checked={group.patient_identity_confirmed ?? false} onChange={e => updateGroup(patientIndex, groupIndex, { patient_identity_confirmed: e.target.checked })} />Я проверил, что документ относится к выбранному пациенту</label>}</React.Fragment>
-                      })}
-                      {sourceGroup && (
-                        <div className="mt-3 space-y-2">
-                          <p className="text-xs text-gray-500">
-                            Файлов: {sourceGroup.files.length}; DICOM: {sourceGroup.files.filter((file) => file.is_dicom).length}
-                          </p>
-                          <div className="grid gap-2 md:grid-cols-2">
-                            {sourceGroup.files.map((file) => {
-                              const hasWarning = warningAffectsFile(warnings, file.path, file.filename)
-                              return (
-                                <div key={file.path} className="rounded-sm border border-gray-100 bg-gray-50 px-3 py-2 text-xs">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="min-w-0 break-all font-medium text-gray-800">{file.filename}</span>
-                                    <span className="shrink-0 text-gray-500">{formatFileSize(file.size_bytes)}</span>
-                                  </div>
-                                  <div className="mt-1 flex flex-wrap gap-2 text-gray-500">
-                                    <span>{file.is_dicom ? 'DICOM' : file.mime_type}</span>
-                                    {hasWarning && <span className="text-warning-700">Требует проверки</span>}
-                                  </div>
-                                  {file.id && <button type="button" aria-label={`Открыть документ ${file.filename}`} className="mt-2 font-medium text-primary-700 underline" onClick={() => openSource(file.id!, 1)}>Открыть документ</button>}
-                                </div>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
+                </details>
+                {decision.record_groups.map((group, groupIndex) => group.group_id === selectedGroupId && <RecordGroupEditor
+                  key={group.group_id} group={group} sourceGroup={patientCandidate.record_groups.find(source => source.group_id === group.group_id)}
+                  decision={decision} patientCandidates={patientCandidates} warnings={warnings} serverDuplicate={serverDuplicates.includes(group.group_id)}
+                  status={reviewDocuments.find(item => item.groupId === group.group_id)?.status} regrouping={regrouping || isSavingReviewDraft} aiRun={ai.run}
+                  onChange={patch => updateGroup(patientIndex, groupIndex, patch)} onMove={target => moveGroup(group.group_id, target)} onSource={openSource}
+                  onApplyAi={(name, value, reference, emptyOnly) => applyAi(patientIndex, groupIndex, name, value, reference, emptyOnly)} />)}
               </div>
             </div>
           </Card>
@@ -691,6 +462,15 @@ const UploadReviewPage: React.FC = () => {
 
         </div>
       </div>
+      {selectedGroupId && <div className="flex flex-wrap justify-between gap-3">
+        <p className="text-xs text-gray-500">Проверка документа не подтверждает медицинскую запись.</p>
+        {reviewDocuments.findIndex(item => item.groupId === selectedGroupId) < reviewDocuments.length - 1 && <Button variant="outline" onClick={() => {
+          const index = reviewDocuments.findIndex(item => item.groupId === selectedGroupId)
+          selectDocument(reviewDocuments[index + 1].groupId, true)
+        }}>Следующий документ</Button>}
+      </div>}
+      </div>
+      </section>
       {warnings.length > 0 && (
         <Card title="Предупреждения" accent="warning">
           <div className="space-y-3 text-sm">
@@ -712,17 +492,42 @@ const UploadReviewPage: React.FC = () => {
         </Card>
       )}
 
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white p-4">
+        <p className="text-sm text-gray-600">Записей к сохранению: {selectedRecords}. Пропущено документов: {reviewTotals.skipped}.</p>
         <Button type="button" onClick={submit} disabled={isSavingReviewDraft || regrouping} isLoading={isResolving} icon={<Check className="h-4 w-4" />}>
-          Подтвердить импорт
+          {selectedRecords === 0 ? 'Завершить без создания записей' : `Сохранить ${selectedRecords} записей в историю`}
         </Button>
       </div>
     </div>
   )
 
+  function selectDocument(groupId: string, focus = false) {
+    const source = patientCandidates.flatMap(patient => patient.record_groups).find(group => group.group_id === groupId)
+    if (!source) return
+    setSearchParams(current => {
+      const next = new URLSearchParams(current)
+      next.set('group', groupId)
+      const fileId = source.files.find(file => file.id)?.id
+      if (fileId) next.set('file', fileId)
+      else next.delete('file')
+      next.delete('page')
+      return next
+    })
+    setPreviewClosed(false)
+    setMobileTab('fields')
+    if (focus) window.requestAnimationFrame(() => { editorPanel.current?.scrollIntoView?.({ block: 'start' }); editorPanel.current?.focus({ preventScroll: true }) })
+  }
+
   function openSource(fileId: string, page: number) {
+    const source = selectedSource
+    if (!source?.files.some(file => file.id === fileId)) return
     previewTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    setPreviewFile(fileId); setPreviewPage(page); setMobileTab('document')
+    setSearchParams(current => {
+      const next = new URLSearchParams(current)
+      next.set('group', source.group_id); next.set('file', fileId); next.set('page', String(page))
+      return next
+    })
+    setPreviewClosed(false); setMobileTab('document')
     if (previewFile === fileId && previewPage === page && mobileTab === 'document') {
       previewPanel.current?.scrollIntoView?.({ block: 'start', behavior: 'instant' })
       previewPanel.current?.focus({ preventScroll: true })
@@ -736,7 +541,7 @@ const UploadReviewPage: React.FC = () => {
 
   function closeSource() {
     restorePreviewTrigger.current = true
-    setPreviewFile(null)
+    setPreviewClosed(true)
     setMobileTab('fields')
   }
 
@@ -746,11 +551,14 @@ const UploadReviewPage: React.FC = () => {
     const existing = name === 'fio' || name === 'date_of_birth' ? patient[name] : group[name]
     if (emptyOnly && existing) return
     if (existing && existing !== value && !window.confirm('Заменить введённое значение предложением AI?')) return
+    const identity = name === 'fio' || name === 'date_of_birth'
+    if (identity || ['record_type', 'event_date', 'title'].includes(name)) {
+      invalidateServerDuplicates(identity ? patient.record_groups.map(item => item.group_id) : [group.group_id])
+    }
     setDecisions(current => current.map((item, index) => {
       if (index !== patientIndex) return item
-      const identity = name === 'fio' || name === 'date_of_birth'
       return { ...item, ...(identity ? { [name]: value } : {}), record_groups: item.record_groups.map((currentGroup, innerIndex) => {
-        if (innerIndex !== groupIndex) return identity ? { ...currentGroup, patient_identity_confirmed: false } : currentGroup
+        if (innerIndex !== groupIndex) return identity ? { ...currentGroup, patient_identity_confirmed: false, allow_possible_duplicate: false } : currentGroup
         const references = (currentGroup.applied_ai ?? []).map(r => ({ ...r, fields: r.fields.filter(f => f !== name) })).filter(r => r.fields.length)
         return { ...currentGroup, ...(identity ? { patient_identity_confirmed: false } : { [name]: value }),
           applied_ai: [...references, reference], allow_possible_duplicate: false }
@@ -765,6 +573,7 @@ const UploadReviewPage: React.FC = () => {
       const response = await api.put<UploadJob>(`/archives/imports/${jobId}/groups`, { version: currentJob.version, group_id: groupId, target_candidate_id: targetId, decisions: decisions.map(toPayload) })
       const restored = restoreDecisions(response.data.report_json.patients ?? [], response.data.review_decisions)
       setDecisions(restored)
+      invalidateServerDuplicates([groupId])
       lastSavedSnapshot.current = JSON.stringify(restored.map(toPayload)); lastAttemptedSnapshot.current = lastSavedSnapshot.current
       useUploadStore.setState({ currentJob: response.data })
       setSelectedGroupsByPatient({}); setLastSavedAt(response.data.review_updated_at)
@@ -772,10 +581,21 @@ const UploadReviewPage: React.FC = () => {
     finally { setRegrouping(false) }
   }
 
+  function changesDuplicateKey(patch: Partial<GroupDecisionState>) {
+    return patch.record_type !== undefined || patch.event_date !== undefined || patch.title !== undefined
+  }
+
+  // Серверный результат относится к прежним полям и пациенту. После правки сервер проверит запись заново.
+  function invalidateServerDuplicates(groupIds: string[]) {
+    if (groupIds.length === 0) return
+    setServerDuplicates(current => current.filter(groupId => !groupIds.includes(groupId)))
+  }
+
   function updatePatient(index: number, patch: Partial<PatientDecisionState>) {
+    const resetsDuplicateDecision = patch.action !== undefined || patch.patient_passport_id !== undefined || patch.fio !== undefined || patch.date_of_birth !== undefined
+    if (resetsDuplicateDecision) invalidateServerDuplicates(decisions[index].record_groups.map(group => group.group_id))
     setDecisions((current) => current.map((item, itemIndex) => {
       if (itemIndex !== index) return item
-      const resetsDuplicateDecision = patch.action !== undefined || patch.patient_passport_id !== undefined || patch.fio !== undefined || patch.date_of_birth !== undefined
       return {
         ...item,
         ...patch,
@@ -787,6 +607,7 @@ const UploadReviewPage: React.FC = () => {
   }
 
   function updateGroup(patientIndex: number, groupIndex: number, patch: Partial<GroupDecisionState>) {
+    if (changesDuplicateKey(patch)) invalidateServerDuplicates([decisions[patientIndex].record_groups[groupIndex].group_id])
     setDecisions((current) =>
       current.map((patient, itemIndex) => {
         if (itemIndex !== patientIndex) return patient
@@ -798,7 +619,7 @@ const UploadReviewPage: React.FC = () => {
                   ...group,
                   ...patch,
                   allow_possible_duplicate:
-                    patch.record_type !== undefined || patch.event_date !== undefined || patch.title !== undefined
+                    changesDuplicateKey(patch)
                       ? false
                       : patch.allow_possible_duplicate ?? group.allow_possible_duplicate,
                 }
@@ -810,6 +631,7 @@ const UploadReviewPage: React.FC = () => {
   }
 
   function updateAllGroups(patientIndex: number, patch: Partial<GroupDecisionState>) {
+    if (changesDuplicateKey(patch)) invalidateServerDuplicates(decisions[patientIndex].record_groups.map(group => group.group_id))
     setDecisions((current) =>
       current.map((patient, itemIndex) => (
         itemIndex === patientIndex
@@ -847,6 +669,7 @@ const UploadReviewPage: React.FC = () => {
   function applyToSelectedGroups(patientIndex: number, candidateId: string, patch: Partial<GroupDecisionState>) {
     const selectedGroupIds = getSelectedGroupIds(candidateId)
     if (selectedGroupIds.length === 0) return
+    if (changesDuplicateKey(patch)) invalidateServerDuplicates(selectedGroupIds)
     setDecisions((current) =>
       current.map((patient, itemIndex) => {
         if (itemIndex !== patientIndex) return patient
@@ -858,7 +681,7 @@ const UploadReviewPage: React.FC = () => {
                   ...group,
                   ...patch,
                   allow_possible_duplicate:
-                    patch.record_type !== undefined || patch.event_date !== undefined || patch.title !== undefined
+                    changesDuplicateKey(patch)
                       ? false
                       : patch.allow_possible_duplicate ?? group.allow_possible_duplicate,
                 }
@@ -870,6 +693,9 @@ const UploadReviewPage: React.FC = () => {
   }
 
   function applyFirstDateCandidates(patientIndex: number, patient: ImportPatientDraft) {
+    invalidateServerDuplicates(decisions[patientIndex].record_groups.filter(group => !group.event_date &&
+      patient.record_groups.some(source => source.group_id === group.group_id && source.event_date_candidates[0]))
+      .map(group => group.group_id))
     setDecisions((current) =>
       current.map((decision, itemIndex) => {
         if (itemIndex !== patientIndex) return decision
@@ -890,183 +716,11 @@ const UploadReviewPage: React.FC = () => {
   function resetReviewDraft() {
     if (!window.confirm('Сбросить все решения по этому архиву?')) return
     setDecisions(patientCandidates.map(toInitialDecision))
+    setServerDuplicates([])
     setSelectedGroupsByPatient({})
     setBulkPatchByPatient({})
     setFormError('')
   }
-}
-
-function buildPatientOptions(accessiblePatients: Patient[], patientCandidate: ImportPatientDraft): PatientOption[] {
-  const matchTypeById = new Map(patientCandidate.existing_matches.map((match) => [match.id, match.match_type]))
-  return accessiblePatients
-    .map((patient) => {
-      const matchType = matchTypeById.get(patient.id)
-      const matchLabel = matchType === 'exact' ? 'точное совпадение' : matchType === 'fuzzy' ? 'похожая карточка' : ''
-      return {
-        id: patient.id,
-        priority: matchType === 'exact' ? 0 : matchType === 'fuzzy' ? 1 : 2,
-        label: [
-          patient.fio,
-          patient.birthday ? formatDateForDisplay(patient.birthday) : '',
-          matchLabel,
-        ].filter(Boolean).join(', '),
-      }
-    })
-    .sort((left, right) => left.priority - right.priority || left.label.localeCompare(right.label))
-}
-
-function toInitialDecision(patient: ImportPatientDraft): PatientDecisionState {
-  return {
-    candidate_id: patient.candidate_id,
-    action: 'create',
-    patient_passport_id: '',
-    fio: patient.fio ?? '',
-    date_of_birth: patient.date_of_birth ?? '',
-    record_groups: patient.record_groups.map((group) => ({
-      group_id: group.group_id,
-      action: 'create',
-      record_type: group.record_type,
-      event_date: group.event_date,
-      title: group.title,
-      clinical_summary: '',
-      allow_possible_duplicate: false,
-    })),
-  }
-}
-
-function restoreDecisions(
-  patients: ImportPatientDraft[],
-  savedDecisions: ImportPatientDecision[],
-): PatientDecisionState[] {
-  const savedByCandidate = new Map(savedDecisions.map((decision) => [decision.candidate_id, decision]))
-  return patients.map((patient) => {
-    const initial = toInitialDecision(patient)
-    const saved = savedByCandidate.get(patient.candidate_id)
-    if (!saved) return initial
-    const savedGroups = new Map(saved.record_groups.map((group) => [group.group_id, group]))
-    return {
-      ...initial,
-      action: saved.action,
-      patient_passport_id: saved.patient_passport_id ?? '',
-      fio: saved.fio ?? initial.fio,
-      date_of_birth: saved.date_of_birth ?? '',
-      record_groups: initial.record_groups.map((group) => {
-        const savedGroup = savedGroups.get(group.group_id)
-        return savedGroup
-          ? {
-              ...group,
-              ...savedGroup,
-              event_date: savedGroup.event_date ?? null,
-              allow_possible_duplicate: savedGroup.allow_possible_duplicate ?? false,
-            }
-          : group
-      }),
-    }
-  })
-}
-
-function validateDecisions(decisions: PatientDecisionState[], patients: ImportPatientDraft[]): string {
-  for (const decision of decisions) {
-    if (decision.action === 'skip') continue
-    if (decision.action === 'existing' && !decision.patient_passport_id) {
-      return 'Выберите существующую карточку пациента или создайте новую.'
-    }
-    if (decision.action === 'create' && !decision.fio.trim()) {
-      return 'Укажите ФИО для новой карточки пациента.'
-    }
-    for (const group of decision.record_groups) {
-      const patient = patients.find((item) => item.candidate_id === decision.candidate_id)
-      const sourceGroup = patient?.record_groups.find((item) => item.group_id === group.group_id)
-      if (group.action === 'create' && !group.event_date) {
-        return 'Укажите дату события для каждой импортируемой медицинской записи.'
-      }
-      if (
-        group.action === 'create' &&
-        getRelevantDuplicateCandidates(sourceGroup, decision).length > 0 &&
-        !group.allow_possible_duplicate
-      ) {
-        return 'Для возможного дубля выберите «Импортировать всё равно» или пропустите запись.'
-      }
-    }
-  }
-  return ''
-}
-
-function toPayload(decision: PatientDecisionState): ImportPatientDecision {
-  return {
-    candidate_id: decision.candidate_id,
-    action: decision.action,
-    patient_passport_id: decision.action === 'existing' ? decision.patient_passport_id : undefined,
-    fio: decision.action === 'create' ? decision.fio.trim() : undefined,
-    date_of_birth: decision.action === 'create' ? decision.date_of_birth || null : undefined,
-    record_groups: decision.record_groups.map((group) => ({
-      group_id: group.group_id,
-      action: group.action,
-      record_type: group.record_type,
-      event_date: group.event_date || null,
-      title: group.title,
-      clinical_summary: group.clinical_summary,
-      patient_identity_confirmed: group.patient_identity_confirmed,
-      applied_ai: group.applied_ai,
-      allow_possible_duplicate: group.allow_possible_duplicate ?? false,
-    })),
-  }
-}
-
-function getRelevantDuplicateCandidates(
-  sourceGroup: ImportPatientDraft['record_groups'][number] | undefined,
-  decision: PatientDecisionState,
-) {
-  if (!sourceGroup || decision.action !== 'existing' || !decision.patient_passport_id) return []
-  return sourceGroup.duplicate_candidates.filter(
-    (candidate) => candidate.patient_passport_id === decision.patient_passport_id,
-  )
-}
-
-function reviewSummary(patient: ImportPatientDraft, decision: PatientDecisionState | undefined) {
-  if (!decision) return { ready: 0, needsDate: 0, needsDuplicate: 0, skipped: 0 }
-  return decision.record_groups.reduce((summary, group) => {
-    const sourceGroup = patient.record_groups.find((item) => item.group_id === group.group_id)
-    if (group.action === 'skip') return { ...summary, skipped: summary.skipped + 1 }
-    if (!group.event_date) {
-      return { ...summary, needsDate: summary.needsDate + 1 }
-    }
-    if (getRelevantDuplicateCandidates(sourceGroup, decision).length > 0 && !group.allow_possible_duplicate) {
-      return { ...summary, needsDuplicate: summary.needsDuplicate + 1 }
-    }
-    return { ...summary, ready: summary.ready + 1 }
-  }, { ready: 0, needsDate: 0, needsDuplicate: 0, skipped: 0 })
-}
-
-function findFirstReviewIssueAnchor(
-  patients: ImportPatientDraft[],
-  decisions: PatientDecisionState[],
-): string | null {
-  for (const decision of decisions) {
-    if (decision.action === 'skip') continue
-    const patient = patients.find((item) => item.candidate_id === decision.candidate_id)
-    if (
-      (decision.action === 'existing' && !decision.patient_passport_id)
-      || (decision.action === 'create' && !decision.fio.trim())
-    ) {
-      return decision.candidate_id
-    }
-    for (const group of decision.record_groups) {
-      if (group.action === 'skip') continue
-      const sourceGroup = patient?.record_groups.find((item) => item.group_id === group.group_id)
-      const hasUnconfirmedDuplicate =
-        getRelevantDuplicateCandidates(sourceGroup, decision).length > 0 && !group.allow_possible_duplicate
-      if (!group.event_date || hasUnconfirmedDuplicate) return `review-group-${group.group_id}`
-    }
-  }
-  return null
-}
-
-function formatFileSize(bytes: number) {
-  if (bytes === 0) return '0 Б'
-  const units = ['Б', 'КБ', 'МБ', 'ГБ']
-  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
-  return `${(bytes / Math.pow(1024, index)).toFixed(index === 0 ? 0 : 1)} ${units[index]}`
 }
 
 export default UploadReviewPage

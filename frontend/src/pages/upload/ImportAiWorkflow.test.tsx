@@ -5,6 +5,7 @@ import { useUploadStore, UploadJob } from '../../stores/uploadStore'
 import { usePatientsStore } from '../../stores/patientsStore'
 import UploadReviewPage from './UploadReviewPage'
 
+vi.mock('../../components/records/DocumentViewer', () => ({ default: () => null }))
 vi.mock('./useImportAi', () => ({ useImportAi: () => ({ capabilities: { enabled: true }, active: false, busy: false, history: [],
   run: { id: 'run', provider: 'Test', model: 'Test', documents: [{ file_id: 'file', filename: 'scan.png', status: 'completed', result: { fields: {
     fio: { value: 'Тестовый пациент', sources: [{ page: 1, excerpt: 'Пациент' }] },
@@ -25,6 +26,14 @@ it('keeps all references when filling several empty fields and preserves manual 
   fireEvent.change(screen.getByLabelText('Клиническое описание'), { target: { value: 'Исправлено врачом' } })
   fireEvent.click(screen.getByRole('button', { name: 'Заполнить пустые поля' }))
   expect(screen.getByLabelText('Клиническое описание')).toHaveValue('Исправлено врачом')
+  const replace = screen.getByRole('button', { name: 'Заменить: Клиническое описание' })
+  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+  fireEvent.click(replace)
+  expect(confirm).toHaveBeenCalledWith('Заменить введённое значение предложением AI?')
+  expect(screen.getByLabelText('Клиническое описание')).toHaveValue('Исправлено врачом')
+  confirm.mockReturnValue(true)
+  fireEvent.click(replace)
+  expect(screen.getByLabelText('Клиническое описание')).toHaveValue('Сведения из оригинала')
   await waitFor(() => expect(save).toHaveBeenCalled(), { timeout: 2000 })
   const group = save.mock.calls[save.mock.calls.length - 1][1][0].record_groups[0]
   expect(group.title).toBe('Ручное название')

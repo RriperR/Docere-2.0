@@ -15,8 +15,9 @@ interface RecordDetail {
 }
 export interface MaterialReference { recordId: string; attachmentId: string | null; label: string }
 
-export default function DocumentViewer({ caseId, patientId, importJobId, page = 1, recordId, attachmentId, onClose, onAccessLost, onReference }: {
+export default function DocumentViewer({ caseId, patientId, importJobId, page = 1, recordId, attachmentId, onClose, onAccessLost, onReference, importFiles, onAttachmentChange }: {
   caseId?: string; patientId?: string; importJobId?: string; page?: number; recordId: string; attachmentId: string | null; onClose: () => void
+  importFiles?: ImportPatientDraft['record_groups'][number]['files']; onAttachmentChange?: (id: string) => void
   onAccessLost: () => Promise<void>; onReference?: (reference: MaterialReference) => void
 }) {
   const base = caseId ? `/cases/${caseId}/materials/${recordId}` : `/records/${recordId}`
@@ -48,7 +49,10 @@ export default function DocumentViewer({ caseId, patientId, importJobId, page = 
     const controller = new AbortController()
     setRecord(null); setError(''); setSelected(attachmentId ?? '')
     const request = importJobId
-      ? api.get<{ report_json: { patients?: ImportPatientDraft[] } }>(`/archives/imports/${importJobId}`, { signal: controller.signal }).then(result => ({
+      ? importFiles
+        ? Promise.resolve({ id: importJobId, title: 'Исходный документ', event_date: '', clinical_summary: null, record_type: 'other', status: 'unconfirmed',
+            attachments: importFiles.filter(file => file.id).map(file => ({ ...file, id: file.id! })), comments: [] } as RecordDetail)
+        : api.get<{ report_json: { patients?: ImportPatientDraft[] } }>(`/archives/imports/${importJobId}`, { signal: controller.signal }).then(result => ({
           id: importJobId, title: 'Исходный документ', event_date: '', clinical_summary: null, record_type: 'other', status: 'unconfirmed',
           attachments: (result.data.report_json.patients ?? []).flatMap(p => p.record_groups.flatMap(g => g.files)).filter(f => f.id).map(f => ({ ...f, id: f.id! })), comments: [],
         } as RecordDetail))
@@ -59,7 +63,7 @@ export default function DocumentViewer({ caseId, patientId, importJobId, page = 
       setRecord({ ...data, attachments: [...data.attachments, ...data.comments.flatMap(c => c.attachments)] })
     }).catch(e => { if (!controller.signal.aborted) { void fail(e) } })
     return () => controller.abort()
-  }, [base, importJobId, patientId, attachmentId, onAccessLost, revision, fail])
+  }, [base, importJobId, patientId, attachmentId, onAccessLost, revision, fail, importFiles])
   useEffect(() => {
     const controller = new AbortController()
     let objectUrl = ''
@@ -94,7 +98,7 @@ export default function DocumentViewer({ caseId, patientId, importJobId, page = 
       {record && <>{!importJobId && <><p className="text-xs text-gray-500">{record.event_date} · {recordTypeLabel[record.record_type] ?? 'Медицинская запись'} · {recordStatusLabel[record.status] ?? 'Статус неизвестен'}</p><p className="whitespace-pre-wrap">{record.clinical_summary}</p></>}
         {onReference && <button className="text-primary-700 underline" onClick={() => onReference({ recordId, attachmentId: null,
           label: record.title ?? 'Медицинская запись' })}>Сослаться на запись в сообщении</button>}
-        <label className="block">Вложение<select aria-label="Вложение" className={inputClass} value={selected} onChange={e => setSelected(e.target.value)}>
+        <label className="block">Вложение<select aria-label="Вложение" className={inputClass} value={selected} onChange={e => { if (onAttachmentChange) onAttachmentChange(e.target.value); else setSelected(e.target.value) }}>
           <option value="">Выберите документ</option>{record.attachments.map(f => <option key={f.id} value={f.id}>{f.filename ?? 'Документ'} ({Math.ceil(f.size_bytes / 1024)} КБ)</option>)}</select></label>
         {selected && <div className="flex flex-wrap gap-3"><button onClick={() => void download()}>Скачать файл</button>
           {onReference && <button className="text-primary-700 underline" onClick={() => onReference({ recordId, attachmentId: selected,
